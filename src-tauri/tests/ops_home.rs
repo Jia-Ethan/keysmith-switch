@@ -8,8 +8,8 @@ use keysmith_switch_lib::models::{
     CreatePromptInput, PlanActivateInput, PlanDeactivateInput, Scope, ToolKind, ToolStatus,
 };
 use keysmith_switch_lib::ops::{
-    confirm_activate, confirm_deactivate, create_prompt, plan_activate, plan_deactivate,
-    recover_tool, restore_prompt_version, tool_status, update_prompt,
+    confirm_activate, confirm_deactivate, confirm_recover, create_prompt, plan_activate,
+    plan_deactivate, plan_recover, restore_prompt_version, tool_status, update_prompt,
 };
 use keysmith_switch_lib::paths::AppPaths;
 
@@ -131,10 +131,20 @@ async fn temp_home_activate_deactivate_restore_recover_drift_lock() {
     let refused = confirm_deactivate(&store, &deactivate_plan.operation_id, &opts).await;
     assert!(refused.is_err(), "{refused:?}");
 
-    let recovered = recover_tool(&store, ToolKind::Claude, Scope::User, None, &opts)
+    let recover_plan = plan_recover(&store, ToolKind::Claude, Scope::User, None, &opts)
+        .await
+        .unwrap();
+    assert!(recover_plan.envelope.preview);
+    assert!(!recover_plan
+        .envelope
+        .argv
+        .iter()
+        .any(|item| item == "--yes"));
+    let recovered = confirm_recover(&store, &recover_plan.operation_id, &opts)
         .await
         .unwrap();
     assert!(recovered.envelope.ok || recovered.envelope.command == "recover");
+    assert!(recovered.envelope.argv.iter().any(|item| item == "--yes"));
 
     let lock1 = HomeLock::acquire(store.paths()).unwrap();
     let conflict = HomeLock::try_acquire(store.paths());

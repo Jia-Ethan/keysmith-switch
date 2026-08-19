@@ -69,6 +69,173 @@ impl Store {
         Ok(dest)
     }
 
+    pub fn backup_db_to(&self, dest: &Path) -> Result<()> {
+        let conn = self.conn()?;
+        schema::backup_to(&conn, dest)
+    }
+
+    pub fn restore_snapshot(&self, source_db: &Path, source_prompts: &Path) -> Result<usize> {
+        let source = open_connection(source_db)?;
+        if !schema::integrity_ok(&source) || !schema::has_core_tables(&source) {
+            return Err(Error::invalid(
+                "backup database failed integrity validation",
+            ));
+        }
+        if schema::current_version(&source)? != schema::SCHEMA_VERSION {
+            return Err(Error::invalid("backup database schema is not supported"));
+        }
+
+        let expected_paths = source
+            .prepare("SELECT content_path FROM prompts ORDER BY content_path")?
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        for rel in &expected_paths {
+            let rel_path = safe_prompt_relative_path(rel)?;
+            if !source_prompts
+                .join(rel_path.strip_prefix("prompts").unwrap())
+                .is_file()
+            {
+                return Err(Error::invalid("backup is missing prompt markdown"));
+            }
+        }
+
+        #[cfg(debug_assertions)]
+        let token = std::env::var("KEYSMITH_SWITCH_CLEAR_TOKEN_FOR_TEST")
+            .unwrap_or_else(|_| uuid::Uuid::new_v4().simple().to_string());
+        #[cfg(not(debug_assertions))]
+        let token = uuid::Uuid::new_v4().simple().to_string();
+        let next_prompts = self.paths.home.join(format!(".prompts-restore-{token}"));
+        let previous_prompts = self.paths.home.join(format!(".prompts-previous-{token}"));
+        let rollback_db = self.paths.home.join(format!(".db-previous-{token}"));
+        copy_tree(source_prompts, &next_prompts)?;
+
+        let mut conn = self.conn()?;
+        schema::backup_to(&conn, &rollback_db)?;
+        let had_prompts = self.paths.prompts.exists();
+        if had_prompts {
+            fs::rename(&self.paths.prompts, &previous_prompts)?;
+        }
+        if let Err(error) = fs::rename(&next_prompts, &self.paths.prompts) {
+            if had_prompts {
+                let _ = fs::rename(&previous_prompts, &self.paths.prompts);
+            }
+            let _ = fs::remove_dir_all(&next_prompts);
+            let _ = fs::remove_file(&rollback_db);
+            return Err(error.into());
+        }
+
+        if let Err(error) = schema::restore_from(&source, &mut conn) {
+            let _ = fs::remove_dir_all(&self.paths.prompts);
+            if had_prompts {
+                let _ = fs::rename(&previous_prompts, &self.paths.prompts);
+            }
+            if let Ok(previous) = open_connection(&rollback_db) {
+                let _ = schema::restore_from(&previous, &mut conn);
+            }
+            let _ = fs::remove_file(&rollback_db);
+            return Err(error);
+        }
+        drop(conn);
+
+        if had_prompts {
+            fs::remove_dir_all(&previous_prompts)?;
+        }
+        fs::remove_file(&rollback_db)?;
+        self.paths.ensure()?;
+        Ok(expected_paths.len())
+    }
+
+    pub fn clear_all(&self) -> Result<()> {
+        let token = uuid::Uuid::new_v4().simple().to_string();
+        let rollback_db = self.paths.home.join(format!(".clear-db-{token}"));
+        let staged_prompts = self.paths.home.join(format!(".clear-prompts-{token}"));
+        let staged_backups = self.paths.home.join(format!(".clear-backups-{token}"));
+        let staged_logs = self.paths.home.join(format!(".clear-logs-{token}"));
+
+        let mut conn = self.conn()?;
+        schema::backup_to(&conn, &rollback_db)?;
+        let staged = [
+            (&self.paths.prompts, &staged_prompts),
+            (&self.paths.backups, &staged_backups),
+            (&self.paths.logs, &staged_logs),
+        ];
+
+        let mut moved = Vec::new();
+        for (source, dest) in staged {
+            if !source.exists() {
+                continue;
+            }
+            #[cfg(debug_assertions)]
+            if std::env::var("KEYSMITH_SWITCH_CLEAR_FAIL_STAGE_FOR_TEST")
+                .ok()
+                .is_some_and(|name| source.file_name().is_some_and(|part| part == name.as_str()))
+            {
+                for (original, staged) in moved.iter().rev() {
+                    let _ = fs::rename(staged, original);
+                }
+                let _ = fs::remove_file(&rollback_db);
+                return Err(Error::message("simulated clear staging failure"));
+            }
+            if let Err(error) = fs::rename(source, dest) {
+                for (original, staged) in moved.iter().rev() {
+                    let _ = fs::rename(staged, original);
+                }
+                let _ = fs::remove_file(&rollback_db);
+                return Err(error.into());
+            }
+            moved.push((source, dest));
+        }
+
+        let clear_result = (|| -> Result<()> {
+            let tx = conn.transaction()?;
+            tx.execute("DELETE FROM prompt_versions", [])?;
+            tx.execute("DELETE FROM prompts", [])?;
+            tx.execute("DELETE FROM activations", [])?;
+            tx.execute("DELETE FROM operations", [])?;
+            tx.execute("DELETE FROM tool_state", [])?;
+            tx.execute("DELETE FROM settings", [])?;
+            write_settings(&tx, &Settings::default())?;
+            tx.commit()?;
+            self.paths.ensure()?;
+            Ok(())
+        })();
+
+        if let Err(error) = clear_result {
+            if let Ok(previous) = open_connection(&rollback_db) {
+                let _ = schema::restore_from(&previous, &mut conn);
+            }
+            for (original, staged) in moved.iter().rev() {
+                if original.exists() {
+                    let _ = fs::remove_dir_all(original);
+                }
+                let _ = fs::rename(staged, original);
+            }
+            let _ = fs::remove_file(&rollback_db);
+            return Err(error);
+        }
+        drop(conn);
+
+        let mut cleanup_errors = Vec::new();
+        for (_, staged) in moved {
+            if let Err(error) = fs::remove_dir_all(staged) {
+                cleanup_errors.push(redact_text(&error.to_string()));
+            }
+        }
+        if let Err(error) = fs::remove_file(&rollback_db) {
+            cleanup_errors.push(redact_text(&error.to_string()));
+        }
+        if !cleanup_errors.is_empty() {
+            let _ = crate::logging::write_line(
+                "clear-cleanup",
+                &format!(
+                    "data cleared; deferred cleanup: {}",
+                    cleanup_errors.join("; ")
+                ),
+            );
+        }
+        Ok(())
+    }
+
     pub fn list_prompts(
         &self,
         tool: ToolKind,
@@ -783,6 +950,54 @@ fn open_connection(path: &Path) -> Result<Connection> {
     let conn = Connection::open(path)?;
     schema::configure(&conn)?;
     Ok(conn)
+}
+
+fn safe_prompt_relative_path(raw: &str) -> Result<PathBuf> {
+    let path = Path::new(raw);
+    if path.is_absolute() {
+        return Err(Error::invalid("backup contains an absolute prompt path"));
+    }
+    let mut components = path.components();
+    if components.next() != Some(std::path::Component::Normal("prompts".as_ref())) {
+        return Err(Error::invalid("backup prompt path is outside prompts"));
+    }
+    if components.any(|part| !matches!(part, std::path::Component::Normal(_))) {
+        return Err(Error::invalid("backup prompt path is unsafe"));
+    }
+    Ok(path.to_path_buf())
+}
+
+fn copy_tree(source: &Path, dest: &Path) -> Result<()> {
+    fs::create_dir_all(dest)?;
+    for entry in WalkDir::new(source) {
+        let entry = entry.map_err(|error| Error::invalid(error.to_string()))?;
+        let rel = entry
+            .path()
+            .strip_prefix(source)
+            .map_err(|_| Error::invalid("backup path is outside its prompt root"))?;
+        if rel.as_os_str().is_empty() {
+            continue;
+        }
+        if rel
+            .components()
+            .any(|part| !matches!(part, std::path::Component::Normal(_)))
+        {
+            return Err(Error::invalid("backup prompt path is unsafe"));
+        }
+        let target = dest.join(rel);
+        if entry.file_type().is_symlink() {
+            return Err(Error::invalid("backup prompt tree contains a symlink"));
+        }
+        if entry.file_type().is_dir() {
+            fs::create_dir_all(target)?;
+        } else if entry.file_type().is_file() {
+            if let Some(parent) = target.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::copy(entry.path(), target)?;
+        }
+    }
+    Ok(())
 }
 
 fn quarantine_db(path: &Path, paths: &AppPaths) -> Result<Option<PathBuf>> {

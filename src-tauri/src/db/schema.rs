@@ -177,3 +177,12 @@ pub fn backup_to(conn: &Connection, dest: &std::path::Path) -> Result<()> {
     }
     Ok(())
 }
+
+pub fn restore_from(source: &Connection, dest: &mut Connection) -> Result<()> {
+    let backup = rusqlite::backup::Backup::new(source, dest)
+        .map_err(|error| Error::Db(error.to_string()))?;
+    backup
+        .run_to_completion(64, Duration::from_millis(5), None)
+        .map_err(|error| Error::Db(error.to_string()))?;
+    Ok(())
+}

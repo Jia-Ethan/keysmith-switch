@@ -33,6 +33,10 @@ pub const RELEASES_BASE: &str = "https://github.com/Jia-Ethan/keysmith-switch-re
 /// Matches `tauri.conf.json` `plugins.updater.pubkey`. Not a production key.
 pub const FIXTURE_PUBKEY: &str = "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ5M0UyRThDQ0REODc4QkQKUldTOWVOak5qQzQrMlZEMllhUStoZ29ldmY3Yjl2TUVWcTBzOWd6cGxaS2drNnQvKzBscUR4NmgK";
 
+pub fn compiled_updater_pubkey() -> &'static str {
+    option_env!("KEYSMITH_SWITCH_UPDATER_PUBKEY").unwrap_or(FIXTURE_PUBKEY)
+}
+
 pub const ENV_ENDPOINT: &str = "KEYSMITH_SWITCH_UPDATER_ENDPOINT";
 pub const ENV_ENDPOINT_BASE: &str = "KEYSMITH_SWITCH_UPDATER_ENDPOINT_BASE";
 pub const ENV_PUBKEY: &str = "KEYSMITH_SWITCH_UPDATER_PUBKEY";
@@ -152,6 +156,13 @@ struct ResolvedUpdate {
     platform_key: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeUpdateConfig {
+    pub endpoint: String,
+    pub pubkey: String,
+    pub platform_key: String,
+}
+
 #[derive(Debug, Clone)]
 struct ParsedManifest {
     version: String,
@@ -250,6 +261,15 @@ pub fn resolve_update_endpoint(
         return format!("{}{}", trim_slash(base), channel.latest_path());
     }
     channel.default_endpoint()
+}
+
+pub fn runtime_update_config(req: &UpdateRequest) -> RuntimeUpdateConfig {
+    let resolved = resolve_request(req);
+    RuntimeUpdateConfig {
+        endpoint: resolved.endpoint,
+        pubkey: resolved.pubkey,
+        platform_key: resolved.platform_key,
+    }
 }
 
 pub fn check_update(req: &UpdateRequest) -> UpdateCheck {
@@ -470,7 +490,7 @@ fn resolve_request(req: &UpdateRequest) -> ResolvedUpdate {
         .pubkey
         .clone()
         .or_else(|| env_nonempty(ENV_PUBKEY))
-        .unwrap_or_else(|| FIXTURE_PUBKEY.to_string());
+        .unwrap_or_else(|| compiled_updater_pubkey().to_string());
     let platform_key = req
         .platform_key
         .clone()

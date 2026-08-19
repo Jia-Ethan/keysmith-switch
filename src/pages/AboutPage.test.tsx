@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { AboutPage } from "./AboutPage";
+import { UpdateProvider } from "../components/UpdateProvider";
 import { PUBLIC_RELEASE_PAGE } from "../types";
 
 const checkAppUpdate = vi.fn();
@@ -13,9 +14,16 @@ vi.mock("../api", () => ({
   getAbout: (...args: unknown[]) => getAbout(...args),
   planOfficialAction: vi.fn(),
   confirmOfficialAction: vi.fn(),
+  cancelOfficialAction: vi.fn(),
 }));
 
 describe("AboutPage update button", () => {
+  const renderPage = () =>
+    render(
+      <UpdateProvider channel="stable" autoCheck={false}>
+        <AboutPage channel="stable" />
+      </UpdateProvider>,
+    );
   beforeEach(() => {
     checkAppUpdate.mockReset();
     installAppUpdate.mockReset();
@@ -46,7 +54,7 @@ describe("AboutPage update button", () => {
   });
 
   it("keeps 更新并重启 disabled until update is available and confirmed", async () => {
-    render(<AboutPage channel="stable" />);
+    renderPage();
 
     const button = screen.getByTestId("install-update");
     expect(button).toBeDisabled();
@@ -61,11 +69,11 @@ describe("AboutPage update button", () => {
     expect(button).not.toBeDisabled();
 
     fireEvent.click(button);
-    await waitFor(() => expect(installAppUpdate).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(installAppUpdate).toHaveBeenCalledWith("stable"));
   });
 
   it("never silently installs on mount", async () => {
-    render(<AboutPage channel="stable" />);
+    renderPage();
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(checkAppUpdate).not.toHaveBeenCalled();
     expect(installAppUpdate).not.toHaveBeenCalled();

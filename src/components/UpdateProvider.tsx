@@ -55,6 +55,7 @@ export function UpdateProvider({
 
   const check = useCallback(async () => {
     setChecking(true);
+    setProgress(null);
     setError(null);
     try {
       const result = await api.checkAppUpdate(channel);
@@ -70,11 +71,14 @@ export function UpdateProvider({
   const install = useCallback(async () => {
     if (!update?.available) return null;
     setInstalling(true);
+    setProgress(0);
     setError(null);
     try {
-      const result = await api.installAppUpdate();
+      const result = await api.installAppUpdate(channel);
       if (!result.ok) {
         setError(result.error || "update failed");
+      } else {
+        setProgress(100);
       }
       return result;
     } catch (err) {
@@ -89,7 +93,7 @@ export function UpdateProvider({
     } finally {
       setInstalling(false);
     }
-  }, [update]);
+  }, [channel, update]);
 
   useEffect(() => {
     if (!autoCheck) return;
@@ -111,10 +115,12 @@ export function UpdateProvider({
       }).then((fn) => {
         unlistenMenu = fn;
       });
-      void listen<{ downloaded?: number; total?: number }>("update-progress", (event) => {
-        const { downloaded, total } = event.payload ?? {};
+      void listen<{ downloaded?: number; total?: number; phase?: string }>("update-progress", (event) => {
+        const { downloaded, total, phase } = event.payload ?? {};
         if (typeof downloaded === "number" && typeof total === "number" && total > 0) {
           setProgress(Math.min(100, Math.round((downloaded / total) * 100)));
+        } else if (phase === "install") {
+          setProgress(100);
         }
       }).then((fn) => {
         unlistenProgress = fn;

@@ -42,7 +42,6 @@ pub fn run() {
                     .unwrap_or(true);
                 if close_to_tray {
                     let _ = window.app_handle().emit_to_frontend_close();
-                    desktop::hide_to_tray(window.app_handle());
                 } else {
                     desktop::request_quit(window.app_handle());
                 }
@@ -66,7 +65,9 @@ pub fn run() {
                 let _ = logging::write_line("tray", &error.to_string());
             }
             if auto {
-                let _ = auto_launch::enable_auto_launch();
+                if let Err(error) = auto_launch::enable_auto_launch() {
+                    let _ = logging::write_line("auto-launch", &error.to_string());
+                }
             }
             if !silent {
                 desktop::show_main(app.handle());
@@ -90,6 +91,7 @@ pub fn run() {
             commands::plan_deactivate,
             commands::deactivate,
             commands::recover_tool,
+            commands::confirm_recover,
             commands::doctor,
             commands::list_activations,
             commands::list_operations,
@@ -100,11 +102,13 @@ pub fn run() {
             commands::install_app_update,
             commands::plan_official_action,
             commands::confirm_official_action,
+            commands::cancel_official_action,
             commands::list_advanced_tools,
             commands::run_advanced,
             commands::get_startup_report,
             commands::import_existing_prompts,
             commands::import_markdown_files,
+            commands::inspect_zip_archive,
             commands::import_zip_archive,
             commands::export_zip_archive,
             commands::create_backup,

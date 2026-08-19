@@ -388,7 +388,7 @@ pub async fn confirm_deactivate(
     })
 }
 
-pub async fn recover_tool(
+pub async fn plan_recover(
     store: &Store,
     tool: ToolKind,
     scope: Scope,
@@ -445,8 +445,35 @@ pub async fn recover_tool(
             envelope: preview,
         });
     }
+    Ok(OperationResult {
+        operation_id: preview_op.id,
+        envelope: preview,
+    })
+}
+
+pub async fn confirm_recover(
+    store: &Store,
+    operation_id: &str,
+    opts: &AdapterOptions,
+) -> Result<OperationResult> {
+    let _lock = HomeLock::acquire(store.paths())?;
+    let plan = require_preview(store, operation_id, OperationKind::Recover)?;
+    if let Some(plan_env) = plan.envelope_json.as_deref() {
+        if let Ok(preview) = serde_json::from_str::<Envelope>(plan_env) {
+            if !preview.ok || !preview.blockers.is_empty() {
+                return Err(Error::command_failed(
+                    preview
+                        .error
+                        .unwrap_or_else(|| "recovery preview reported blockers".into()),
+                ));
+            }
+        }
+    }
+    let request: serde_json::Value = serde_json::from_str(&plan.request_json)?;
+    let scope = plan.scope.unwrap_or(Scope::User);
+    let project_dir = plan.project_dir.as_ref().map(PathBuf::from);
     let envelope = run_adapter_with(
-        tool,
+        plan.tool,
         AdapterCommand::Recover {
             scope,
             project_dir: project_dir.clone(),
@@ -455,15 +482,9 @@ pub async fn recover_tool(
         opts,
     )
     .await?;
-    let execute_id = persist_execute(
-        store,
-        &preview_op,
-        OperationKind::Recover,
-        &envelope,
-        json!({"tool": tool, "scope": scope}),
-    )?;
+    let execute_id = persist_execute(store, &plan, OperationKind::Recover, &envelope, request)?;
     store.upsert_tool_state(
-        tool,
+        plan.tool,
         scope,
         project_dir.as_ref().and_then(|p| p.to_str()),
         envelope.status,

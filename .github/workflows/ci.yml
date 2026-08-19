@@ -54,4 +54,18 @@ jobs:
         with:
           python-version: "3.12"
       - run: python scripts/build-sidecars.py
-      - run: powershell -NoProfile -Command "Get-ChildItem src-tauri/binaries/keysmith-*-x86_64-pc-windows-msvc.exe | ForEach-Object { if (-not $_.Exists) { exit 1 } }"
+      - name: Verify all Windows sidecars
+        shell: pwsh
+        run: |
+          $sidecars = @(
+            "keysmith-claude-x86_64-pc-windows-msvc.exe",
+            "keysmith-codex-x86_64-pc-windows-msvc.exe",
+            "keysmith-grok-x86_64-pc-windows-msvc.exe",
+            "keysmith-zcode-x86_64-pc-windows-msvc.exe"
+          )
+          foreach ($sidecar in $sidecars) {
+            $path = Join-Path "src-tauri/binaries" $sidecar
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              throw "Required Windows sidecar missing: $path"
+            }
+          }

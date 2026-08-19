@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde::Serialize;
@@ -14,19 +16,20 @@ use crate::models::{
     SettingsPatch, ToolKind, ToolStatus, UpdatePromptInput, APP_VERSION,
 };
 use crate::official::{
-    confirm_official_action as official_confirm, plan_official_action as official_plan,
+    confirm_official_action_cancellable as official_confirm, plan_official_action as official_plan,
     OfficialAction, OfficialPlan, OfficialProduct, OfficialResult,
 };
 use crate::ops;
 use crate::paths::AppPaths;
 use crate::redact::redact_text;
 use crate::updater::{
-    check_update, install_update, InstallRequest, UpdateChannel, UpdateCheck, UpdateInstall,
-    UpdateRequest,
+    check_update, install_update, runtime_update_config, InstallRequest, UpdateChannel,
+    UpdateCheck, UpdateInstall, UpdateRequest,
 };
 
 pub struct AppState {
     pub store: Store,
+    official_cancel: Mutex<Option<Arc<AtomicBool>>>,
 }
 
 impl AppState {
@@ -35,6 +38,7 @@ impl AppState {
         paths.ensure()?;
         Ok(Self {
             store: Store::open(&paths)?,
+            official_cancel: Mutex::new(None),
         })
     }
 }
@@ -577,7 +581,7 @@ pub async fn recover_tool(
     scope: Option<String>,
     project_dir: Option<String>,
 ) -> Result<UiPlanResult> {
-    let result = ops::recover_tool(
+    let result = ops::plan_recover(
         &state.store,
         parse_tool(&tool)?,
         parse_scope(scope.as_deref())?,
@@ -585,6 +589,15 @@ pub async fn recover_tool(
         &opts(),
     )
     .await?;
+    Ok(map_plan(result))
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn confirm_recover(
+    state: State<'_, AppState>,
+    operation_id: String,
+) -> Result<UiPlanResult> {
+    let result = ops::confirm_recover(&state.store, &operation_id, &opts()).await?;
     Ok(map_plan(result))
 }
 
@@ -665,7 +678,11 @@ pub fn update_settings(
     first_run_completed: Option<bool>,
 ) -> Result<Settings> {
     let previous = state.store.get_settings()?;
-    let settings = state.store.update_settings(SettingsPatch {
+    let requested_auto_launch = auto_launch.filter(|enabled| *enabled != previous.auto_launch);
+    if let Some(enabled) = requested_auto_launch {
+        crate::auto_launch::apply_auto_launch(enabled)?;
+    }
+    let settings = match state.store.update_settings(SettingsPatch {
         language,
         update_channel,
         advanced_tools_enabled,
@@ -678,12 +695,15 @@ pub fn update_settings(
         auto_check_updates,
         theme,
         first_run_completed,
-    })?;
-    if settings.auto_launch != previous.auto_launch {
-        if let Err(error) = crate::auto_launch::apply_auto_launch(settings.auto_launch) {
-            crate::logging::write_line("auto-launch", &error.to_string())?;
+    }) {
+        Ok(settings) => settings,
+        Err(error) => {
+            if requested_auto_launch.is_some() {
+                let _ = crate::auto_launch::apply_auto_launch(previous.auto_launch);
+            }
+            return Err(error);
         }
-    }
+    };
     Ok(settings)
 }
 
@@ -829,14 +849,34 @@ pub async fn install_app_update(
                 release_page: crate::updater::RELEASE_PAGE.into(),
             })
         }
-        crate::updater::ApplyMode::Real => apply_with_plugin(&app).await,
+        crate::updater::ApplyMode::Real => {
+            apply_with_plugin(&app, &req, check.latest_version.as_deref()).await
+        }
     }
 }
 
-async fn apply_with_plugin(app: &tauri::AppHandle) -> Result<UpdateInstall> {
+async fn apply_with_plugin(
+    app: &tauri::AppHandle,
+    req: &UpdateRequest,
+    expected_version: Option<&str>,
+) -> Result<UpdateInstall> {
     use tauri::Emitter;
     use tauri_plugin_updater::UpdaterExt;
-    let updater = match app.updater_builder().build() {
+    let runtime = runtime_update_config(req);
+    let endpoint = runtime
+        .endpoint
+        .parse::<tauri::Url>()
+        .map_err(|error| Error::invalid(format!("invalid updater endpoint: {error}")))?;
+    let updater = match app
+        .updater_builder()
+        .endpoints(vec![endpoint])
+        .and_then(|builder| {
+            builder
+                .pubkey(runtime.pubkey)
+                .target(runtime.platform_key)
+                .timeout(Duration::from_secs(30))
+                .build()
+        }) {
         Ok(updater) => updater,
         Err(error) => {
             return Ok(UpdateInstall {
@@ -849,13 +889,23 @@ async fn apply_with_plugin(app: &tauri::AppHandle) -> Result<UpdateInstall> {
     };
     match updater.check().await {
         Ok(Some(update)) => {
+            if expected_version.is_some_and(|expected| update.version.to_string() != expected) {
+                return Ok(UpdateInstall {
+                    ok: false,
+                    restart_required: false,
+                    error: Some("update metadata changed after confirmation; check again".into()),
+                    release_page: crate::updater::RELEASE_PAGE.into(),
+                });
+            }
+            let mut downloaded = 0_u64;
             let result = update
                 .download_and_install(
                     |chunk, total| {
+                        downloaded = downloaded.saturating_add(chunk as u64);
                         let _ = app.emit(
                             "update-progress",
                             serde_json::json!({
-                                "downloaded": chunk,
+                                "downloaded": downloaded,
                                 "total": total,
                             }),
                         );
@@ -901,8 +951,55 @@ pub fn plan_official_action(product: String, action: String) -> Result<OfficialP
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn confirm_official_action(plan_id: String, confirmed: bool) -> Result<OfficialResult> {
-    Ok(official_confirm(&plan_id, confirmed))
+pub async fn confirm_official_action(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    plan_id: String,
+    confirmed: bool,
+) -> Result<OfficialResult> {
+    use tauri::Emitter;
+    let cancelled = Arc::new(AtomicBool::new(false));
+    {
+        let mut running = state
+            .official_cancel
+            .lock()
+            .map_err(|_| Error::lock("official action state is unavailable"))?;
+        if running.is_some() {
+            return Err(Error::lock("another official action is already running"));
+        }
+        *running = Some(Arc::clone(&cancelled));
+    }
+    let progress_app = app.clone();
+    let task = tauri::async_runtime::spawn_blocking(move || {
+        official_confirm(&plan_id, confirmed, cancelled, |elapsed_seconds| {
+            let _ = progress_app.emit(
+                "official-action-progress",
+                serde_json::json!({ "elapsedSeconds": elapsed_seconds }),
+            );
+        })
+    })
+    .await;
+    if let Ok(mut running) = state.official_cancel.lock() {
+        *running = None;
+    }
+    let result =
+        task.map_err(|error| Error::message(format!("official action task failed: {error}")))?;
+    Ok(result)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn cancel_official_action(state: State<'_, AppState>) -> Result<serde_json::Value> {
+    let running = state
+        .official_cancel
+        .lock()
+        .map_err(|_| Error::lock("official action state is unavailable"))?;
+    let cancelled = if let Some(flag) = running.as_ref() {
+        flag.store(true, Ordering::SeqCst);
+        true
+    } else {
+        false
+    };
+    Ok(serde_json::json!({ "ok": true, "cancelled": cancelled }))
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1088,6 +1185,11 @@ pub fn import_zip_archive(
 }
 
 #[tauri::command(rename_all = "camelCase")]
+pub fn inspect_zip_archive(path: String) -> Result<crate::data::ArchiveInspection> {
+    crate::data::inspect_zip(Path::new(&path))
+}
+
+#[tauri::command(rename_all = "camelCase")]
 pub fn export_zip_archive(state: State<'_, AppState>, path: String) -> Result<serde_json::Value> {
     let dest = crate::data::export_zip(&state.store, Path::new(&path))?;
     Ok(serde_json::json!({ "ok": true, "path": dest }))
@@ -1123,7 +1225,7 @@ pub fn clear_all_data(
     phrase: String,
     confirmed: bool,
 ) -> Result<serde_json::Value> {
-    crate::data::clear_all_data(state.store.paths(), &phrase, confirmed)?;
+    crate::data::clear_all_data(&state.store, &phrase, confirmed)?;
     Ok(serde_json::json!({ "ok": true }))
 }
 

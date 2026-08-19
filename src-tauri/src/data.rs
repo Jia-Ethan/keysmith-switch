@@ -13,13 +13,38 @@ use zip::ZipArchive;
 
 use crate::db::Store;
 use crate::error::{Error, Result};
-use crate::models::{now_rfc3339, CreatePromptInput, ToolKind};
+use crate::lock::HomeLock;
+use crate::models::{now_rfc3339, sha256_hex, CreatePromptInput, ToolKind};
 use crate::ops;
 use crate::paths::AppPaths;
 use crate::redact::redact_text;
 
 pub const RECOVERY_MARKER: &str = "last-recovery.json";
 pub const CLEAR_CONFIRM_PHRASE: &str = "CLEAR ALL DATA";
+const BACKUP_FORMAT: &str = "keysmith-switch-backup-v2";
+const BACKUP_DB_PATH: &str = "data/keysmith-switch.db";
+const MAX_BACKUP_ENTRY_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_BACKUP_TOTAL_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_BACKUP_MANIFEST_BYTES: u64 = 1024 * 1024;
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BackupManifest {
+    format: String,
+    app_version: String,
+    schema_version: i64,
+    exported_at: String,
+    database: BackupFile,
+    prompts: Vec<BackupFile>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BackupFile {
+    path: String,
+    sha256: String,
+    bytes: u64,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -100,6 +125,12 @@ pub struct ImportResult {
     pub imported: usize,
     pub skipped: usize,
     pub errors: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ArchiveInspection {
+    pub mode: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -295,82 +326,280 @@ fn infer_tool_from_path(path: &Path) -> Option<ToolKind> {
 }
 
 pub fn export_zip(store: &Store, dest: &Path) -> Result<PathBuf> {
+    let _lock = HomeLock::acquire(store.paths())?;
+    if dest == store.paths().db || dest.starts_with(&store.paths().prompts) {
+        return Err(Error::invalid(
+            "backup destination must be outside active data files",
+        ));
+    }
     if let Some(parent) = dest.parent() {
         fs::create_dir_all(parent)?;
     }
-    let file = File::create(dest)?;
-    let mut zip = zip::ZipWriter::new(file);
-    let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
-    let manifest = serde_json::json!({
-        "app": "Keysmith Switch",
-        "version": crate::models::APP_VERSION,
-        "exportedAt": now_rfc3339(),
-        "preview": true,
-    });
-    zip.start_file("manifest.json", options)?;
-    zip.write_all(serde_json::to_string_pretty(&manifest)?.as_bytes())?;
-    for tool in ToolKind::ALL {
-        for prompt in store.list_prompts(tool, None, None, crate::models::PromptSort::Title)? {
-            let detail = store.get_prompt(&prompt.id)?;
-            let rel = format!("prompts/{}/{}.md", tool.as_str(), prompt.id);
-            zip.start_file(&rel, options)?;
-            zip.write_all(detail.content.as_bytes())?;
+    let work = tempfile::tempdir_in(&store.paths().home)?;
+    let db_snapshot = work.path().join("keysmith-switch.db");
+    store.backup_db_to(&db_snapshot)?;
+    let db_bytes = fs::read(&db_snapshot)?;
+    let database = backup_file(BACKUP_DB_PATH, &db_bytes);
+    let mut prompt_files = Vec::new();
+    for entry in walkdir::WalkDir::new(&store.paths().prompts) {
+        let entry = entry.map_err(|error| Error::invalid(error.to_string()))?;
+        if entry.file_type().is_symlink() {
+            return Err(Error::invalid("prompt library contains a symlink"));
         }
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        let rel = entry
+            .path()
+            .strip_prefix(&store.paths().home)
+            .map_err(|_| Error::invalid("prompt path is outside the data directory"))?
+            .to_string_lossy()
+            .replace('\\', "/");
+        if !rel.ends_with(".md") {
+            continue;
+        }
+        let bytes = fs::read(entry.path())?;
+        prompt_files.push((backup_file(&rel, &bytes), bytes));
     }
-    zip.finish()?;
+    prompt_files.sort_by(|a, b| a.0.path.cmp(&b.0.path));
+    let manifest = BackupManifest {
+        format: BACKUP_FORMAT.into(),
+        app_version: crate::models::APP_VERSION.into(),
+        schema_version: crate::db::schema::SCHEMA_VERSION,
+        exported_at: now_rfc3339(),
+        database,
+        prompts: prompt_files
+            .iter()
+            .map(|(m, _)| BackupFile {
+                path: m.path.clone(),
+                sha256: m.sha256.clone(),
+                bytes: m.bytes,
+            })
+            .collect(),
+    };
+    let temp_dest = dest.with_file_name(format!(
+        ".{}.keysmith-switch-tmp-{}",
+        dest.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("backup.zip"),
+        uuid::Uuid::new_v4().simple()
+    ));
+    let result = (|| -> Result<()> {
+        let mut zip = zip::ZipWriter::new(File::create(&temp_dest)?);
+        let options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        zip.start_file("manifest.json", options)?;
+        zip.write_all(serde_json::to_string_pretty(&manifest)?.as_bytes())?;
+        zip.start_file(BACKUP_DB_PATH, options)?;
+        zip.write_all(&db_bytes)?;
+        for (meta, bytes) in &prompt_files {
+            zip.start_file(&meta.path, options)?;
+            zip.write_all(bytes)?;
+        }
+        zip.finish()?;
+        Ok(())
+    })();
+    if let Err(error) = result {
+        let _ = fs::remove_file(&temp_dest);
+        return Err(error);
+    }
+    if dest.exists() {
+        fs::remove_file(dest)?;
+    }
+    fs::rename(&temp_dest, dest)?;
     Ok(dest.to_path_buf())
 }
 
 pub fn import_zip(store: &Store, zip_path: &Path) -> Result<ImportResult> {
-    let file = File::open(zip_path)?;
-    let mut archive = ZipArchive::new(file).map_err(|error| Error::invalid(error.to_string()))?;
-    let mut imported = 0;
-    let mut skipped = 0;
-    let mut errors = Vec::new();
+    match read_backup_archive(zip_path) {
+        Ok(archive) => {
+            let _lock = HomeLock::acquire(store.paths())?;
+            Ok(ImportResult {
+                imported: restore_archive(store, archive)?,
+                skipped: 0,
+                errors: Vec::new(),
+            })
+        }
+        Err(_error) if is_legacy_archive(zip_path) => import_legacy_zip(store, zip_path),
+        Err(error) => Err(error),
+    }
+}
+
+pub fn inspect_zip(zip_path: &Path) -> Result<ArchiveInspection> {
+    match read_backup_archive(zip_path) {
+        Ok(_) => Ok(ArchiveInspection {
+            mode: "restore".to_string(),
+        }),
+        Err(_error) if is_legacy_archive(zip_path) => Ok(ArchiveInspection {
+            mode: "import".to_string(),
+        }),
+        Err(error) => Err(error),
+    }
+}
+
+struct ExtractedBackup {
+    work: tempfile::TempDir,
+    manifest: BackupManifest,
+}
+
+fn read_backup_archive(zip_path: &Path) -> Result<ExtractedBackup> {
+    let mut archive =
+        ZipArchive::new(File::open(zip_path)?).map_err(|e| Error::invalid(e.to_string()))?;
+    let mut manifest_text = String::new();
+    let mut manifest_entry = archive
+        .by_name("manifest.json")
+        .map_err(|_| Error::invalid("backup manifest is missing"))?;
+    if manifest_entry.size() > MAX_BACKUP_MANIFEST_BYTES {
+        return Err(Error::invalid("backup manifest exceeds the size limit"));
+    }
+    manifest_entry.read_to_string(&mut manifest_text)?;
+    drop(manifest_entry);
+    let manifest: BackupManifest = serde_json::from_str(&manifest_text)
+        .map_err(|_| Error::invalid("backup manifest is invalid"))?;
+    if manifest.format != BACKUP_FORMAT
+        || manifest.schema_version != crate::db::schema::SCHEMA_VERSION
+        || manifest.database.path != BACKUP_DB_PATH
+    {
+        return Err(Error::invalid("backup format or schema is not supported"));
+    }
+    let work = tempfile::tempdir()?;
+    let mut total = 0_u64;
+    let mut seen = std::collections::HashSet::new();
+    for expected in std::iter::once(&manifest.database).chain(manifest.prompts.iter()) {
+        if !seen.insert(expected.path.clone()) {
+            return Err(Error::invalid("backup manifest contains duplicate paths"));
+        }
+        validate_archive_path(&expected.path)?;
+        if expected.bytes > MAX_BACKUP_ENTRY_BYTES {
+            return Err(Error::invalid("backup entry exceeds the size limit"));
+        }
+        total = total
+            .checked_add(expected.bytes)
+            .ok_or_else(|| Error::invalid("backup size overflow"))?;
+        if total > MAX_BACKUP_TOTAL_BYTES {
+            return Err(Error::invalid("backup exceeds the total size limit"));
+        }
+        let mut entry = archive
+            .by_name(&expected.path)
+            .map_err(|_| Error::invalid("backup entry is missing"))?;
+        if entry.is_dir() || entry.size() != expected.bytes {
+            return Err(Error::invalid("backup entry size does not match manifest"));
+        }
+        let mut bytes = Vec::with_capacity(expected.bytes as usize);
+        entry.read_to_end(&mut bytes)?;
+        if sha256_hex(&bytes) != expected.sha256 {
+            return Err(Error::invalid("backup entry checksum mismatch"));
+        }
+        let target = work.path().join(&expected.path);
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(target, bytes)?;
+    }
+    let mut archive_seen = std::collections::HashSet::new();
     for index in 0..archive.len() {
-        let mut entry = match archive.by_index(index) {
-            Ok(entry) => entry,
-            Err(error) => {
-                errors.push(redact_text(&error.to_string()));
-                continue;
-            }
-        };
+        let entry = archive.by_index(index)?;
+        if !archive_seen.insert(entry.name().to_string()) {
+            return Err(Error::invalid("backup contains duplicate entries"));
+        }
+        if entry.name() != "manifest.json" && !seen.contains(entry.name()) && !entry.is_dir() {
+            return Err(Error::invalid("backup contains an undeclared file"));
+        }
+    }
+    Ok(ExtractedBackup { work, manifest })
+}
+
+fn restore_archive(store: &Store, archive: ExtractedBackup) -> Result<usize> {
+    let db = archive.work.path().join(&archive.manifest.database.path);
+    let prompts = archive.work.path().join("prompts");
+    fs::create_dir_all(&prompts)?;
+    store.restore_snapshot(&db, &prompts)
+}
+
+fn backup_file(path: &str, bytes: &[u8]) -> BackupFile {
+    BackupFile {
+        path: path.into(),
+        sha256: sha256_hex(bytes),
+        bytes: bytes.len() as u64,
+    }
+}
+
+fn validate_archive_path(raw: &str) -> Result<()> {
+    let path = Path::new(raw);
+    if path.is_absolute()
+        || raw.contains('\\')
+        || path
+            .components()
+            .any(|part| !matches!(part, std::path::Component::Normal(_)))
+        || (raw != BACKUP_DB_PATH && !(raw.starts_with("prompts/") && raw.ends_with(".md")))
+    {
+        return Err(Error::invalid("backup contains an unsafe path"));
+    }
+    Ok(())
+}
+
+fn is_legacy_archive(zip_path: &Path) -> bool {
+    let Ok(file) = File::open(zip_path) else {
+        return false;
+    };
+    let Ok(mut archive) = ZipArchive::new(file) else {
+        return false;
+    };
+    let Ok(mut entry) = archive.by_name("manifest.json") else {
+        return false;
+    };
+    let mut text = String::new();
+    entry.read_to_string(&mut text).is_ok()
+        && serde_json::from_str::<serde_json::Value>(&text)
+            .ok()
+            .and_then(|v| v.get("app").and_then(|v| v.as_str()).map(str::to_owned))
+            .as_deref()
+            == Some("Keysmith Switch")
+}
+
+fn import_legacy_zip(store: &Store, zip_path: &Path) -> Result<ImportResult> {
+    let mut archive =
+        ZipArchive::new(File::open(zip_path)?).map_err(|e| Error::invalid(e.to_string()))?;
+    let mut result = ImportResult {
+        imported: 0,
+        skipped: 0,
+        errors: Vec::new(),
+    };
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index)?;
         let name = entry.name().to_string();
-        if !name.ends_with(".md") {
+        if !name.starts_with("prompts/") || !name.ends_with(".md") {
             continue;
+        }
+        validate_archive_path(&name)?;
+        if entry.size() > MAX_BACKUP_ENTRY_BYTES {
+            return Err(Error::invalid(
+                "legacy archive entry exceeds the size limit",
+            ));
         }
         let tool = name
             .split('/')
             .find_map(|part| part.parse::<ToolKind>().ok())
-            .or_else(|| infer_tool_from_path(Path::new(&name)))
             .unwrap_or(ToolKind::Claude);
         let mut content = String::new();
-        if let Err(error) = entry.read_to_string(&mut content) {
-            errors.push(redact_text(&error.to_string()));
-            continue;
-        }
-        let title = title_from_markdown(&content, Path::new(&name));
+        entry.read_to_string(&mut content)?;
         match ops::create_prompt(
             store,
             CreatePromptInput {
                 tool,
-                title,
+                title: title_from_markdown(&content, Path::new(&name)),
                 content,
-                tags: vec!["imported".into(), "zip".into()],
+                tags: vec!["imported".into(), "legacy-zip".into()],
             },
         ) {
-            Ok(_) => imported += 1,
+            Ok(_) => result.imported += 1,
             Err(error) => {
-                skipped += 1;
-                errors.push(redact_text(&error.to_string()));
+                result.skipped += 1;
+                result.errors.push(redact_text(&error.to_string()));
             }
         }
     }
-    Ok(ImportResult {
-        imported,
-        skipped,
-        errors,
-    })
+    Ok(result)
 }
 
 pub fn create_named_backup(store: &Store, kind: &str) -> Result<BackupEntry> {
@@ -378,7 +607,6 @@ pub fn create_named_backup(store: &Store, kind: &str) -> Result<BackupEntry> {
     let id = format!("{kind}-{stamp}");
     let dest = store.paths().backups.join(format!("{id}.zip"));
     export_zip(store, &dest)?;
-    let _ = store.backup_db(&format!("{kind}-{stamp}"));
     Ok(backup_meta(&dest, kind)?)
 }
 
@@ -444,18 +672,15 @@ fn cat(name: &str, path: &Path) -> ClearCategory {
     }
 }
 
-pub fn clear_all_data(paths: &AppPaths, phrase: &str, confirmed: bool) -> Result<()> {
+pub fn clear_all_data(store: &Store, phrase: &str, confirmed: bool) -> Result<()> {
     if !confirmed {
         return Err(Error::user_cancel("confirmation required"));
     }
     if phrase.trim() != CLEAR_CONFIRM_PHRASE {
         return Err(Error::invalid("clear-all confirmation phrase mismatch"));
     }
-    if paths.home.exists() {
-        fs::remove_dir_all(&paths.home)?;
-    }
-    paths.ensure()?;
-    Ok(())
+    let _lock = HomeLock::acquire(store.paths())?;
+    store.clear_all()
 }
 
 pub fn sidecar_report() -> SidecarReport {

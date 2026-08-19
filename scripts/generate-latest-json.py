@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate a local latest.json + .sig workflow notes. Does not publish."""
+"""Generate Tauri updater metadata from signed release artifacts."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote, urlparse
 
 
 def sha256(path: Path) -> str:
@@ -18,33 +19,61 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def artifact_entry(path: Path, base_url: str) -> dict[str, str]:
+    if not path.is_file():
+        raise SystemExit(f"artifact does not exist: {path}")
+    signature_path = Path(f"{path}.sig")
+    if not signature_path.is_file():
+        raise SystemExit(f"signature does not exist: {signature_path}")
+    signature = signature_path.read_text(encoding="utf-8").strip()
+    if not signature:
+        raise SystemExit(f"signature is empty: {signature_path}")
+    return {
+        "url": f"{base_url.rstrip('/')}/{quote(path.name, safe='')}",
+        "signature": signature,
+        "sha256": sha256(path),
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--version", required=True)
     parser.add_argument("--notes", default="")
+    parser.add_argument("--base-url", required=True)
     parser.add_argument("--darwin-aarch64", type=Path)
     parser.add_argument("--windows-x86_64", type=Path)
     parser.add_argument("--out", type=Path, default=Path("latest.json"))
     args = parser.parse_args()
+
+    version = args.version.strip()
+    if not version:
+        raise SystemExit("version must not be empty")
+    parsed_url = urlparse(args.base_url)
+    if parsed_url.scheme != "https" or not parsed_url.netloc:
+        raise SystemExit("base URL must be an absolute HTTPS URL")
+    if parsed_url.query or parsed_url.fragment:
+        raise SystemExit("base URL must not contain a query or fragment")
+
     platforms = {}
     for key, path in (
         ("darwin-aarch64", args.darwin_aarch64),
         ("windows-x86_64", args.windows_x86_64),
     ):
-        if path and path.is_file():
-            sig = path.with_suffix(path.suffix + ".sig")
-            platforms[key] = {
-                "url": f"file://{path.resolve()}",
-                "signature": sig.read_text().strip() if sig.is_file() else "MISSING_SIG",
-                "sha256": sha256(path),
-            }
+        if path is not None:
+            platforms[key] = artifact_entry(path, args.base_url)
+    if not platforms:
+        raise SystemExit("at least one updater artifact is required")
+
     payload = {
-        "version": args.version,
+        "version": version,
         "notes": args.notes,
         "pub_date": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "platforms": platforms,
     }
-    args.out.write_text(json.dumps(payload, indent=2) + "\n")
+    if args.out.exists() and args.out.is_dir():
+        raise SystemExit(f"output path is a directory: {args.out}")
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     print(f"wrote {args.out}")
 
 

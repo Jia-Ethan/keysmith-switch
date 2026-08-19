@@ -95,7 +95,7 @@ export function ToolPage({
   const [editing, setEditing] = useState(false);
   const [creating, setCreating] = useState(false);
   const [draft, setDraft] = useState<PromptDraft>(EMPTY_DRAFT);
-  const [plan, setPlan] = useState<{ kind: "activate" | "deactivate"; result: PlanResult } | null>(
+  const [plan, setPlan] = useState<{ kind: "activate" | "deactivate" | "recover"; result: PlanResult } | null>(
     null,
   );
   const [planError, setPlanError] = useState<string | null>(null);
@@ -445,14 +445,20 @@ export function ToolPage({
   };
 
   const confirmPlan = async () => {
-    if (!plan || !canConfirmPlan(plan.result.envelope) || isRecoveryState(plan.result.envelope)) return;
+    if (
+      !plan ||
+      !canConfirmPlan(plan.result.envelope) ||
+      (plan.kind !== "recover" && isRecoveryState(plan.result.envelope))
+    ) return;
     setBusy(true);
     setPlanError(null);
     try {
       const result =
         plan.kind === "activate"
           ? await api.activate(plan.result.operationId)
-          : await api.deactivate(plan.result.operationId);
+          : plan.kind === "deactivate"
+            ? await api.deactivate(plan.result.operationId)
+            : await api.confirmRecover(plan.result.operationId);
       if (!result.envelope.ok || result.envelope.exitCode !== 0) {
         const reason = toastSafeMessage(result.envelope.error || t("plan.failed"));
         setPlanError(reason);
@@ -475,13 +481,12 @@ export function ToolPage({
   const recover = async () => {
     setBusy(true);
     try {
-      await api.recoverTool({
+      const result = await api.recoverTool({
         tool,
         scope,
         projectDir: requireProject ? projectDir || undefined : undefined,
       });
-      toast.ok(t("operations.recover"));
-      await Promise.all([loadStatus(), loadPrompts(), loadOps()]);
+      setPlan({ kind: "recover", result });
     } catch (err) {
       toast.err(err);
     } finally {
@@ -721,13 +726,28 @@ export function ToolPage({
 
       <ConfirmDialog
         open={Boolean(plan)}
-        title={plan?.kind === "deactivate" ? t("plan.titleDeactivate") : t("plan.titleActivate")}
+        title={
+          plan?.kind === "deactivate"
+            ? t("plan.titleDeactivate")
+            : plan?.kind === "recover"
+              ? t("operations.recover")
+              : t("plan.titleActivate")
+        }
         description={planTargetLabel(t, tool, scope, projectDir, detail?.title)}
-        confirmLabel={plan?.kind === "deactivate" ? t("plan.confirmDeactivate") : t("plan.confirmActivate")}
+        confirmLabel={
+          plan?.kind === "deactivate"
+            ? t("plan.confirmDeactivate")
+            : plan?.kind === "recover"
+              ? t("operations.restoreEntry")
+              : t("plan.confirmActivate")
+        }
         cancelLabel={t("common.cancel")}
         closeLabel={t("common.close")}
         confirmDisabled={
-          !plan || !canConfirmPlan(plan.result.envelope) || isRecoveryState(plan.result.envelope) || busy
+          !plan ||
+          !canConfirmPlan(plan.result.envelope) ||
+          (plan.kind !== "recover" && isRecoveryState(plan.result.envelope)) ||
+          busy
         }
         confirmTestId="plan-confirm"
         onClose={() => {

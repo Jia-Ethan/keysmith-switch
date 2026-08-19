@@ -5,10 +5,16 @@
 //! update is never executed unless `confirmed=true`.
 
 use std::collections::HashMap;
+use std::fs::{File, OpenOptions};
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::{Mutex, OnceLock};
+use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::thread;
+use std::time::{Duration, Instant};
 
+use crate::redact::redact_text;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -83,6 +89,7 @@ pub struct DetectedOfficial {
 #[derive(Debug, Clone, Default)]
 pub struct OfficialHost {
     pub os: Option<String>,
+    pub npm_available: Option<bool>,
     pub detected: HashMap<OfficialProduct, DetectedOfficial>,
     pub dest_override: HashMap<OfficialProduct, String>,
 }
@@ -99,6 +106,9 @@ const ZCODE_WINDOWS_REASON: &str =
     "ZCode is not available on Windows in Keysmith Switch; official desktop support is macOS-only";
 const GROK_NO_FEED: &str =
     "no audited latest feed; local detection only, install is not auto-executed";
+const VERSION_TIMEOUT: Duration = Duration::from_secs(5);
+const NPM_QUERY_TIMEOUT: Duration = Duration::from_secs(10);
+const INSTALL_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 
 fn plan_store() -> &'static Mutex<HashMap<String, OfficialPlan>> {
     static STORE: OnceLock<Mutex<HashMap<String, OfficialPlan>>> = OnceLock::new();
@@ -119,13 +129,20 @@ pub fn plan_official_action_on(
         .clone()
         .unwrap_or_else(current_os)
         .to_ascii_lowercase();
-    let detected = detect_product(product, host, &os);
+    let npm_available = host
+        .npm_available
+        .unwrap_or_else(|| which::which("npm").is_ok());
+    let detected = detect_product(product, host, &os, npm_available);
     let dest = host
         .dest_override
         .get(&product)
         .cloned()
-        .unwrap_or_else(|| default_dest(product, &os, &detected));
-    let (source, argv, mut blockers) = planned_command(product, action, &os);
+        .unwrap_or_else(|| default_dest(product, &os, &detected, npm_available));
+    let (source, mut argv, mut blockers) = planned_command(product, action, &os);
+    if matches!(product, OfficialProduct::Claude | OfficialProduct::Codex) && !npm_available {
+        blockers.push("npm is required to install or update this official CLI".to_string());
+        argv.clear();
+    }
     if product == OfficialProduct::Zcode && os == "windows" {
         blockers.clear();
         blockers.push(ZCODE_WINDOWS_REASON.to_string());
@@ -164,6 +181,20 @@ pub fn plan_official_action_on(
 
 pub fn confirm_official_action(plan_id: &str, confirmed: bool) -> OfficialResult {
     confirm_official_action_exec(plan_id, confirmed, default_exec)
+}
+
+pub fn confirm_official_action_cancellable<F>(
+    plan_id: &str,
+    confirmed: bool,
+    cancelled: Arc<AtomicBool>,
+    mut on_progress: F,
+) -> OfficialResult
+where
+    F: FnMut(u64),
+{
+    confirm_official_action_exec(plan_id, confirmed, |argv| {
+        default_exec_cancellable(argv, &cancelled, &mut on_progress)
+    })
 }
 
 pub fn confirm_official_action_exec<F>(
@@ -210,7 +241,7 @@ where
             error: Some("no audited install command".to_string()),
         };
     }
-    match exec(&plan.argv) {
+    let result = match exec(&plan.argv) {
         Ok(()) => OfficialResult {
             ok: true,
             product: plan.product,
@@ -223,7 +254,11 @@ where
             action: plan.action,
             error: Some(err),
         },
+    };
+    if let Ok(mut store) = plan_store().lock() {
+        store.remove(plan_id);
     }
+    result
 }
 
 fn planned_command(
@@ -266,16 +301,21 @@ fn npm_argv(package: &str, action: OfficialAction) -> Vec<String> {
     }
 }
 
-fn default_dest(product: OfficialProduct, os: &str, detected: &DetectedOfficial) -> String {
+fn default_dest(
+    product: OfficialProduct,
+    os: &str,
+    detected: &DetectedOfficial,
+    npm_available: bool,
+) -> String {
     match product {
         OfficialProduct::Claude => detected
             .executable_path
             .clone()
-            .unwrap_or_else(|| npm_dest(CLAUDE_PACKAGE)),
+            .unwrap_or_else(|| npm_dest(CLAUDE_PACKAGE, npm_available)),
         OfficialProduct::Codex => detected
             .executable_path
             .clone()
-            .unwrap_or_else(|| npm_dest(CODEX_PACKAGE)),
+            .unwrap_or_else(|| npm_dest(CODEX_PACKAGE, npm_available)),
         OfficialProduct::Grok => detected
             .executable_path
             .clone()
@@ -290,7 +330,12 @@ fn default_dest(product: OfficialProduct, os: &str, detected: &DetectedOfficial)
     }
 }
 
-fn detect_product(product: OfficialProduct, host: &OfficialHost, os: &str) -> DetectedOfficial {
+fn detect_product(
+    product: OfficialProduct,
+    host: &OfficialHost,
+    os: &str,
+    npm_available: bool,
+) -> DetectedOfficial {
     if let Some(detected) = host.detected.get(&product) {
         let mut detected = detected.clone();
         if product == OfficialProduct::Grok || product == OfficialProduct::Zcode {
@@ -298,15 +343,15 @@ fn detect_product(product: OfficialProduct, host: &OfficialHost, os: &str) -> De
         }
         return detected;
     }
-    live_detect(product, os)
+    live_detect(product, os, npm_available)
 }
 
-fn live_detect(product: OfficialProduct, os: &str) -> DetectedOfficial {
+fn live_detect(product: OfficialProduct, os: &str, npm_available: bool) -> DetectedOfficial {
     match product {
-        OfficialProduct::Claude => detect_bin("claude", Some(CLAUDE_PACKAGE)),
-        OfficialProduct::Codex => detect_bin("codex", Some(CODEX_PACKAGE)),
+        OfficialProduct::Claude => detect_bin("claude", Some(CLAUDE_PACKAGE), npm_available),
+        OfficialProduct::Codex => detect_bin("codex", Some(CODEX_PACKAGE), npm_available),
         OfficialProduct::Grok => {
-            let mut d = detect_bin("grok", None);
+            let mut d = detect_bin("grok", None, npm_available);
             d.latest_version = None;
             d
         }
@@ -314,14 +359,16 @@ fn live_detect(product: OfficialProduct, os: &str) -> DetectedOfficial {
     }
 }
 
-fn detect_bin(name: &str, npm_package: Option<&str>) -> DetectedOfficial {
+fn detect_bin(name: &str, npm_package: Option<&str>, npm_available: bool) -> DetectedOfficial {
     let executable_path = which::which(name)
         .ok()
         .map(|p| p.to_string_lossy().to_string());
     let current_version = executable_path
         .as_deref()
         .and_then(|p| run_version(Path::new(p)));
-    let latest_version = npm_package.and_then(npm_view_version);
+    let latest_version = npm_package
+        .filter(|_| npm_available)
+        .and_then(|package| npm_view_version(package));
     DetectedOfficial {
         executable_path,
         current_version,
@@ -353,8 +400,10 @@ fn detect_zcode(os: &str) -> DetectedOfficial {
 }
 
 fn run_version(path: &Path) -> Option<String> {
-    let output = Command::new(path).arg("--version").output().ok()?;
-    if !output.status.success() && output.stdout.is_empty() {
+    let mut command = Command::new(path);
+    command.arg("--version");
+    let output = run_command_timeout(&mut command, VERSION_TIMEOUT).ok()?;
+    if !output.success && output.stdout.is_empty() {
         return None;
     }
     let text = String::from_utf8_lossy(&output.stdout);
@@ -367,11 +416,10 @@ fn run_version(path: &Path) -> Option<String> {
 }
 
 fn npm_view_version(package: &str) -> Option<String> {
-    let output = Command::new("npm")
-        .args(["view", package, "version"])
-        .output()
-        .ok()?;
-    if !output.status.success() {
+    let mut command = Command::new("npm");
+    command.args(["view", package, "version"]);
+    let output = run_command_timeout(&mut command, NPM_QUERY_TIMEOUT).ok()?;
+    if !output.success {
         return None;
     }
     let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -382,12 +430,16 @@ fn npm_view_version(package: &str) -> Option<String> {
     }
 }
 
-fn npm_dest(package: &str) -> String {
-    if let Ok(output) = Command::new("npm").args(["root", "-g"]).output() {
-        if output.status.success() {
-            let root = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            if !root.is_empty() {
-                return format!("{root}/{package}");
+fn npm_dest(package: &str, npm_available: bool) -> String {
+    if npm_available {
+        let mut command = Command::new("npm");
+        command.args(["root", "-g"]);
+        if let Ok(output) = run_command_timeout(&mut command, NPM_QUERY_TIMEOUT) {
+            if output.success {
+                let root = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if !root.is_empty() {
+                    return format!("{root}/{package}");
+                }
             }
         }
     }
@@ -419,6 +471,18 @@ fn current_os() -> String {
 }
 
 fn default_exec(argv: &[String]) -> Result<(), String> {
+    let cancelled = AtomicBool::new(false);
+    default_exec_cancellable(argv, &cancelled, &mut |_| {})
+}
+
+fn default_exec_cancellable<F>(
+    argv: &[String],
+    cancelled: &AtomicBool,
+    on_progress: &mut F,
+) -> Result<(), String>
+where
+    F: FnMut(u64),
+{
     if std::env::var("KEYSMITH_SWITCH_OFFICIAL_DRY_RUN")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false)
@@ -428,18 +492,185 @@ fn default_exec(argv: &[String]) -> Result<(), String> {
     if argv.is_empty() {
         return Err("empty argv".to_string());
     }
-    let output = Command::new(&argv[0])
-        .args(&argv[1..])
-        .output()
-        .map_err(|e| e.to_string())?;
-    if output.status.success() {
+    let mut command = Command::new(&argv[0]);
+    command.args(&argv[1..]);
+    let output =
+        run_command_timeout_cancellable(&mut command, INSTALL_TIMEOUT, cancelled, on_progress)?;
+    if output.success {
         Ok(())
     } else {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let line = stderr.lines().next().unwrap_or("command failed");
-        Err(format!(
-            "exit {}: {line}",
-            output.status.code().unwrap_or(-1)
-        ))
+        let detail = first_safe_line(&output.stderr, "command failed");
+        Err(format!("exit {}: {detail}", output.code.unwrap_or(-1)))
+    }
+}
+
+struct CapturedOutput {
+    success: bool,
+    code: Option<i32>,
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+}
+
+fn run_command_timeout(command: &mut Command, timeout: Duration) -> Result<CapturedOutput, String> {
+    let cancelled = AtomicBool::new(false);
+    run_command_timeout_cancellable(command, timeout, &cancelled, &mut |_| {})
+}
+
+fn run_command_timeout_cancellable<F>(
+    command: &mut Command,
+    timeout: Duration,
+    cancelled: &AtomicBool,
+    on_progress: &mut F,
+) -> Result<CapturedOutput, String>
+where
+    F: FnMut(u64),
+{
+    let id = Uuid::new_v4();
+    let stdout_path = std::env::temp_dir().join(format!("keysmith-switch-{id}.stdout"));
+    let stderr_path = std::env::temp_dir().join(format!("keysmith-switch-{id}.stderr"));
+    let mut stdout_file = create_capture(&stdout_path)?;
+    let mut stderr_file = match create_capture(&stderr_path) {
+        Ok(file) => file,
+        Err(error) => {
+            let _ = std::fs::remove_file(&stdout_path);
+            return Err(error);
+        }
+    };
+    let stdout_child = match stdout_file.try_clone() {
+        Ok(file) => file,
+        Err(error) => {
+            let _ = std::fs::remove_file(&stdout_path);
+            let _ = std::fs::remove_file(&stderr_path);
+            return Err(safe_io_error(&error));
+        }
+    };
+    let stderr_child = match stderr_file.try_clone() {
+        Ok(file) => file,
+        Err(error) => {
+            let _ = std::fs::remove_file(&stdout_path);
+            let _ = std::fs::remove_file(&stderr_path);
+            return Err(safe_io_error(&error));
+        }
+    };
+    command
+        .stdout(Stdio::from(stdout_child))
+        .stderr(Stdio::from(stderr_child));
+    let mut child = match command.spawn() {
+        Ok(child) => child,
+        Err(error) => {
+            let _ = std::fs::remove_file(&stdout_path);
+            let _ = std::fs::remove_file(&stderr_path);
+            return Err(safe_io_error(&error));
+        }
+    };
+    let deadline = Instant::now() + timeout;
+    let started = Instant::now();
+    let mut last_progress = u64::MAX;
+
+    let status = loop {
+        let elapsed = started.elapsed().as_secs();
+        if elapsed != last_progress {
+            on_progress(elapsed);
+            last_progress = elapsed;
+        }
+        if cancelled.load(Ordering::SeqCst) {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = std::fs::remove_file(&stdout_path);
+            let _ = std::fs::remove_file(&stderr_path);
+            return Err("cancelled by user".to_string());
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) if Instant::now() < deadline => thread::sleep(Duration::from_millis(50)),
+            Ok(None) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = std::fs::remove_file(&stdout_path);
+                let _ = std::fs::remove_file(&stderr_path);
+                return Err(format!(
+                    "command timed out after {} seconds",
+                    timeout.as_secs()
+                ));
+            }
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                let _ = std::fs::remove_file(&stdout_path);
+                let _ = std::fs::remove_file(&stderr_path);
+                return Err(safe_io_error(&error));
+            }
+        }
+    };
+
+    let stdout = read_capture(&mut stdout_file, &stdout_path)?;
+    let stderr = read_capture(&mut stderr_file, &stderr_path)?;
+    Ok(CapturedOutput {
+        success: status.success(),
+        code: status.code(),
+        stdout,
+        stderr,
+    })
+}
+
+fn create_capture(path: &Path) -> Result<File, String> {
+    OpenOptions::new()
+        .create_new(true)
+        .read(true)
+        .write(true)
+        .open(path)
+        .map_err(|error| safe_io_error(&error))
+}
+
+fn read_capture(file: &mut File, path: &Path) -> Result<Vec<u8>, String> {
+    file.seek(SeekFrom::Start(0))
+        .map_err(|error| safe_io_error(&error))?;
+    let mut bytes = Vec::new();
+    let result = file
+        .read_to_end(&mut bytes)
+        .map(|_| bytes)
+        .map_err(|error| safe_io_error(&error));
+    let _ = std::fs::remove_file(path);
+    result
+}
+
+fn safe_io_error(error: &std::io::Error) -> String {
+    first_safe_line(error.to_string().as_bytes(), "command failed")
+}
+
+fn first_safe_line(bytes: &[u8], fallback: &str) -> String {
+    let text = String::from_utf8_lossy(bytes);
+    let line = text.lines().next().unwrap_or(fallback).trim();
+    let line = if line.is_empty() { fallback } else { line };
+    redact_text(line).chars().take(240).collect()
+}
+
+#[cfg(all(test, unix))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cancellable_command_stops_the_child_process() {
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let signal = Arc::clone(&cancelled);
+        let setter = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(100));
+            signal.store(true, Ordering::SeqCst);
+        });
+        let mut command = Command::new("sh");
+        command.args(["-c", "sleep 5"]);
+        let started = Instant::now();
+        let error = match run_command_timeout_cancellable(
+            &mut command,
+            Duration::from_secs(10),
+            &cancelled,
+            &mut |_| {},
+        ) {
+            Ok(_) => panic!("command was not cancelled"),
+            Err(error) => error,
+        };
+        setter.join().unwrap();
+        assert!(error.contains("cancelled"), "{error}");
+        assert!(started.elapsed() < Duration::from_secs(2));
     }
 }

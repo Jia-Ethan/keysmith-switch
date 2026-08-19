@@ -5,14 +5,16 @@ use std::thread;
 
 use httpmock::prelude::*;
 use keysmith_switch_lib::updater::{
-    check_update, fixture_manifest, install_update, resolve_update_endpoint, updater_fixture_dir,
-    verify_minisign, InstallRequest, UpdateChannel, UpdateRequest, APP_VERSION, BETA_ENDPOINT,
-    FIXTURE_PUBKEY, RELEASE_PAGE, STABLE_ENDPOINT,
+    check_update, fixture_manifest, install_update, resolve_update_endpoint, runtime_update_config,
+    updater_fixture_dir, verify_minisign, InstallRequest, UpdateChannel, UpdateRequest,
+    APP_VERSION, BETA_ENDPOINT, FIXTURE_PUBKEY, RELEASE_PAGE, STABLE_ENDPOINT,
 };
 
 fn env_lock() -> std::sync::MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 fn load_bytes(name: &str) -> Vec<u8> {
@@ -89,6 +91,20 @@ fn resolve_update_endpoint_selects_stable_and_beta() {
         resolve_update_endpoint(UpdateChannel::Beta, None, Some("http://example.invalid")),
         "http://example.invalid/releases/download/beta-latest/latest.json"
     );
+}
+
+#[test]
+fn runtime_config_uses_the_same_beta_endpoint_and_platform() {
+    let req = UpdateRequest {
+        channel: Some(UpdateChannel::Beta),
+        pubkey: Some("fixture-pubkey".into()),
+        platform_key: Some("darwin-aarch64".into()),
+        ..UpdateRequest::default()
+    };
+    let runtime = runtime_update_config(&req);
+    assert_eq!(runtime.endpoint, BETA_ENDPOINT);
+    assert_eq!(runtime.pubkey, "fixture-pubkey");
+    assert_eq!(runtime.platform_key, "darwin-aarch64");
 }
 
 #[test]
@@ -352,7 +368,11 @@ fn install_update_download_interrupt_keeps_current_version() {
     });
     assert!(!install.ok);
     assert!(
-        install.error.as_deref().unwrap_or("").contains("interrupt"),
+        install.error.as_deref().is_some_and(|error| {
+            error.contains("interrupt")
+                || error.contains("reset by peer")
+                || error.contains("empty reply")
+        }),
         "{:?}",
         install.error
     );

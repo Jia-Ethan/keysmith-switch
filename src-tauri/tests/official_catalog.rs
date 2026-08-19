@@ -11,9 +11,36 @@ fn host_with(os: &str, product: OfficialProduct, detected: DetectedOfficial) -> 
     detected_map.insert(product, detected);
     OfficialHost {
         os: Some(os.to_string()),
+        npm_available: Some(true),
         detected: detected_map,
         dest_override: HashMap::new(),
     }
+}
+
+#[test]
+fn plan_official_npm_product_is_blocked_when_npm_is_missing() {
+    let mut host = host_with(
+        "macos",
+        OfficialProduct::Claude,
+        DetectedOfficial::default(),
+    );
+    host.npm_available = Some(false);
+
+    let plan = plan_official_action_on(OfficialProduct::Claude, OfficialAction::Install, &host);
+    assert!(plan.argv.is_empty(), "{:?}", plan.argv);
+    assert!(
+        plan.blockers.iter().any(|blocker| blocker.contains("npm")),
+        "{:?}",
+        plan.blockers
+    );
+
+    let ran = Cell::new(false);
+    let result = confirm_official_action_exec(&plan.plan_id, true, |_| {
+        ran.set(true);
+        Ok(())
+    });
+    assert!(!result.ok);
+    assert!(!ran.get());
 }
 
 #[test]

@@ -17,7 +17,6 @@ pub const VERSION_TIMEOUT: Duration = Duration::from_secs(15);
 pub const MAX_OUTPUT_BYTES: usize = 2 * 1024 * 1024;
 
 const ENV_SIDECAR_DIR: &str = "KEYSMITH_SWITCH_SIDECAR_DIR";
-const ENV_FORCE_PYTHON: &str = "KEYSMITH_SWITCH_FORCE_PYTHON";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AdapterCliKind {
@@ -88,22 +87,28 @@ pub fn resolve_python() -> Result<PathBuf> {
 }
 
 pub fn resolve_cli(tool: ToolKind, opts: &AdapterOptions) -> Result<ResolvedCli> {
-    if let Some(path) = &opts.cli_override {
-        return resolve_override(path);
-    }
     let env_key = tool.env_cli_key();
-    if let Some(path) = opts.extra_env.get(env_key) {
-        return resolve_override(Path::new(path));
-    }
-    if let Ok(path) = std::env::var(env_key) {
-        if !path.trim().is_empty() {
-            return resolve_override(Path::new(&path));
+    if !packaged_app() {
+        if let Some(path) = &opts.cli_override {
+            return resolve_override(path);
+        }
+        if let Some(path) = opts.extra_env.get(env_key) {
+            return resolve_override(Path::new(path));
+        }
+        if let Ok(path) = std::env::var(env_key) {
+            if !path.trim().is_empty() {
+                return resolve_override(Path::new(&path));
+            }
         }
     }
-    if !force_python() {
-        if let Some(bin) = find_sidecar(tool) {
-            return Ok(frozen(bin));
-        }
+    if let Some(bin) = find_sidecar(tool) {
+        return Ok(frozen(bin));
+    }
+    if packaged_app() {
+        return Err(Error::cli_missing(format!(
+            "bundled {} sidecar is missing; reinstall Keysmith Switch",
+            tool.as_str()
+        )));
     }
     if let Some(script) = find_vendored_script(tool) {
         return python_script(script);
@@ -121,11 +126,18 @@ pub fn resolve_cli(tool: ToolKind, opts: &AdapterOptions) -> Result<ResolvedCli>
     )))
 }
 
-fn force_python() -> bool {
-    matches!(
-        std::env::var(ENV_FORCE_PYTHON).ok().as_deref(),
-        Some("1") | Some("true") | Some("TRUE")
-    )
+fn packaged_app() -> bool {
+    if !cfg!(debug_assertions) {
+        return true;
+    }
+    std::env::current_exe()
+        .ok()
+        .map(|path| {
+            let text = path.to_string_lossy();
+            text.contains(".app/Contents/MacOS")
+                || text.to_ascii_lowercase().contains("\\program files\\")
+        })
+        .unwrap_or(false)
 }
 
 fn resolve_override(path: &Path) -> Result<ResolvedCli> {

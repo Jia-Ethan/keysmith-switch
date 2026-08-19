@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import * as api from "../api";
 import { EmptyState } from "../components/EmptyState";
 import { ErrorBanner } from "../components/ErrorBanner";
+import { useUpdate } from "../components/UpdateProvider";
 import { IconAlert, IconDownload, IconExternal, IconRefresh } from "../components/icons";
 import {
   Button,
@@ -18,7 +19,7 @@ import {
 import type { ToastApi } from "../hooks/useToasts";
 import { formatArgv, formatBytes } from "../lib/format";
 import { toastSafeMessage } from "../lib/redact";
-import { openExternal } from "../lib/runtime";
+import { isTauriRuntime, openExternal } from "../lib/runtime";
 import type {
   AboutInfo,
   OfficialAction,
@@ -26,34 +27,33 @@ import type {
   OfficialProduct,
   OfficialProductId,
   UpdateChannel,
-  UpdateCheck,
 } from "../types";
 import { PUBLIC_RELEASE_PAGE } from "../types";
-
-export const APP_UPDATE_AUTO_CHECK_DELAY_MS = 1800;
 
 export function AboutPage({
   channel,
   toast,
-  autoCheckDelayMs = null,
 }: {
   channel: UpdateChannel;
   toast?: ToastApi;
-  autoCheckDelayMs?: number | null;
 }) {
   const { t } = useTranslation();
+  const {
+    update,
+    checking,
+    installing,
+    progress,
+    error: installError,
+    check: checkAppUpdate,
+    install: installAppUpdate,
+  } = useUpdate();
   const [about, setAbout] = useState<AboutInfo | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [update, setUpdate] = useState<UpdateCheck | null>(null);
-  const [checking, setChecking] = useState(false);
-  const [installing, setInstalling] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
-  const [installError, setInstallError] = useState<string | null>(null);
   const [officialPlan, setOfficialPlan] = useState<OfficialPlan | null>(null);
   const [officialConfirmed, setOfficialConfirmed] = useState(false);
   const [officialBusy, setOfficialBusy] = useState(false);
-  const toastRef = useRef(toast);
-  toastRef.current = toast;
+  const [officialElapsed, setOfficialElapsed] = useState(0);
 
   const loadAbout = useCallback(async () => {
     try {
@@ -66,58 +66,50 @@ export function AboutPage({
   }, [t]);
 
   const checkUpdate = useCallback(async () => {
-    setChecking(true);
     setConfirmed(false);
-    setInstallError(null);
-    try {
-      const result = await api.checkAppUpdate(channel);
-      setUpdate(result);
-      if (result.error) setInstallError(result.error);
-    } catch (err) {
-      const message = toastSafeMessage(err) || t("about.updateFailed");
-      setUpdate(null);
-      setInstallError(message);
-      toastRef.current?.err(message);
-    } finally {
-      setChecking(false);
-    }
-  }, [channel, t]);
+    await checkAppUpdate();
+  }, [checkAppUpdate]);
 
   useEffect(() => {
     void loadAbout();
   }, [loadAbout]);
 
   useEffect(() => {
-    if (autoCheckDelayMs == null) return;
-    const timer = window.setTimeout(() => {
-      void checkUpdate();
-    }, autoCheckDelayMs);
-    return () => window.clearTimeout(timer);
-  }, [autoCheckDelayMs, checkUpdate]);
+    if (!isTauriRuntime()) return;
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    void import("@tauri-apps/api/event").then(({ listen }) => {
+      if (cancelled) return;
+      void listen<{ elapsedSeconds?: number }>("official-action-progress", (event) => {
+        setOfficialElapsed(Math.max(0, event.payload.elapsedSeconds ?? 0));
+      }).then((next) => {
+        if (cancelled) next();
+        else unlisten = next;
+      });
+    }).catch(() => undefined);
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
 
   const canInstall = Boolean(update?.available) && confirmed && !installing && !checking;
   const releasePage = update?.releasePage || PUBLIC_RELEASE_PAGE;
-  const progress = installing ? 100 : update?.progress;
 
   const install = async () => {
     if (!canInstall) return;
-    setInstalling(true);
-    setInstallError(null);
     try {
-      const result = await api.installAppUpdate();
+      const result = await installAppUpdate();
+      if (!result) return;
       if (!result.ok) {
         const message = result.error || t("about.updateFailed");
-        setInstallError(message);
         toast?.err(message);
       } else {
         toast?.ok(t("about.restartRequired"));
       }
     } catch (err) {
       const message = toastSafeMessage(err) || t("about.updateFailed");
-      setInstallError(message);
       toast?.err(message);
-    } finally {
-      setInstalling(false);
     }
   };
 
@@ -137,6 +129,7 @@ export function AboutPage({
   const runOfficial = async () => {
     if (!officialPlan || !officialConfirmed) return;
     setOfficialBusy(true);
+    setOfficialElapsed(0);
     try {
       const result = await api.confirmOfficialAction(officialPlan.planId);
       if (!result.ok) toast?.err(result.error || t("about.officialBlocked"));
@@ -148,6 +141,15 @@ export function AboutPage({
       toast?.err(err);
     } finally {
       setOfficialBusy(false);
+      setOfficialElapsed(0);
+    }
+  };
+
+  const cancelOfficial = async () => {
+    try {
+      await api.cancelOfficialAction();
+    } catch (err) {
+      toast?.err(err);
     }
   };
 
@@ -346,24 +348,38 @@ export function AboutPage({
                   </ul>
                 </div>
               ) : (
-                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
-                  <Checkbox
-                    checked={officialConfirmed}
-                    data-testid="confirm-official"
-                    label={t("about.confirmOfficial")}
-                    onChange={(event) => setOfficialConfirmed(event.target.checked)}
-                  />
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    className="ml-auto"
-                    data-testid="run-official"
-                    disabled={!officialConfirmed || officialBusy}
-                    onClick={() => void runOfficial()}
-                  >
-                    {t("about.runOfficial")}
-                  </Button>
-                </div>
+                <>
+                  <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
+                    <Checkbox
+                      checked={officialConfirmed}
+                      data-testid="confirm-official"
+                      label={t("about.confirmOfficial")}
+                      disabled={officialBusy}
+                      onChange={(event) => setOfficialConfirmed(event.target.checked)}
+                    />
+                    {officialBusy ? (
+                      <Button size="sm" className="ml-auto" onClick={() => void cancelOfficial()}>
+                        {t("about.cancelOfficial")}
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        className="ml-auto"
+                        data-testid="run-official"
+                        disabled={!officialConfirmed}
+                        onClick={() => void runOfficial()}
+                      >
+                        {t("about.runOfficial")}
+                      </Button>
+                    )}
+                  </div>
+                  {officialBusy ? (
+                    <p className="mt-2 text-muted-foreground">
+                      {t("about.officialRunning", { seconds: officialElapsed })}
+                    </p>
+                  ) : null}
+                </>
               )}
             </div>
           ) : null}

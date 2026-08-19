@@ -28,6 +28,7 @@ import type {
   ScopeId,
   Settings,
   SettingsPatch,
+  ToolId,
   ToolInfo,
   UpdateChannel,
 } from "../types";
@@ -41,12 +42,14 @@ export function SettingsPage({
   settings,
   loadError,
   onSave,
+  onDataChanged,
   toast,
   initialTab = "general",
 }: {
   settings: Settings;
   loadError: string | null;
   onSave: (patch: SettingsPatch) => Promise<Settings>;
+  onDataChanged?: () => Promise<void> | void;
   toast: ToastApi;
   initialTab?: string;
 }) {
@@ -60,6 +63,12 @@ export function SettingsPage({
   const [clearPlan, setClearPlan] = useState<ClearPlan | null>(null);
   const [clearPhrase, setClearPhrase] = useState("");
   const [clearConfirm, setClearConfirm] = useState(false);
+  const [importTool, setImportTool] = useState<ToolId>("claude");
+  const [pendingRestore, setPendingRestore] = useState<{
+    path: string;
+    source: "backup" | "zip-restore" | "zip-import";
+    label: string;
+  } | null>(null);
 
   useEffect(() => {
     if (TABS.includes(initialTab as TabId)) setTab(initialTab as TabId);
@@ -76,6 +85,17 @@ export function SettingsPage({
     try {
       await onSave(next);
       toast.ok(t("settings.saved"));
+    } catch (err) {
+      toast.err(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runDataAction = async (action: () => Promise<void>) => {
+    setBusy(true);
+    try {
+      await action();
     } catch (err) {
       toast.err(err);
     } finally {
@@ -220,49 +240,93 @@ export function SettingsPage({
         {tab === "data" ? (
           <div className="flex flex-col gap-3 p-4">
             <div className="flex flex-wrap gap-2">
+              <Select
+                aria-label={t("data.importTarget")}
+                value={importTool}
+                disabled={busy}
+                onChange={(event) => setImportTool(event.target.value as ToolId)}
+              >
+                {TOOL_IDS.map((tool) => (
+                  <option key={tool} value={tool}>
+                    {t(`nav.${tool}`)}
+                  </option>
+                ))}
+              </Select>
               <Button
+                disabled={busy}
                 onClick={() => {
                   void (async () => {
-                    const files = await pickFiles([{ name: "Markdown", extensions: ["md"] }]);
-                    if (!files.length) return;
-                    const result = await api.importMarkdownFiles("claude", files);
-                    toast.ok(`${result.imported}`);
+                    try {
+                      const files = await pickFiles([{ name: "Markdown", extensions: ["md"] }]);
+                      if (!files.length) return;
+                      await runDataAction(async () => {
+                        const result = await api.importMarkdownFiles(importTool, files);
+                        if (result.errors.length) toast.err(result.errors.join("; "));
+                        if (result.imported > 0) {
+                          toast.ok(t("data.importedCount", { count: result.imported }));
+                          await onDataChanged?.();
+                        } else if (result.errors.length === 0) {
+                          toast.info(t("data.nothingImported"));
+                        }
+                      });
+                    } catch (err) {
+                      toast.err(err);
+                    }
                   })();
                 }}
               >
                 {t("data.importMarkdown")}
               </Button>
               <Button
+                disabled={busy}
                 onClick={() => {
                   void (async () => {
-                    const files = await pickFiles([{ name: "ZIP", extensions: ["zip"] }]);
-                    if (!files[0]) return;
-                    const result = await api.importZipArchive(files[0]);
-                    toast.ok(`${result.imported}`);
+                    try {
+                      const files = await pickFiles([{ name: "ZIP", extensions: ["zip"] }]);
+                      if (!files[0]) return;
+                      await runDataAction(async () => {
+                        const inspection = await api.inspectZipArchive(files[0]);
+                        setPendingRestore({
+                          path: files[0],
+                          source: inspection.mode === "restore" ? "zip-restore" : "zip-import",
+                          label: files[0].split(/[\\/]/).pop() || files[0],
+                        });
+                      });
+                    } catch (err) {
+                      toast.err(err);
+                    }
                   })();
                 }}
               >
                 {t("data.importZip")}
               </Button>
               <Button
+                disabled={busy}
                 onClick={() => {
                   void (async () => {
-                    const path = await pickSavePath("keysmith-switch-export.zip");
-                    if (!path) return;
-                    await api.exportZipArchive(path);
-                    toast.ok(t("data.exported"));
+                    try {
+                      const path = await pickSavePath("keysmith-switch-export.zip");
+                      if (!path) return;
+                      await runDataAction(async () => {
+                        await api.exportZipArchive(path);
+                        toast.ok(t("data.exported"));
+                      });
+                    } catch (err) {
+                      toast.err(err);
+                    }
                   })();
                 }}
               >
                 {t("data.exportZip")}
               </Button>
               <Button
+                disabled={busy}
                 onClick={() => {
-                  void (async () => {
+                  void runDataAction(async () => {
                     const entry = await api.createBackup();
                     setBackups((current) => [entry, ...current]);
                     toast.ok(t("data.backupCreated"));
-                  })();
+                  });
                 }}
               >
                 {t("data.backupNow")}
@@ -280,8 +344,9 @@ export function SettingsPage({
                   <span className="min-w-0 flex-1 truncate">{item.id}</span>
                   <Button
                     size="sm"
+                    disabled={busy}
                     onClick={() => {
-                      void api.restoreBackup(item.path).then((result) => toast.ok(`${result.imported}`));
+                      setPendingRestore({ path: item.path, source: "backup", label: item.id });
                     }}
                   >
                     {t("data.restore")}
@@ -293,7 +358,8 @@ export function SettingsPage({
               variant="danger"
               disabled={busy}
               onClick={() => {
-                void api.planClearAllData().then((plan) => {
+                void runDataAction(async () => {
+                  const plan = await api.planClearAllData();
                   setClearPlan(plan);
                   setClearPhrase("");
                   setClearConfirm(false);
@@ -349,7 +415,7 @@ export function SettingsPage({
           />
         ) : null}
 
-        {tab === "about" ? <AboutPage channel={settings.updateChannel} toast={toast} autoCheckDelayMs={null} /> : null}
+        {tab === "about" ? <AboutPage channel={settings.updateChannel} toast={toast} /> : null}
       </div>
 
       <ConfirmDialog
@@ -364,11 +430,16 @@ export function SettingsPage({
         onClose={() => setClearPlan(null)}
         onConfirm={() => {
           if (!clearPlan) return;
-          void (async () => {
+          void runDataAction(async () => {
             await api.clearAllData(clearPhrase);
             toast.ok(t("data.cleared"));
             setClearPlan(null);
-          })();
+            try {
+              await onDataChanged?.();
+            } catch (err) {
+              toast.err(err);
+            }
+          });
         }}
       >
         {clearPlan ? (
@@ -388,6 +459,46 @@ export function SettingsPage({
               checked={clearConfirm}
               onChange={(event) => setClearConfirm(event.target.checked)}
             />
+          </div>
+        ) : null}
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={Boolean(pendingRestore)}
+        title={pendingRestore?.source === "zip-import" ? t("data.importLegacyTitle") : t("data.restoreTitle")}
+        description={pendingRestore?.source === "zip-import" ? t("data.importLegacyHint") : t("data.restoreHint")}
+        danger={pendingRestore?.source !== "zip-import"}
+        confirmLabel={pendingRestore?.source === "zip-import" ? t("data.importZip") : t("data.restore")}
+        cancelLabel={t("common.cancel")}
+        confirmDisabled={busy}
+        confirmTestId="restore-backup-confirm"
+        onClose={() => {
+          if (!busy) setPendingRestore(null);
+        }}
+        onConfirm={() => {
+          if (!pendingRestore) return;
+          const request = pendingRestore;
+          void runDataAction(async () => {
+            const result = request.source === "backup"
+              ? await api.restoreBackup(request.path)
+              : await api.importZipArchive(request.path);
+            if (result.errors.length) toast.err(result.errors.join("; "));
+            toast.ok(t("data.archiveAppliedCount", { count: result.imported }));
+            setPendingRestore(null);
+            try {
+              await onDataChanged?.();
+            } catch (err) {
+              toast.err(err);
+            }
+          });
+        }}
+      >
+        {pendingRestore ? (
+          <div className="space-y-2 text-sm">
+            <p className="font-medium text-foreground">{pendingRestore.label}</p>
+            <p className="text-muted-foreground">
+              {pendingRestore.source === "zip-import" ? t("data.importLegacyScope") : t("data.restoreScope")}
+            </p>
           </div>
         ) : null}
       </ConfirmDialog>

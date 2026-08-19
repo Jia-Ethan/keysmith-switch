@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AppShell, type AppPage } from "./components/AppShell";
 import { DataRecoveryDialog } from "./components/DataRecoveryDialog";
@@ -9,12 +9,12 @@ import { UpdateProvider } from "./components/UpdateProvider";
 import { useSettings } from "./hooks/useSettings";
 import { useTheme } from "./hooks/useTheme";
 import { useToasts } from "./hooks/useToasts";
+import { isTauriRuntime } from "./lib/runtime";
 import { AdvancedPage } from "./pages/AdvancedPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { ToolPage } from "./pages/ToolPage";
 import * as api from "./api";
 import type { FirstRunReport } from "./types";
-import { useEffect } from "react";
 
 export function App() {
   const { t } = useTranslation();
@@ -40,6 +40,41 @@ export function App() {
       .then(setStartup)
       .catch(() => setStartup(null));
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let unlistenClose: (() => void) | undefined;
+    let unlistenQuit: (() => void) | undefined;
+
+    if (isTauriRuntime()) {
+      void import("@tauri-apps/api/event").then(({ listen }) => {
+        if (cancelled) return;
+        void listen("window-close-requested", () => {
+          if (dirty && !window.confirm(t("unsaved.leave"))) {
+            void api.showMainWindow();
+            return;
+          }
+          void api.hideToTray();
+        }).then((unlisten) => {
+          if (cancelled) unlisten();
+          else unlistenClose = unlisten;
+        });
+        void listen("app-quit-requested", () => {
+          if (dirty && !window.confirm(t("unsaved.leave"))) return;
+          void api.quitApp();
+        }).then((unlisten) => {
+          if (cancelled) unlisten();
+          else unlistenQuit = unlisten;
+        });
+      });
+    }
+
+    return () => {
+      cancelled = true;
+      unlistenClose?.();
+      unlistenQuit?.();
+    };
+  }, [dirty, t]);
 
   const rememberProject = async (dir: string) => {
     const dirs = [dir, ...settingsState.settings.recentProjectDirs.filter((item) => item !== dir)].slice(
@@ -91,6 +126,10 @@ export function App() {
             settings={settingsState.settings}
             loadError={settingsState.error}
             onSave={settingsState.save}
+            onDataChanged={async () => {
+              await settingsState.reload();
+              setLibraryEpoch((value) => value + 1);
+            }}
             toast={toast}
             initialTab={visiblePage.tab}
           />
@@ -99,22 +138,31 @@ export function App() {
       </AppShell>
       <ToastHost toasts={toast.toasts} dismiss={toast.dismiss} />
       <FirstRunDialog
-        open={Boolean(startup?.firstRun && startup.candidates.length)}
+        open={Boolean(startup?.firstRun)}
         candidates={startup?.candidates ?? []}
+        sidecar={startup?.sidecar ?? null}
         onSkip={() => {
-          void api.markFirstRunDone();
-          setStartup((current) =>
-            current ? { ...current, firstRun: false, candidates: [] } : current,
-          );
+          void api
+            .markFirstRunDone()
+            .then(() => {
+              setStartup((current) =>
+                current ? { ...current, firstRun: false, candidates: [] } : current,
+              );
+            })
+            .catch(toast.err);
         }}
         onImport={(paths) => {
-          void api.importExistingPrompts(paths).then(() => {
-            void api.markFirstRunDone();
-            setLibraryEpoch((value) => value + 1);
-            setStartup((current) =>
-              current ? { ...current, firstRun: false, candidates: [] } : current,
-            );
-          });
+          void api
+            .importExistingPrompts(paths)
+            .then(async (result) => {
+              if (result.errors.length) toast.err(result.errors.join("; "));
+              await api.markFirstRunDone();
+              setLibraryEpoch((value) => value + 1);
+              setStartup((current) =>
+                current ? { ...current, firstRun: false, candidates: [] } : current,
+              );
+            })
+            .catch(toast.err);
         }}
       />
       <DataRecoveryDialog

@@ -161,6 +161,10 @@ export function recoverTool(input: {
   return call("recover_tool", input);
 }
 
+export function confirmRecover(operationId: string): Promise<PlanResult> {
+  return call("confirm_recover", { operationId });
+}
+
 export function doctor(tool: ToolId): Promise<Envelope> {
   return call("doctor", { tool });
 }
@@ -189,8 +193,8 @@ export function checkAppUpdate(channel?: UpdateChannel): Promise<UpdateCheck> {
   return call("check_app_update", channel ? { channel } : {});
 }
 
-export function installAppUpdate(): Promise<UpdateInstall> {
-  return call("install_app_update", { confirmed: true });
+export function installAppUpdate(channel?: UpdateChannel): Promise<UpdateInstall> {
+  return call("install_app_update", { confirmed: true, ...(channel ? { channel } : {}) });
 }
 
 export function planOfficialAction(
@@ -202,6 +206,10 @@ export function planOfficialAction(
 
 export function confirmOfficialAction(planId: string): Promise<OfficialResult> {
   return call("confirm_official_action", { planId, confirmed: true });
+}
+
+export function cancelOfficialAction(): Promise<{ ok: boolean; cancelled: boolean }> {
+  return call("cancel_official_action", {});
 }
 
 export function listAdvancedTools(): Promise<{
@@ -225,6 +233,10 @@ export function importExistingPrompts(paths: string[]): Promise<ImportResult> {
 
 export function importMarkdownFiles(tool: ToolId, paths: string[]): Promise<ImportResult> {
   return call("import_markdown_files", { tool, paths });
+}
+
+export function inspectZipArchive(path: string): Promise<{ mode: "restore" | "import" }> {
+  return call("inspect_zip_archive", { path });
 }
 
 export function importZipArchive(path: string): Promise<ImportResult> {
