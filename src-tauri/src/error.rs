@@ -136,6 +136,12 @@ impl From<serde_json::Error> for Error {
     }
 }
 
+impl From<zip::result::ZipError> for Error {
+    fn from(error: zip::result::ZipError) -> Self {
+        Self::Invalid(sanitize(&error.to_string()))
+    }
+}
+
 impl serde::Serialize for Error {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where

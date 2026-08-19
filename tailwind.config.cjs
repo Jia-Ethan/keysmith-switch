@@ -1,20 +1,34 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
+  darkMode: ["selector", ".dark"],
   theme: {
     extend: {
       colors: {
-        ink: {
-          50: "#f4f6f8",
-          100: "#e6eaef",
-          200: "#c5ced8",
-          700: "#2c3640",
-          800: "#1c242c",
-          900: "#12181e",
+        background: "hsl(var(--background))",
+        foreground: "hsl(var(--foreground))",
+        card: {
+          DEFAULT: "hsl(var(--card))",
+          foreground: "hsl(var(--card-foreground))",
+        },
+        muted: {
+          DEFAULT: "hsl(var(--muted))",
+          foreground: "hsl(var(--muted-foreground))",
+        },
+        primary: {
+          DEFAULT: "hsl(var(--primary))",
+          foreground: "hsl(var(--primary-foreground))",
         },
         accent: {
-          500: "#0f766e",
-          600: "#0d9488",
+          DEFAULT: "hsl(var(--accent))",
+          foreground: "hsl(var(--accent-foreground))",
+        },
+        border: "hsl(var(--border))",
+        input: "hsl(var(--input))",
+        ring: "hsl(var(--ring))",
+        destructive: {
+          DEFAULT: "hsl(var(--destructive))",
+          foreground: "hsl(var(--destructive-foreground))",
         },
       },
       fontFamily: {

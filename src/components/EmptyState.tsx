@@ -1,19 +1,26 @@
+import type { ReactNode } from "react";
+
 export function EmptyState({
   title,
   hint,
-  testId = "prompt-list-empty",
+  action,
+  testId = "empty-state",
 }: {
   title: string;
   hint?: string;
+  action?: ReactNode;
   testId?: string;
 }) {
   return (
     <div
       data-testid={testId}
-      className="rounded border border-dashed border-ink-200/15 px-3 py-8 text-center text-ink-200"
+      className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-muted/30 px-4 py-10 text-center"
     >
-      <p className="text-[13px] font-medium text-ink-50">{title}</p>
-      {hint ? <p className="mt-1 text-[12px]">{hint}</p> : null}
+      <p className="text-[13px] font-medium text-foreground">{title}</p>
+      {hint ? (
+        <p className="mt-1 max-w-[38ch] text-[12px] leading-snug text-muted-foreground">{hint}</p>
+      ) : null}
+      {action ? <div className="mt-3">{action}</div> : null}
     </div>
   );
 }

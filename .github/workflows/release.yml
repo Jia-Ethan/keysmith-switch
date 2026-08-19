@@ -1,0 +1,56 @@
+# Release template. This pass does not create GitHub Releases, Secrets,
+# production keys, or public repositories. Artifacts stay local.
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: stable or beta
+        default: stable
+
+jobs:
+  macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: npm ci
+      - run: python3 scripts/build-sidecars.py
+      - run: npx tauri build --target aarch64-apple-darwin --config src-tauri/tauri.macos.conf.json
+      - name: Verify DMG
+        run: |
+          dmg=$(ls src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg | head -1)
+          test -f "$dmg"
+          shasum -a 256 "$dmg"
+          python3 scripts/generate-latest-json.py --version 0.1.0 --darwin-aarch64 "$dmg" --out /tmp/latest.json
+      - name: Preview unsigned note
+        run: echo "Preview unsigned. Not Developer ID, not notarized."
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: npm ci
+      - run: python scripts/build-sidecars.py
+      - run: npx tauri build --target x86_64-pc-windows-msvc --config src-tauri/tauri.windows.conf.json
+      - name: Verify NSIS
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe | Select-Object -First 1
+          if (-not $setup) { throw "Setup.exe missing" }
+          Get-FileHash $setup.FullName -Algorithm SHA256
+          Write-Host "Preview unsigned. Not Authenticode."

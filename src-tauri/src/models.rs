@@ -420,6 +420,12 @@ pub struct Settings {
     pub default_claude_scope: Scope,
     pub recent_project_dirs: Vec<String>,
     pub updater_endpoint_override: Option<String>,
+    pub close_to_tray: bool,
+    pub auto_launch: bool,
+    pub silent_start: bool,
+    pub auto_check_updates: bool,
+    pub theme: String,
+    pub first_run_completed: bool,
 }
 
 impl Default for Settings {
@@ -431,6 +437,12 @@ impl Default for Settings {
             default_claude_scope: Scope::User,
             recent_project_dirs: Vec::new(),
             updater_endpoint_override: None,
+            close_to_tray: true,
+            auto_launch: false,
+            silent_start: false,
+            auto_check_updates: true,
+            theme: "system".to_string(),
+            first_run_completed: false,
         }
     }
 }
@@ -444,6 +456,12 @@ pub struct SettingsPatch {
     pub default_claude_scope: Option<Scope>,
     pub recent_project_dirs: Option<Vec<String>>,
     pub updater_endpoint_override: Option<Option<String>>,
+    pub close_to_tray: Option<bool>,
+    pub auto_launch: Option<bool>,
+    pub silent_start: Option<bool>,
+    pub auto_check_updates: Option<bool>,
+    pub theme: Option<String>,
+    pub first_run_completed: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

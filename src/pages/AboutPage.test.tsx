@@ -46,12 +46,13 @@ describe("AboutPage update button", () => {
   });
 
   it("keeps 更新并重启 disabled until update is available and confirmed", async () => {
-    render(<AboutPage channel="stable" autoCheckDelayMs={0} />);
+    render(<AboutPage channel="stable" />);
 
     const button = screen.getByTestId("install-update");
     expect(button).toBeDisabled();
     expect(installAppUpdate).not.toHaveBeenCalled();
 
+    fireEvent.click(screen.getByTestId("check-update"));
     await waitFor(() => expect(checkAppUpdate).toHaveBeenCalled());
     expect(button).toBeDisabled();
     expect(installAppUpdate).not.toHaveBeenCalled();
@@ -64,9 +65,9 @@ describe("AboutPage update button", () => {
   });
 
   it("never silently installs on mount", async () => {
-    render(<AboutPage channel="stable" autoCheckDelayMs={0} />);
-    await waitFor(() => expect(checkAppUpdate).toHaveBeenCalled());
+    render(<AboutPage channel="stable" />);
     await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(checkAppUpdate).not.toHaveBeenCalled();
     expect(installAppUpdate).not.toHaveBeenCalled();
     expect(screen.getByTestId("install-update")).toBeDisabled();
   });

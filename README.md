@@ -2,17 +2,23 @@
 
 本地提示词管理桌面工具，面向 Claude Code、Codex、Grok Build 与 ZCode。
 
-所有真实配置写入都经过四个已审计的 Keysmith CLI，GUI 不直接改写 `CLAUDE.md`、`~/.codex`、`~/.grok` 或 `~/.zcode-keysmith`。
+**当前发行形态：unsigned Preview。** 安装时 macOS / Windows 系统安全警告是预期行为，产物不得称为已签名正式版。
+
+所有真实配置写入都经过四个随应用交付的 Keysmith sidecar（frozen，不需要用户安装 Python）。GUI 不直接改写 `CLAUDE.md`、`~/.codex`、`~/.grok` 或 `~/.zcode-keysmith`。
+
+界面与发布结构参照 MIT 开源项目 [CC Switch](https://github.com/farion1231/cc-switch) 的桌面产品完成度，业务模型仍是 Keysmith Switch。映射与版权见 [`docs/CC_SWITCH_MAPPING.md`](docs/CC_SWITCH_MAPPING.md)。
 
 ## 状态
 
-当前版本 `0.1.0`。源码仓库保持私有。应用更新 metadata 计划放在独立公开仓库 `Jia-Ethan/keysmith-switch-releases`（本次实现不创建该仓库）。
+当前版本 `0.1.0` Preview。源码仓库保持私有。应用更新 metadata 计划放在独立公开仓库 `Jia-Ethan/keysmith-switch-releases`（**尚未创建**）。
 
-详见 [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md)。
+macOS Apple Silicon 本机已打出品牌 DMG（未公证）。Windows NSIS 需在原生 Windows 上验收后才能标通过。
+
+详见 [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md) 与 [`docs/RELEASE_GATES.md`](docs/RELEASE_GATES.md)。
 
 ## 开发
 
-需要 Node 20+、Rust 1.85+、Python 3.9+。
+开发需要 Node 20+、Rust 1.85+。打包 sidecar 需要 Python 3.9+ 与 PyInstaller。用户安装 Preview 包不需要 Python。
 
 ```bash
 npm install

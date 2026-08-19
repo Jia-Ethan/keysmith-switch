@@ -1,4 +1,4 @@
-import type { Envelope, ScopeId, ToolId, ToolInfo } from "../types";
+import type { Activation, Envelope, ScopeId, ToolId, ToolInfo } from "../types";
 import { TOOL_IDS } from "../types";
 
 export const TOOL_CATALOG: ToolInfo[] = [
@@ -88,6 +88,34 @@ export function defaultScopeFor(
     return defaultClaudeScope;
   }
   return supported.includes("user") ? "user" : supported[0] ?? "user";
+}
+
+function sameProjectDir(left: string | null | undefined, right: string): boolean {
+  return (left ?? "").trim() === right.trim();
+}
+
+/**
+ * Active prompt ids for exactly one tool + scope + project context.
+ * Activations from another scope or another project directory must never leak
+ * into the current list, otherwise the UI claims a prompt is live where it is not.
+ */
+export function activeIdsFor(
+  activations: Activation[],
+  tool: ToolId,
+  scope: ScopeId,
+  projectDir: string,
+): string[] {
+  const scoped = scopeNeedsProjectDir(scope);
+  const ids = new Set<string>();
+  for (const item of activations) {
+    if (!item.active) continue;
+    if (item.tool !== tool) continue;
+    if (item.scope !== scope) continue;
+    if (scoped && !sameProjectDir(item.projectDir, projectDir)) continue;
+    if (!scoped && (item.projectDir ?? "").trim() !== "") continue;
+    if (item.promptId) ids.add(item.promptId);
+  }
+  return [...ids];
 }
 
 export function isRecoveryState(envelope: Envelope | null): boolean {

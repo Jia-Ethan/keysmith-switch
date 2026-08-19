@@ -12,6 +12,12 @@
     "updater:allow-check",
     "updater:allow-download",
     "updater:allow-install",
-    "updater:allow-download-and-install"
+    "updater:allow-download-and-install",
+    "core:window:allow-hide",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
+    "core:window:allow-unminimize",
+    "core:window:allow-close",
+    "core:event:default"
   ]
 }

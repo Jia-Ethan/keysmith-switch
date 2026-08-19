@@ -1,11 +1,11 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Duration;
 
 use serde::Serialize;
 use tauri::State;
 
-use crate::adapter::process::{find_vendored_script, resolve_cli, resolve_python};
+use crate::adapter::process::{find_vendored_script, resolve_cli};
 use crate::adapter::{list_tools as adapter_list_tools, AdapterOptions, Envelope};
 use crate::db::Store;
 use crate::error::{Error, Result};
@@ -260,6 +260,11 @@ pub struct AboutApp {
     pub name: String,
     pub version: String,
     pub channel: String,
+    pub preview: bool,
+    pub signed: bool,
+    pub identifier: String,
+    pub website: String,
+    pub github: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -338,9 +343,7 @@ pub fn list_tools() -> Result<serde_json::Value> {
     let tools: Vec<UiToolInfo> = adapter_list_tools()
         .into_iter()
         .map(|info| {
-            let cli_path = resolve_cli(info.id, &opts())
-                .ok()
-                .map(|cli| cli.script.display().to_string());
+            let cli_path = resolve_cli(info.id, &opts()).ok().map(|cli| cli.cli_path());
             UiToolInfo {
                 id: info.id,
                 name: tool_display_name(info.id).to_string(),
@@ -647,15 +650,34 @@ pub fn update_settings(
     default_claude_scope: Option<Scope>,
     recent_project_dirs: Option<Vec<String>>,
     updater_endpoint_override: Option<Option<String>>,
+    close_to_tray: Option<bool>,
+    auto_launch: Option<bool>,
+    silent_start: Option<bool>,
+    auto_check_updates: Option<bool>,
+    theme: Option<String>,
+    first_run_completed: Option<bool>,
 ) -> Result<Settings> {
-    state.store.update_settings(SettingsPatch {
+    let previous = state.store.get_settings()?;
+    let settings = state.store.update_settings(SettingsPatch {
         language,
         update_channel,
         advanced_tools_enabled,
         default_claude_scope,
         recent_project_dirs,
         updater_endpoint_override,
-    })
+        close_to_tray,
+        auto_launch,
+        silent_start,
+        auto_check_updates,
+        theme,
+        first_run_completed,
+    })?;
+    if settings.auto_launch != previous.auto_launch {
+        if let Err(error) = crate::auto_launch::apply_auto_launch(settings.auto_launch) {
+            crate::logging::write_line("auto-launch", &error.to_string())?;
+        }
+    }
+    Ok(settings)
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -664,14 +686,19 @@ pub fn get_about(state: State<'_, AppState>) -> Result<AboutInfo> {
     let adapters = ToolKind::ALL
         .into_iter()
         .map(|tool| {
-            let path = resolve_cli(tool, &opts())
-                .ok()
-                .map(|cli| cli.script.display().to_string())
+            let resolved = resolve_cli(tool, &opts()).ok();
+            let path = resolved
+                .as_ref()
+                .map(|cli| cli.cli_path())
                 .or_else(|| find_vendored_script(tool).map(|path| path.display().to_string()));
+            let bundled = resolved
+                .as_ref()
+                .map(|cli| cli.frozen)
+                .unwrap_or(path.is_some());
             AdapterVersionInfo {
                 tool,
                 version: tool.expected_version().to_string(),
-                bundled: path.is_some(),
+                bundled,
                 path,
             }
         })
@@ -705,6 +732,11 @@ pub fn get_about(state: State<'_, AppState>) -> Result<AboutInfo> {
             name: "Keysmith Switch".into(),
             version: APP_VERSION.into(),
             channel: settings.update_channel,
+            preview: true,
+            signed: false,
+            identifier: "com.jia-ethan.keysmith-switch".into(),
+            website: "https://github.com/Jia-Ethan/keysmith-switch".into(),
+            github: "https://github.com/Jia-Ethan/keysmith-switch".into(),
         },
         adapters,
         official,
@@ -731,7 +763,8 @@ pub fn check_app_update(
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn install_app_update(
+pub async fn install_app_update(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     confirmed: bool,
     channel: Option<String>,
@@ -745,7 +778,7 @@ pub fn install_app_update(
         });
     }
     let settings = state.store.get_settings()?;
-    let check = UpdateRequest {
+    let req = UpdateRequest {
         channel: channel
             .as_deref()
             .and_then(UpdateChannel::parse)
@@ -755,10 +788,102 @@ pub fn install_app_update(
         endpoint: settings.updater_endpoint_override.clone(),
         ..UpdateRequest::default()
     };
-    Ok(install_update(&InstallRequest {
-        confirmed: true,
-        check,
-    }))
+    let check = check_update(&req);
+    if let Some(err) = check.error.as_deref() {
+        return Ok(UpdateInstall {
+            ok: false,
+            restart_required: false,
+            error: Some(err.to_string()),
+            release_page: crate::updater::RELEASE_PAGE.into(),
+        });
+    }
+    if !check.available {
+        return Ok(UpdateInstall {
+            ok: false,
+            restart_required: false,
+            error: Some("no update available".into()),
+            release_page: crate::updater::RELEASE_PAGE.into(),
+        });
+    }
+    match crate::updater::apply_mode() {
+        crate::updater::ApplyMode::Simulate => Ok(install_update(&InstallRequest {
+            confirmed: true,
+            check: req,
+        })),
+        crate::updater::ApplyMode::Fail => {
+            let _ = install_update(&InstallRequest {
+                confirmed: true,
+                check: req,
+            });
+            Ok(UpdateInstall {
+                ok: false,
+                restart_required: false,
+                error: Some("simulated apply failure; current version kept".into()),
+                release_page: crate::updater::RELEASE_PAGE.into(),
+            })
+        }
+        crate::updater::ApplyMode::Real => apply_with_plugin(&app).await,
+    }
+}
+
+async fn apply_with_plugin(app: &tauri::AppHandle) -> Result<UpdateInstall> {
+    use tauri::Emitter;
+    use tauri_plugin_updater::UpdaterExt;
+    let updater = match app.updater_builder().build() {
+        Ok(updater) => updater,
+        Err(error) => {
+            return Ok(UpdateInstall {
+                ok: false,
+                restart_required: false,
+                error: Some(format!("updater unavailable: {error}")),
+                release_page: crate::updater::RELEASE_PAGE.into(),
+            });
+        }
+    };
+    match updater.check().await {
+        Ok(Some(update)) => {
+            let result = update
+                .download_and_install(
+                    |chunk, total| {
+                        let _ = app.emit(
+                            "update-progress",
+                            serde_json::json!({
+                                "downloaded": chunk,
+                                "total": total,
+                            }),
+                        );
+                    },
+                    || {
+                        let _ =
+                            app.emit("update-progress", serde_json::json!({ "phase": "install" }));
+                    },
+                )
+                .await;
+            match result {
+                Ok(()) => {
+                    app.restart();
+                }
+                Err(error) => Ok(UpdateInstall {
+                    ok: false,
+                    restart_required: false,
+                    error: Some(format!("{error}")),
+                    release_page: crate::updater::RELEASE_PAGE.into(),
+                }),
+            }
+        }
+        Ok(None) => Ok(UpdateInstall {
+            ok: false,
+            restart_required: false,
+            error: Some("no update available".into()),
+            release_page: crate::updater::RELEASE_PAGE.into(),
+        }),
+        Err(error) => Ok(UpdateInstall {
+            ok: false,
+            restart_required: false,
+            error: Some(format!("{error}")),
+            release_page: crate::updater::RELEASE_PAGE.into(),
+        }),
+    }
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -820,29 +945,21 @@ pub fn run_advanced(
     }
     let extra = args.unwrap_or_default();
     let input = extra.get("input").cloned();
-    let (script, argv) = match kind.as_str() {
-        "scenario" => {
-            let script = find_vendored_script(ToolKind::Codex)
-                .ok_or_else(|| Error::cli_missing("vendored Codex CLI missing"))?;
-            (
-                script,
-                vec!["--scenario-list".to_string(), "--lang".into(), "en".into()],
-            )
-        }
+    let (tool, argv) = match kind.as_str() {
+        "scenario" => (
+            ToolKind::Codex,
+            vec!["--scenario-list".to_string(), "--lang".into(), "en".into()],
+        ),
         "grokRun" => {
-            let script = vendored_grok_helper("grok_keysmith_runner.py")?;
-            let mut argv = Vec::new();
+            let mut argv = vec!["run".to_string()];
             if let Some(prompt) = input {
                 argv.extend(["--prompt".into(), prompt]);
             } else {
                 argv.push("--help".into());
             }
-            (script, argv)
+            (ToolKind::Grok, argv)
         }
-        "grokBreaktest" => {
-            let script = vendored_grok_helper("grok_keysmith_breaktest.py")?;
-            (script, vec!["--help".into()])
-        }
+        "grokBreaktest" => (ToolKind::Grok, vec!["breaktest".into(), "--help".into()]),
         other => {
             return Ok(serde_json::json!({
                 "ok": false,
@@ -852,7 +969,8 @@ pub fn run_advanced(
             }));
         }
     };
-    let output = run_python(&script, &argv)?;
+    let cli = resolve_cli(tool, &opts())?;
+    let output = run_resolved(&cli, &argv)?;
     Ok(serde_json::json!({
         "ok": output.status,
         "kind": kind,
@@ -867,10 +985,9 @@ struct ProcOut {
     stderr: String,
 }
 
-fn run_python(script: &std::path::Path, argv: &[String]) -> Result<ProcOut> {
-    let python = resolve_python()?;
-    let mut cmd = Command::new(python);
-    cmd.arg(script);
+fn run_resolved(cli: &crate::adapter::process::ResolvedCli, argv: &[String]) -> Result<ProcOut> {
+    let mut cmd = Command::new(&cli.program);
+    cmd.args(&cli.prefix);
     cmd.args(argv);
     cmd.env("PYTHONUTF8", "1");
     cmd.env("PYTHONNOUSERSITE", "1");
@@ -896,16 +1013,152 @@ fn truncate_utf8(bytes: &[u8]) -> String {
     String::from_utf8_lossy(slice).into_owned()
 }
 
-fn vendored_grok_helper(name: &str) -> Result<PathBuf> {
-    if let Some(main) = find_vendored_script(ToolKind::Grok) {
-        if let Some(dir) = main.parent() {
-            let helper = dir.join(name);
-            if helper.is_file() {
-                return Ok(helper);
-            }
+fn user_home() -> PathBuf {
+    dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"))
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn get_startup_report(state: State<'_, AppState>) -> Result<crate::data::FirstRunReport> {
+    let settings = state.store.get_settings()?;
+    let home = if let Ok(override_home) = std::env::var("KEYSMITH_SWITCH_SCAN_HOME") {
+        PathBuf::from(override_home)
+    } else {
+        user_home()
+    };
+    let candidates = if settings.first_run_completed {
+        Vec::new()
+    } else {
+        crate::data::scan_import_candidates(&state.store, &home)?
+    };
+    Ok(crate::data::FirstRunReport {
+        first_run: !settings.first_run_completed,
+        candidates,
+        recovery: crate::data::read_recovery_marker(state.store.paths()),
+        sidecar: crate::data::sidecar_report(),
+    })
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn import_existing_prompts(
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+) -> Result<crate::data::ImportResult> {
+    crate::data::import_candidates(&state.store, &paths)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn import_markdown_files(
+    state: State<'_, AppState>,
+    tool: String,
+    paths: Vec<String>,
+) -> Result<crate::data::ImportResult> {
+    let tool = parse_tool(&tool)?;
+    let mut imported = 0;
+    let mut skipped = 0;
+    let mut errors = Vec::new();
+    for path in paths {
+        match crate::data::import_markdown_file(&state.store, tool, PathBuf::from(path).as_path()) {
+            Ok(true) => imported += 1,
+            Ok(false) => skipped += 1,
+            Err(error) => errors.push(error.to_string()),
         }
     }
-    Err(Error::cli_missing(format!("vendored {name} missing")))
+    Ok(crate::data::ImportResult {
+        imported,
+        skipped,
+        errors,
+    })
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn import_zip_archive(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<crate::data::ImportResult> {
+    crate::data::import_zip(&state.store, Path::new(&path))
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn export_zip_archive(state: State<'_, AppState>, path: String) -> Result<serde_json::Value> {
+    let dest = crate::data::export_zip(&state.store, Path::new(&path))?;
+    Ok(serde_json::json!({ "ok": true, "path": dest }))
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn create_backup(state: State<'_, AppState>) -> Result<crate::data::BackupEntry> {
+    crate::data::create_named_backup(&state.store, "manual")
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn list_backups(state: State<'_, AppState>) -> Result<serde_json::Value> {
+    let backups = crate::data::list_backups(state.store.paths())?;
+    Ok(serde_json::json!({ "backups": backups }))
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn restore_backup(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<crate::data::ImportResult> {
+    crate::data::restore_backup_zip(&state.store, Path::new(&path))
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn plan_clear_all_data(state: State<'_, AppState>) -> Result<crate::data::ClearPlan> {
+    Ok(crate::data::clear_plan(state.store.paths()))
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn clear_all_data(
+    state: State<'_, AppState>,
+    phrase: String,
+    confirmed: bool,
+) -> Result<serde_json::Value> {
+    crate::data::clear_all_data(state.store.paths(), &phrase, confirmed)?;
+    Ok(serde_json::json!({ "ok": true }))
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn get_data_dirs(state: State<'_, AppState>) -> Result<crate::data::DataDirs> {
+    Ok(crate::data::data_dirs(state.store.paths()))
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn acknowledge_recovery(state: State<'_, AppState>) -> Result<serde_json::Value> {
+    crate::data::acknowledge_recovery(state.store.paths())?;
+    Ok(serde_json::json!({ "ok": true }))
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn log_frontend_error(message: String, stack: Option<String>) -> Result<serde_json::Value> {
+    crate::logging::frontend_error(&message, stack.as_deref())?;
+    Ok(serde_json::json!({ "ok": true }))
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn hide_to_tray(app: tauri::AppHandle) -> Result<serde_json::Value> {
+    crate::desktop::hide_to_tray(&app);
+    Ok(serde_json::json!({ "ok": true }))
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn show_main_window(app: tauri::AppHandle) -> Result<serde_json::Value> {
+    crate::desktop::show_main(&app);
+    Ok(serde_json::json!({ "ok": true }))
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn quit_app(app: tauri::AppHandle) -> Result<serde_json::Value> {
+    crate::desktop::force_quit(&app);
+    Ok(serde_json::json!({ "ok": true }))
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn mark_first_run_done(state: State<'_, AppState>) -> Result<Settings> {
+    state.store.update_settings(SettingsPatch {
+        first_run_completed: Some(true),
+        ..SettingsPatch::default()
+    })
 }
 
 fn parse_official(raw: &str) -> Result<OfficialProduct> {

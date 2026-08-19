@@ -39,6 +39,22 @@ pub const ENV_PUBKEY: &str = "KEYSMITH_SWITCH_UPDATER_PUBKEY";
 pub const ENV_CHANNEL: &str = "KEYSMITH_SWITCH_UPDATE_CHANNEL";
 pub const ENV_PLATFORM: &str = "KEYSMITH_SWITCH_UPDATER_PLATFORM";
 pub const ENV_APP_VERSION: &str = "KEYSMITH_SWITCH_APP_VERSION";
+pub const ENV_APPLY: &str = "KEYSMITH_SWITCH_UPDATER_APPLY";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ApplyMode {
+    Real,
+    Simulate,
+    Fail,
+}
+
+pub fn apply_mode() -> ApplyMode {
+    match std::env::var(ENV_APPLY).ok().as_deref() {
+        Some("simulate") => ApplyMode::Simulate,
+        Some("fail") => ApplyMode::Fail,
+        _ => ApplyMode::Real,
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

@@ -1,7 +1,9 @@
 {
   "app": {
     "name": "Keysmith Switch",
-    "workflow": "本機提示詞工作流"
+    "workflow": "本機提示詞工作流",
+    "preview": "Preview · 未簽名",
+    "unsignedNotice": "這是 Preview 未簽名建置。macOS 與 Windows 可能顯示系統安全警告。這不是 Developer ID / 公證 / Authenticode 正式版。"
   },
   "nav": {
     "claude": "Claude Code",
@@ -10,7 +12,9 @@
     "zcode": "ZCode",
     "settings": "設定",
     "about": "關於",
-    "advanced": "進階工具"
+    "advanced": "進階工具",
+    "toolsLabel": "工具導覽",
+    "more": "更多"
   },
   "common": {
     "ok": "確定",
@@ -74,11 +78,16 @@
     "refreshStatus": "重新整理狀態",
     "unavailable": "目前工具不可用",
     "zcodeWindows": "ZCode 僅支援 macOS。Windows 上已停用，不會猜測或執行安裝命令。",
-    "zcodeNoInstall": "不提供安裝猜測。"
+    "zcodeNoInstall": "不提供安裝猜測。",
+    "diagnostics": "診斷詳情"
   },
   "prompts": {
     "active": "已啟用提示詞",
     "inactive": "未啟用提示詞",
+    "noneActive": "目前沒有啟用的提示詞",
+    "noneInactive": "—",
+    "noResults": "沒有符合的提示詞",
+    "noResultsHint": "嘗試調整搜尋或篩選條件",
     "new": "新建",
     "edit": "編輯",
     "copy": "複製",
@@ -109,7 +118,11 @@
     "deleted": "已刪除",
     "restored": "已還原版本",
     "filterTag": "標籤",
-    "allTags": "全部標籤"
+    "allTags": "全部標籤",
+    "noSelection": "未選擇提示詞",
+    "noSelectionHint": "從左側選擇一條提示詞，或新建一條。",
+    "allPrompts": "全部提示詞",
+    "activationUnknown": "無法讀取啟用狀態，暫不顯示已啟用 / 未啟用分組。"
   },
   "plan": {
     "titleActivate": "啟用預覽",
@@ -159,7 +172,69 @@
     "removeDir": "移除",
     "saved": "設定已儲存",
     "endpointOverride": "更新源覆蓋（僅本機 fixture）",
-    "loadFailed": "無法讀取設定，已使用預設值。"
+    "loadFailed": "無法讀取設定，已使用預設值。",
+    "sectionGeneral": "一般",
+    "sectionDisplay": "顯示",
+    "sectionScope": "預設範圍",
+    "sectionUpdate": "更新",
+    "sectionAdvanced": "進階工具",
+    "languageHint": "介面語言，立即生效。",
+    "theme": "主題",
+    "themeHint": "淺色、深色，或跟隨系統。",
+    "themeLight": "淺色",
+    "themeDark": "深色",
+    "themeSystem": "跟隨系統",
+    "updateChannelHint": "stable 只接收穩定版；beta 會收到預發布版本。",
+    "defaultClaudeScopeHint": "開啟 Claude Code 時預設選中的範圍。其他工具只支援 user。",
+    "recentProjectsHint": "在 Claude 的 project / local 範圍選擇目錄後會記錄在這裡。",
+    "endpointOverrideHint": "由本機 fixture 設定，介面唯讀。",
+    "closeToTray": "關閉視窗進入系統列",
+    "closeToTrayHint": "關閉主視窗時隱藏到系統列，而不是退出。退出請用系統列選單「退出 Keysmith Switch」。",
+    "autoLaunch": "開機啟動",
+    "autoLaunchHint": "登入系統後自動啟動。預設關閉。",
+    "silentStart": "靜默啟動",
+    "silentStartHint": "啟動後只出現在系統列，不顯示主視窗。",
+    "autoCheck": "啟動後檢查更新",
+    "tab": {
+      "general": "一般",
+      "tools": "工具",
+      "data": "資料與備份",
+      "updates": "更新",
+      "advanced": "進階",
+      "about": "關於"
+    }
+  },
+  "data": {
+    "importMarkdown": "匯入 Markdown",
+    "importZip": "匯入 ZIP",
+    "exportZip": "匯出 ZIP",
+    "exported": "已匯出",
+    "backupNow": "立即備份",
+    "backupCreated": "備份已建立",
+    "restore": "還原",
+    "openHome": "開啟資料目錄",
+    "openLogs": "開啟日誌目錄",
+    "clearAll": "清除全部資料",
+    "clearAllHint": "將刪除提示詞庫、歷史、備份和日誌。此操作不可逆。普通解除安裝不會刪除這些檔案。",
+    "clearConfirm": "確認清除",
+    "clearSecond": "我已閱讀範圍並確認不可恢復",
+    "cleared": "資料已清除"
+  },
+  "firstRun": {
+    "title": "發現既有提示詞",
+    "hint": "勾選要匯入 Keysmith Switch 庫的檔案。匯入不會自動啟用。",
+    "import": "匯入所選",
+    "skip": "略過"
+  },
+  "recovery": {
+    "title": "資料已從備份恢復",
+    "hint": "資料庫損壞，已隔離原檔並從 Markdown 重建。"
+  },
+  "editor": {
+    "findHint": "尋找：⌘F / Ctrl+F"
+  },
+  "unsaved": {
+    "leave": "有未儲存的草稿。確定離開並捨棄變更？"
   },
   "about": {
     "title": "關於",
@@ -199,7 +274,11 @@
     "zcodeMacOnly": "ZCode 官方工具僅 macOS 可用。",
     "layerApp": "應用",
     "layerAdapters": "內建適配器",
-    "layerOfficial": "官方工具"
+    "layerOfficial": "官方工具",
+    "noUpdateYet": "尚未檢查更新。",
+    "installBlockedHint": "先勾選確認項才能更新並重新啟動。",
+    "adapterBundled": "隨應用打包",
+    "adapterExternal": "外部路徑"
   },
   "advanced": {
     "title": "進階工具",

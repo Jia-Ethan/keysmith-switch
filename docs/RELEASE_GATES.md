@@ -8,7 +8,7 @@
 
 | 平台 | 目标三元组 | 产物 | 状态 |
 | --- | --- | --- | --- |
-| macOS Apple Silicon | `aarch64-apple-darwin` | `.app` + `.dmg` + updater `.tar.gz` / `.sig` | 配置已写入；本机可 `tauri build`，**未** Developer ID / 公证 |
+| macOS Apple Silicon | `aarch64-apple-darwin` | `.app` + `.dmg` + updater `.tar.gz` / `.sig` | **2026-08-19 本机已产出 .app 与 .dmg**（21 MB，SHA-256 见 IMPLEMENTATION_STATUS）。adhoc/linker-signed。**无** Developer ID / 公证。updater `.tar.gz` 有，**无生产 `.sig`**（缺 `TAURI_SIGNING_PRIVATE_KEY`，tauri build 因此以退出码 1 结束，但 DMG 已写出） |
 | Windows x64 | `x86_64-pc-windows-msvc` | NSIS `currentUser` + updater `.exe.sig` | 配置已写入；无实体机时交叉编译不算实体验收 |
 | Linux | `linux-x86_64` / `linux-aarch64` | 非首发桌面目标 | updater 平台表包含 linux 键，值为 **unsupported**，不安装 |
 

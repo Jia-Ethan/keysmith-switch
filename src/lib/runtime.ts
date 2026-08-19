@@ -18,6 +18,29 @@ export async function openExternal(url: string): Promise<void> {
   }
 }
 
+export async function pickFiles(filters?: Array<{ name: string; extensions: string[] }>): Promise<string[]> {
+  try {
+    if (!isTauriRuntime()) return [];
+    const { open } = await import("@tauri-apps/plugin-dialog");
+    const selected = await open({ multiple: true, filters });
+    if (!selected) return [];
+    return Array.isArray(selected) ? selected : [selected];
+  } catch {
+    return [];
+  }
+}
+
+export async function pickSavePath(defaultPath: string): Promise<string | null> {
+  try {
+    if (!isTauriRuntime()) return null;
+    const { save } = await import("@tauri-apps/plugin-dialog");
+    const selected = await save({ defaultPath });
+    return typeof selected === "string" ? selected : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function pickDirectory(): Promise<string | null> {
   try {
     if (!isTauriRuntime()) return null;

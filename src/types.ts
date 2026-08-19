@@ -153,6 +153,8 @@ export interface Operation {
   recoverAvailable: boolean;
 }
 
+export type ThemeMode = "light" | "dark" | "system";
+
 export interface Settings {
   language: Language;
   updateChannel: UpdateChannel;
@@ -160,6 +162,12 @@ export interface Settings {
   defaultClaudeScope: ScopeId;
   recentProjectDirs: string[];
   updaterEndpointOverride: string | null;
+  closeToTray: boolean;
+  autoLaunch: boolean;
+  silentStart: boolean;
+  autoCheckUpdates: boolean;
+  theme: ThemeMode;
+  firstRunCompleted: boolean;
 }
 
 export type SettingsPatch = Partial<Settings>;
@@ -189,9 +197,73 @@ export interface AboutInfo {
     name: string;
     version: string;
     channel: UpdateChannel;
+    preview: boolean;
+    signed: boolean;
+    identifier: string;
+    website: string;
+    github: string;
   };
   adapters: AdapterVersionInfo[];
   official: OfficialProduct[];
+}
+
+export interface ImportCandidate {
+  id: string;
+  tool: ToolId;
+  path: string;
+  title: string;
+  excerpt: string;
+  alreadyImported: boolean;
+}
+
+export interface RecoveryMarker {
+  kind: string;
+  quarantined: string | null;
+  rebuilt: boolean;
+  at: string;
+  detail: string;
+}
+
+export interface SidecarToolStatus {
+  tool: ToolId;
+  frozen: boolean;
+  path: string | null;
+  available: boolean;
+}
+
+export interface FirstRunReport {
+  firstRun: boolean;
+  candidates: ImportCandidate[];
+  recovery: RecoveryMarker | null;
+  sidecar: { pythonRequired: boolean; tools: SidecarToolStatus[] };
+}
+
+export interface BackupEntry {
+  id: string;
+  path: string;
+  createdAt: string;
+  kind: string;
+  bytes: number;
+}
+
+export interface ClearPlan {
+  home: string;
+  categories: Array<{ name: string; path: string; exists: boolean }>;
+  irreversible: boolean;
+  confirmPhrase: string;
+}
+
+export interface ImportResult {
+  imported: number;
+  skipped: number;
+  errors: string[];
+}
+
+export interface DataDirs {
+  home: string;
+  logs: string;
+  backups: string;
+  prompts: string;
 }
 
 export interface UpdateCheck {
@@ -269,6 +341,12 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultClaudeScope: "user",
   recentProjectDirs: [],
   updaterEndpointOverride: null,
+  closeToTray: true,
+  autoLaunch: false,
+  silentStart: false,
+  autoCheckUpdates: true,
+  theme: "system",
+  firstRunCompleted: false,
 };
 
 export const TOOL_IDS: ToolId[] = ["claude", "codex", "grok", "zcode"];

@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { zcodeUnavailableReason } from "../lib/zcode";
 import type { ToolInfo } from "../types";
+import { IconAlert } from "./icons";
 
 export function ZCodeBanner({ tool }: { tool: Pick<ToolInfo, "id" | "available" | "unavailableReason"> }) {
   const { t } = useTranslation();
@@ -9,12 +10,15 @@ export function ZCodeBanner({ tool }: { tool: Pick<ToolInfo, "id" | "available" 
   return (
     <div
       data-testid="zcode-unavailable"
-      className="rounded border border-amber-800/50 bg-amber-950/40 px-3 py-2 text-[12px] text-amber-100"
+      className="flex items-start gap-2 rounded-lg border border-amber-600/40 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-700 dark:text-amber-400"
       role="status"
     >
-      <p className="font-medium">{t("tool.unavailable")}</p>
-      <p className="mt-1">{reason}</p>
-      <p className="mt-1 text-amber-200/80">{t("tool.zcodeNoInstall")}</p>
+      <IconAlert size={14} className="mt-px shrink-0" />
+      <div className="min-w-0">
+        <p className="font-medium">{t("tool.unavailable")}</p>
+        <p className="mt-0.5 break-words">{reason}</p>
+        <p className="mt-0.5 opacity-80">{t("tool.zcodeNoInstall")}</p>
+      </div>
     </div>
   );
 }

@@ -31,8 +31,8 @@ impl Store {
             match try_open(paths) {
                 Ok(store) => return Ok(store),
                 Err(error) => {
-                    quarantine_db(&paths.db, paths)?;
-                    let _ = error;
+                    let dest = quarantine_db(&paths.db, paths)?;
+                    let _ = write_recovery_marker(paths, dest.as_deref(), &error);
                 }
             }
         }
@@ -557,6 +557,24 @@ impl Store {
         if let Some(endpoint) = patch.updater_endpoint_override {
             settings.updater_endpoint_override = endpoint;
         }
+        if let Some(value) = patch.close_to_tray {
+            settings.close_to_tray = value;
+        }
+        if let Some(value) = patch.auto_launch {
+            settings.auto_launch = value;
+        }
+        if let Some(value) = patch.silent_start {
+            settings.silent_start = value;
+        }
+        if let Some(value) = patch.auto_check_updates {
+            settings.auto_check_updates = value;
+        }
+        if let Some(value) = patch.theme {
+            settings.theme = value;
+        }
+        if let Some(value) = patch.first_run_completed {
+            settings.first_run_completed = value;
+        }
         let conn = self.conn()?;
         write_settings(&conn, &settings)?;
         Ok(settings)
@@ -767,9 +785,9 @@ fn open_connection(path: &Path) -> Result<Connection> {
     Ok(conn)
 }
 
-fn quarantine_db(path: &Path, paths: &AppPaths) -> Result<()> {
+fn quarantine_db(path: &Path, paths: &AppPaths) -> Result<Option<PathBuf>> {
     if !path.exists() {
-        return Ok(());
+        return Ok(None);
     }
     let stamp = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
     let dest = paths.db_backup_path(&format!("corrupt-{stamp}"));
@@ -782,7 +800,26 @@ fn quarantine_db(path: &Path, paths: &AppPaths) -> Result<()> {
     })?;
     let _ = fs::remove_file(path.with_extension("db-wal"));
     let _ = fs::remove_file(path.with_extension("db-shm"));
-    Ok(())
+    Ok(Some(dest))
+}
+
+fn write_recovery_marker(
+    paths: &AppPaths,
+    quarantined: Option<&Path>,
+    error: &Error,
+) -> Result<()> {
+    paths.ensure()?;
+    let marker = serde_json::json!({
+        "kind": "corrupt-db",
+        "quarantined": quarantined.map(|path| path.display().to_string()),
+        "rebuilt": true,
+        "at": now_rfc3339(),
+        "detail": redact_text(&error.to_string()),
+    });
+    crate::paths::atomic_write(
+        &paths.logs.join("last-recovery.json"),
+        &serde_json::to_string_pretty(&marker)?,
+    )
 }
 
 fn seed_settings(conn: &Connection) -> Result<()> {
@@ -815,6 +852,15 @@ fn write_settings(conn: &Connection, settings: &Settings) -> Result<()> {
                 .updater_endpoint_override
                 .clone()
                 .unwrap_or_default(),
+        ),
+        ("closeToTray", settings.close_to_tray.to_string()),
+        ("autoLaunch", settings.auto_launch.to_string()),
+        ("silentStart", settings.silent_start.to_string()),
+        ("autoCheckUpdates", settings.auto_check_updates.to_string()),
+        ("theme", settings.theme.clone()),
+        (
+            "firstRunCompleted",
+            settings.first_run_completed.to_string(),
         ),
     ];
     for (key, value) in pairs {
@@ -851,8 +897,22 @@ fn apply_setting(settings: &mut Settings, key: &str, value: &str) {
                 Some(value.to_string())
             };
         }
+        "closeToTray" => settings.close_to_tray = truthy(value),
+        "autoLaunch" => settings.auto_launch = truthy(value),
+        "silentStart" => settings.silent_start = truthy(value),
+        "autoCheckUpdates" => settings.auto_check_updates = truthy(value),
+        "theme" => {
+            if matches!(value, "light" | "dark" | "system") {
+                settings.theme = value.to_string();
+            }
+        }
+        "firstRunCompleted" => settings.first_run_completed = truthy(value),
         _ => {}
     }
+}
+
+fn truthy(value: &str) -> bool {
+    matches!(value, "true" | "1" | "yes")
 }
 
 fn encode_tags(tags: &[String]) -> String {

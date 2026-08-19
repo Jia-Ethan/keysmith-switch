@@ -4,8 +4,14 @@
     "targets": ["nsis"],
     "createUpdaterArtifacts": true,
     "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
       "nsis": {
-        "installMode": "currentUser"
+        "installMode": "currentUser",
+        "displayLanguageSelector": false,
+        "installerIcon": "icons/icon.ico",
+        "installerHooks": "nsis/hooks.nsh"
       }
     }
   }

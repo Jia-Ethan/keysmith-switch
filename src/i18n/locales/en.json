@@ -1,7 +1,9 @@
 {
   "app": {
     "name": "Keysmith Switch",
-    "workflow": "Local prompt workflow"
+    "workflow": "Local prompt workflow",
+    "preview": "Preview · unsigned",
+    "unsignedNotice": "This is an unsigned Preview build. macOS and Windows may show a system security warning. This is not Developer ID / notarized / Authenticode."
   },
   "nav": {
     "claude": "Claude Code",
@@ -10,7 +12,9 @@
     "zcode": "ZCode",
     "settings": "Settings",
     "about": "About",
-    "advanced": "Advanced Tools"
+    "advanced": "Advanced Tools",
+    "toolsLabel": "Tools",
+    "more": "More"
   },
   "common": {
     "ok": "OK",
@@ -74,11 +78,16 @@
     "refreshStatus": "Refresh status",
     "unavailable": "This tool is unavailable",
     "zcodeWindows": "ZCode is macOS-only. It is disabled on Windows and no install command will be guessed.",
-    "zcodeNoInstall": "No install guess is offered."
+    "zcodeNoInstall": "No install guess is offered.",
+    "diagnostics": "Diagnostics"
   },
   "prompts": {
     "active": "Active Prompts",
     "inactive": "Inactive Prompts",
+    "noneActive": "No active prompts",
+    "noneInactive": "—",
+    "noResults": "No matching prompts",
+    "noResultsHint": "Try adjusting your search or filter",
     "new": "New",
     "edit": "Edit",
     "copy": "Copy",
@@ -109,7 +118,11 @@
     "deleted": "Deleted",
     "restored": "Version restored",
     "filterTag": "Tag",
-    "allTags": "All tags"
+    "allTags": "All tags",
+    "noSelection": "No prompt selected",
+    "noSelectionHint": "Pick a prompt on the left, or create a new one.",
+    "allPrompts": "All prompts",
+    "activationUnknown": "Activation state could not be read; Active / Inactive grouping is hidden."
   },
   "plan": {
     "titleActivate": "Activation preview",
@@ -159,7 +172,69 @@
     "removeDir": "Remove",
     "saved": "Settings saved",
     "endpointOverride": "Updater endpoint override (local fixture only)",
-    "loadFailed": "Could not load settings. Defaults are in use."
+    "loadFailed": "Could not load settings. Defaults are in use.",
+    "sectionGeneral": "General",
+    "sectionDisplay": "Display",
+    "sectionScope": "Default scope",
+    "sectionUpdate": "Updates",
+    "sectionAdvanced": "Advanced Tools",
+    "languageHint": "Interface language. Applies immediately.",
+    "theme": "Theme",
+    "themeHint": "Light, dark, or follow the system.",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "themeSystem": "System",
+    "updateChannelHint": "stable receives stable builds only; beta also receives pre-releases.",
+    "defaultClaudeScopeHint": "Scope preselected when Claude Code opens. Other tools support user only.",
+    "recentProjectsHint": "Directories chosen for Claude project / local scope are recorded here.",
+    "endpointOverrideHint": "Set by a local fixture. Read-only in the UI.",
+    "closeToTray": "Close window to tray",
+    "closeToTrayHint": "Hiding the main window goes to the tray. Use Quit Keysmith Switch in the tray menu to exit.",
+    "autoLaunch": "Start at login",
+    "autoLaunchHint": "Launch after sign-in. Off by default.",
+    "silentStart": "Silent start",
+    "silentStartHint": "Start in the tray only.",
+    "autoCheck": "Check for updates on launch",
+    "tab": {
+      "general": "General",
+      "tools": "Tools",
+      "data": "Data & backups",
+      "updates": "Updates",
+      "advanced": "Advanced",
+      "about": "About"
+    }
+  },
+  "data": {
+    "importMarkdown": "Import Markdown",
+    "importZip": "Import ZIP",
+    "exportZip": "Export ZIP",
+    "exported": "Exported",
+    "backupNow": "Back up now",
+    "backupCreated": "Backup created",
+    "restore": "Restore",
+    "openHome": "Open data folder",
+    "openLogs": "Open logs folder",
+    "clearAll": "Clear all data",
+    "clearAllHint": "Deletes the prompt library, history, backups, and logs. Irreversible. A normal uninstall keeps these files.",
+    "clearConfirm": "Clear",
+    "clearSecond": "I have read the scope and confirm this cannot be undone",
+    "cleared": "Data cleared"
+  },
+  "firstRun": {
+    "title": "Existing prompts found",
+    "hint": "Select files to import into the Keysmith Switch library. Import never activates them.",
+    "import": "Import selected",
+    "skip": "Skip"
+  },
+  "recovery": {
+    "title": "Data was rebuilt",
+    "hint": "The database was corrupt. The original file was quarantined and Markdown was rebuilt."
+  },
+  "editor": {
+    "findHint": "Find: ⌘F / Ctrl+F"
+  },
+  "unsaved": {
+    "leave": "You have an unsaved draft. Leave and discard changes?"
   },
   "about": {
     "title": "About",
@@ -199,7 +274,11 @@
     "zcodeMacOnly": "Official ZCode is macOS-only.",
     "layerApp": "App",
     "layerAdapters": "Built-in adapters",
-    "layerOfficial": "Official tools"
+    "layerOfficial": "Official tools",
+    "noUpdateYet": "No update check yet.",
+    "installBlockedHint": "Tick the confirmation before updating and restarting.",
+    "adapterBundled": "Bundled with app",
+    "adapterExternal": "External path"
   },
   "advanced": {
     "title": "Advanced Tools",

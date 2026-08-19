@@ -25,6 +25,10 @@ src-tauri/fixtures/updater/*.key
 *.pfx
 secrets/
 .tauri/
+sidecar-build/
+src-tauri/binaries/*
+!src-tauri/binaries/README.md
+!src-tauri/binaries/.gitkeep
 *.app
 *.dmg
 *.exe

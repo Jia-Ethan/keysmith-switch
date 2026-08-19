@@ -1,8 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import * as api from "../api";
+import { EmptyState } from "../components/EmptyState";
 import { ErrorBanner } from "../components/ErrorBanner";
-import { Button, Card } from "../components/ui";
+import { IconAlert, IconDownload, IconExternal, IconRefresh } from "../components/icons";
+import {
+  Button,
+  Checkbox,
+  Disclosure,
+  Mono,
+  Panel,
+  PanelHeader,
+  SectionLabel,
+  cx,
+} from "../components/ui";
 import type { ToastApi } from "../hooks/useToasts";
 import { formatArgv, formatBytes } from "../lib/format";
 import { toastSafeMessage } from "../lib/redact";
@@ -23,11 +35,11 @@ export const APP_UPDATE_AUTO_CHECK_DELAY_MS = 1800;
 export function AboutPage({
   channel,
   toast,
-  autoCheckDelayMs = APP_UPDATE_AUTO_CHECK_DELAY_MS,
+  autoCheckDelayMs = null,
 }: {
   channel: UpdateChannel;
   toast?: ToastApi;
-  autoCheckDelayMs?: number;
+  autoCheckDelayMs?: number | null;
 }) {
   const { t } = useTranslation();
   const [about, setAbout] = useState<AboutInfo | null>(null);
@@ -76,6 +88,7 @@ export function AboutPage({
   }, [loadAbout]);
 
   useEffect(() => {
+    if (autoCheckDelayMs == null) return;
     const timer = window.setTimeout(() => {
       void checkUpdate();
     }, autoCheckDelayMs);
@@ -139,149 +152,237 @@ export function AboutPage({
   };
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-3">
-      {loadError ? <ErrorBanner message={loadError} onRetry={() => void loadAbout()} retryLabel={t("common.retry")} /> : null}
+    <div className="mx-auto flex h-full min-h-0 w-full max-w-3xl flex-col gap-2 overflow-auto">
+      {loadError ? (
+        <ErrorBanner message={loadError} onRetry={() => void loadAbout()} retryLabel={t("common.retry")} />
+      ) : null}
 
-      <Card title={`${t("about.layerApp")} · ${t("about.appUpdate")}`}>
-        <p className="mb-2 text-[12px] text-ink-200">{t("about.autoCheck")}</p>
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-[12px]">
-          <Row label={t("about.currentVersion")} value={update?.currentVersion ?? about?.app.version ?? "0.1.0"} />
-          <Row label={t("about.latestVersion")} value={update?.latestVersion ?? "—"} />
-          <Row label={t("about.size")} value={formatBytes(update?.size)} />
-          <Row
-            label={t("about.restartRequired")}
-            value={update?.restartRequired ? t("common.yes") : t("common.no")}
-          />
-        </dl>
-        {update?.notes ? (
-          <div className="mt-2 rounded bg-ink-900 p-2 text-[12px] whitespace-pre-wrap">{update.notes}</div>
-        ) : null}
-        <div className="mt-2">
-          <div className="mb-1 text-[11px] text-ink-200">{t("about.progress")}</div>
-          <div className="h-1.5 overflow-hidden rounded bg-ink-700">
+      {/* Layer 1 — the app itself */}
+      <Panel>
+        <PanelHeader
+          title={`${t("about.layerApp")} · ${t("about.appUpdate")}`}
+          actions={
+            <>
+              <Button
+                size="sm"
+                data-testid="check-update"
+                disabled={checking || installing}
+                onClick={() => void checkUpdate()}
+              >
+                <IconRefresh />
+                {t("about.checkUpdate")}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => void openExternal(releasePage)}>
+                <IconExternal />
+                <span className="hidden sm:inline">{t("about.releasePage")}</span>
+              </Button>
+            </>
+          }
+        />
+        <div className="px-3 py-2.5">
+          <p className="mb-2 rounded-md border border-amber-600/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
+            {t("app.unsignedNotice")}
+          </p>
+          <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1 text-sm sm:grid-cols-[auto_minmax(0,1fr)_auto_minmax(0,1fr)]">
+            <Row label={t("about.currentVersion")}>
+              {update?.currentVersion ?? about?.app.version ?? "—"}
+            </Row>
+            <Row label={t("about.latestVersion")}>{update?.latestVersion ?? "—"}</Row>
+            <Row label={t("about.size")}>{formatBytes(update?.size)}</Row>
+            <Row label={t("settings.updateChannel")}>
+              {update?.channel ?? channel}
+            </Row>
+          </dl>
+
+          <div className="mt-2.5">
             <div
-              className="h-full bg-accent-600 transition-all"
-              style={{ width: `${Math.max(0, Math.min(100, progress ?? (checking ? 30 : 0)))}%` }}
-            />
-          </div>
-        </div>
-        {checking ? <p className="mt-2 text-[12px] text-ink-200">{t("about.checking")}</p> : null}
-        {update && !update.available && !update.error ? (
-          <p className="mt-2 text-[12px] text-teal-200">{t("about.upToDate")}</p>
-        ) : null}
-        {update?.available ? <p className="mt-2 text-[12px] text-teal-200">{t("about.updateAvailable")}</p> : null}
-        {installError ? (
-          <div className="mt-2 text-[12px] text-rose-200">
-            <p>{t("about.updateFailed")}</p>
-            <p>{t("about.keptCurrent")}</p>
-            <p>{installError}</p>
-          </div>
-        ) : null}
-
-        <label className="mt-3 flex items-center gap-2 text-[12px]">
-          <input
-            type="checkbox"
-            data-testid="confirm-update"
-            checked={confirmed}
-            disabled={!update?.available || installing}
-            onChange={(event) => setConfirmed(event.target.checked)}
-          />
-          {t("about.confirmUpdate")}
-        </label>
-
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Button onClick={() => void checkUpdate()} disabled={checking || installing}>
-            {t("about.checkUpdate")}
-          </Button>
-          <Button
-            variant="primary"
-            data-testid="install-update"
-            disabled={!canInstall}
-            onClick={() => void install()}
-          >
-            {installing ? t("about.installing") : t("about.installAndRestart")}
-          </Button>
-          <Button onClick={() => void openExternal(releasePage)}>{t("about.releasePage")}</Button>
-        </div>
-      </Card>
-
-      <Card title={`${t("about.layerAdapters")} · ${t("about.adapters")}`}>
-        <p className="mb-2 text-[12px] text-ink-200">{t("about.adaptersHint")}</p>
-        <ul className="space-y-1 text-[12px]">
-          {(about?.adapters ?? []).map((item) => (
-            <li key={item.tool} className="flex flex-wrap gap-2">
-              <span className="font-medium">{item.tool}</span>
-              <span className="font-mono">{item.version}</span>
-              <span className="text-ink-200">{t("about.noHotUpdate")}</span>
-              {item.path ? <span className="font-mono text-ink-200">{item.path}</span> : null}
-            </li>
-          ))}
-          {!about?.adapters?.length ? <li className="text-ink-200">{t("common.none")}</li> : null}
-        </ul>
-      </Card>
-
-      <Card title={`${t("about.layerOfficial")} · ${t("about.official")}`}>
-        <p className="mb-2 text-[12px] text-ink-200">{t("about.officialHint")}</p>
-        <div className="grid gap-2">
-          {(about?.official ?? []).map((product) => (
-            <OfficialCard
-              key={product.product}
-              product={product}
-              busy={officialBusy}
-              onPlan={previewOfficial}
-            />
-          ))}
-          {!about?.official?.length ? <p className="text-[12px] text-ink-200">{t("common.none")}</p> : null}
-        </div>
-
-        {officialPlan ? (
-          <div className="mt-3 rounded border border-ink-200/10 bg-ink-900 p-3 text-[12px]">
-            <p className="font-medium">
-              {officialPlan.product} / {officialPlan.action}
-            </p>
-            <p className="mt-1 font-mono">{formatArgv(officialPlan.argv)}</p>
-            <p className="mt-1">{officialPlan.dest}</p>
-            {officialPlan.blockers.length > 0 ? (
-              <ul className="mt-1 text-rose-200">
-                {officialPlan.blockers.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            ) : (
-              <label className="mt-2 flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={officialConfirmed}
-                  onChange={(event) => setOfficialConfirmed(event.target.checked)}
-                />
-                {t("about.confirmOfficial")}
-              </label>
-            )}
-            <Button
-              className="mt-2"
-              variant="primary"
-              disabled={!officialConfirmed || officialPlan.blockers.length > 0 || officialBusy}
-              onClick={() => void runOfficial()}
+              className="h-1 overflow-hidden rounded bg-muted"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.max(0, Math.min(100, progress ?? 0))}
             >
-              {t("about.runOfficial")}
+              <div
+                className="h-full bg-primary transition-all"
+                style={{ width: `${Math.max(0, Math.min(100, progress ?? (checking ? 30 : 0)))}%` }}
+              />
+            </div>
+          </div>
+
+          <div className="mt-2 min-h-[18px] text-[12px]">
+            {checking ? <p className="text-muted-foreground">{t("about.checking")}</p> : null}
+            {!checking && !update && !installError ? (
+              <p className="text-muted-foreground">{t("about.noUpdateYet")}</p>
+            ) : null}
+            {!checking && update && !update.available && !update.error ? (
+              <p className="text-primary">{t("about.upToDate")}</p>
+            ) : null}
+            {!checking && update?.available ? (
+              <p className="font-medium text-primary">{t("about.updateAvailable")}</p>
+            ) : null}
+          </div>
+
+          {installError ? (
+            <div className="mt-2 flex items-start gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12px] text-destructive">
+              <IconAlert size={14} className="mt-px shrink-0" />
+              <div className="min-w-0">
+                <p className="font-medium">{t("about.updateFailed")}</p>
+                <p>{t("about.keptCurrent")}</p>
+                <p className="mt-0.5 break-words opacity-90">{installError}</p>
+              </div>
+            </div>
+          ) : null}
+
+          {update?.notes ? (
+            <div className="mt-2">
+              <SectionLabel>{t("about.notes")}</SectionLabel>
+              <pre className="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-muted/40 px-2 py-1.5 text-[11px] leading-relaxed">
+                {update.notes}
+              </pre>
+            </div>
+          ) : null}
+
+          <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-border pt-2.5">
+            <Checkbox
+              data-testid="confirm-update"
+              checked={confirmed}
+              disabled={!update?.available || installing}
+              label={t("about.confirmUpdate")}
+              hint={!update?.available ? undefined : t("about.installBlockedHint")}
+              onChange={(event) => setConfirmed(event.target.checked)}
+            />
+            <Button
+              variant="primary"
+              data-testid="install-update"
+              disabled={!canInstall}
+              className="ml-auto"
+              onClick={() => void install()}
+            >
+              <IconDownload />
+              {installing ? t("about.installing") : t("about.installAndRestart")}
             </Button>
           </div>
-        ) : null}
-      </Card>
+          <p className="mt-1.5 text-[11px] text-muted-foreground">{t("about.autoCheck")}</p>
+        </div>
+      </Panel>
+
+      {/* Layer 2 — bundled Keysmith adapters */}
+      <Panel>
+        <PanelHeader title={`${t("about.layerAdapters")} · ${t("about.adapters")}`} />
+        <div className="px-3 py-2">
+          <p className="mb-2 text-[11px] text-muted-foreground">{t("about.adaptersHint")}</p>
+          {about?.adapters?.length ? (
+            <ul className="flex flex-col">
+              {about.adapters.map((item) => (
+                <li
+                  key={item.tool}
+                  className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border py-1.5 text-[12px] last:border-b-0"
+                >
+                  <span className="min-w-[92px] font-medium capitalize text-foreground">{item.tool}</span>
+                  <Mono className="text-foreground">{item.version}</Mono>
+                  <span className="text-[11px] text-muted-foreground">
+                    {item.bundled ? t("about.adapterBundled") : t("about.adapterExternal")}
+                  </span>
+                  <span className="text-[11px] text-muted-foreground">{t("about.noHotUpdate")}</span>
+                  {item.path ? (
+                    <Mono className="ml-auto max-w-full truncate" >
+                      <span title={item.path}>{item.path}</span>
+                    </Mono>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-[12px] text-muted-foreground">{t("common.none")}</p>
+          )}
+        </div>
+      </Panel>
+
+      {/* Layer 3 — official CLI products */}
+      <Panel>
+        <PanelHeader title={`${t("about.layerOfficial")} · ${t("about.official")}`} />
+        <div className="px-3 py-2">
+          <p className="mb-2 text-[11px] text-muted-foreground">{t("about.officialHint")}</p>
+          {about?.official?.length ? (
+            <div className="flex flex-col gap-1.5">
+              {about.official.map((product) => (
+                <OfficialRow
+                  key={product.product}
+                  product={product}
+                  busy={officialBusy}
+                  onPlan={previewOfficial}
+                />
+              ))}
+            </div>
+          ) : (
+            <EmptyState title={t("common.none")} testId="about-official-empty" />
+          )}
+
+          {officialPlan ? (
+            <div
+              className="mt-2.5 rounded-lg border border-border bg-muted/40 p-2.5 text-[12px]"
+              data-testid="official-plan"
+            >
+              <p className="font-medium capitalize text-foreground">
+                {officialPlan.product} / {officialPlan.action}
+              </p>
+              <dl className="mt-1.5 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1">
+                <Row label={t("about.command")}>
+                  <Mono>{formatArgv(officialPlan.argv)}</Mono>
+                </Row>
+                <Row label={t("about.dest")}>
+                  <Mono>{officialPlan.dest || "—"}</Mono>
+                </Row>
+                <Row label={t("about.source")}>{officialPlan.source || "—"}</Row>
+              </dl>
+
+              {officialPlan.blockers.length > 0 ? (
+                <div className="mt-2 flex items-start gap-2 rounded border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-destructive">
+                  <IconAlert size={14} className="mt-px shrink-0" />
+                  <ul className="min-w-0 list-inside list-disc">
+                    {officialPlan.blockers.map((item, index) => (
+                      <li key={index}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : (
+                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
+                  <Checkbox
+                    checked={officialConfirmed}
+                    data-testid="confirm-official"
+                    label={t("about.confirmOfficial")}
+                    onChange={(event) => setOfficialConfirmed(event.target.checked)}
+                  />
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    className="ml-auto"
+                    data-testid="run-official"
+                    disabled={!officialConfirmed || officialBusy}
+                    onClick={() => void runOfficial()}
+                  >
+                    {t("about.runOfficial")}
+                  </Button>
+                </div>
+              )}
+            </div>
+          ) : null}
+        </div>
+      </Panel>
     </div>
   );
 }
 
-function Row({ label, value }: { label: string; value: string }) {
+function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
     <>
-      <dt className="text-ink-200">{label}</dt>
-      <dd>{value}</dd>
+      <dt className="whitespace-nowrap text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 break-words text-foreground">{children}</dd>
     </>
   );
 }
 
-function OfficialCard({
+function OfficialRow({
   product,
   busy,
   onPlan,
@@ -293,37 +394,61 @@ function OfficialCard({
   const { t } = useTranslation();
   const action: OfficialAction = product.installed ? "update" : "install";
   const blocked = !product.available;
+
   return (
-    <article className="rounded border border-ink-200/10 bg-ink-900/60 p-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <h3 className="text-[13px] font-semibold capitalize">{product.product}</h3>
-        <span className="text-[11px] text-ink-200">
+    <article className="rounded-md border border-border px-2.5 py-2">
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+        <h3 className="text-[12px] font-semibold capitalize text-foreground">{product.product}</h3>
+        <span
+          className={cx(
+            "inline-flex items-center rounded border px-1.5 py-px text-[10px] font-medium",
+            product.installed
+              ? "border-primary/30 bg-primary/10 text-primary"
+              : "border-border bg-muted text-muted-foreground",
+          )}
+        >
           {product.installed ? t("about.installed") : t("about.notInstalled")}
         </span>
-        <span className="font-mono text-[11px]">
+        <Mono className="text-foreground">
           {product.currentVersion ?? "—"} → {product.latestVersion ?? "—"}
-        </span>
+        </Mono>
+        {!blocked ? (
+          <Button
+            size="sm"
+            className="ml-auto"
+            disabled={busy}
+            data-testid={`official-plan-${product.product}`}
+            onClick={() => onPlan(product.product, action)}
+          >
+            {t("about.planAction")}
+          </Button>
+        ) : null}
       </div>
-      <dl className="mt-1 grid grid-cols-[88px_1fr] gap-y-0.5 text-[11px]">
-        <dt className="text-ink-200">{t("about.executable")}</dt>
-        <dd className="truncate font-mono">{product.executablePath ?? "—"}</dd>
-        <dt className="text-ink-200">{t("about.source")}</dt>
-        <dd className="truncate">{product.source || "—"}</dd>
-        <dt className="text-ink-200">{t("about.command")}</dt>
-        <dd className="truncate font-mono">{formatArgv(product.argv)}</dd>
-        <dt className="text-ink-200">{t("about.dest")}</dt>
-        <dd className="truncate font-mono">{product.dest || "—"}</dd>
-      </dl>
+
       {blocked ? (
-        <p className="mt-1 text-[11px] text-amber-200">
-          {product.product === "zcode" ? t("about.zcodeMacOnly") : t("about.officialBlocked")}
-          {product.unavailableReason ? ` · ${product.unavailableReason}` : ""}
+        <p className="mt-1.5 flex items-start gap-1.5 text-[11px] text-amber-600 dark:text-amber-500">
+          <IconAlert size={12} className="mt-px shrink-0" />
+          <span className="min-w-0">
+            {product.product === "zcode" ? t("about.zcodeMacOnly") : t("about.officialBlocked")}
+            {product.unavailableReason ? ` · ${product.unavailableReason}` : ""}
+          </span>
         </p>
-      ) : (
-        <Button className="mt-2" disabled={busy} onClick={() => onPlan(product.product, action)}>
-          {t("about.planAction")}
-        </Button>
-      )}
+      ) : null}
+
+      <Disclosure title={t("common.details")} testId={`official-details-${product.product}`}>
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-[11px]">
+          <Row label={t("about.executable")}>
+            <Mono>{product.executablePath ?? "—"}</Mono>
+          </Row>
+          <Row label={t("about.source")}>{product.source || "—"}</Row>
+          <Row label={t("about.command")}>
+            <Mono>{formatArgv(product.argv)}</Mono>
+          </Row>
+          <Row label={t("about.dest")}>
+            <Mono>{product.dest || "—"}</Mono>
+          </Row>
+        </dl>
+      </Disclosure>
     </article>
   );
 }

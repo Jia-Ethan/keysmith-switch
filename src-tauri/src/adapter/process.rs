@@ -16,10 +16,40 @@ pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 pub const VERSION_TIMEOUT: Duration = Duration::from_secs(15);
 pub const MAX_OUTPUT_BYTES: usize = 2 * 1024 * 1024;
 
+const ENV_SIDECAR_DIR: &str = "KEYSMITH_SWITCH_SIDECAR_DIR";
+const ENV_FORCE_PYTHON: &str = "KEYSMITH_SWITCH_FORCE_PYTHON";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AdapterCliKind {
+    Frozen,
+    PythonScript,
+}
+
 #[derive(Debug, Clone)]
 pub struct ResolvedCli {
-    pub python: PathBuf,
-    pub script: PathBuf,
+    pub program: PathBuf,
+    pub prefix: Vec<String>,
+    pub frozen: bool,
+}
+
+impl ResolvedCli {
+    pub fn cli_path(&self) -> String {
+        if self.frozen {
+            self.program.to_string_lossy().into_owned()
+        } else if let Some(script) = self.prefix.first() {
+            script.clone()
+        } else {
+            self.program.to_string_lossy().into_owned()
+        }
+    }
+
+    pub fn kind(&self) -> AdapterCliKind {
+        if self.frozen {
+            AdapterCliKind::Frozen
+        } else {
+            AdapterCliKind::PythonScript
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -38,50 +68,114 @@ struct StreamCapture {
     error: Option<String>,
 }
 
+pub fn sidecar_basename(tool: ToolKind) -> &'static str {
+    match tool {
+        ToolKind::Claude => "keysmith-claude",
+        ToolKind::Codex => "keysmith-codex",
+        ToolKind::Grok => "keysmith-grok",
+        ToolKind::Zcode => "keysmith-zcode",
+    }
+}
+
 pub fn resolve_python() -> Result<PathBuf> {
     which::which("python3")
         .or_else(|_| which::which("python"))
-        .map_err(|_| Error::cli_missing("python3 is not available on PATH"))
+        .map_err(|_| {
+            Error::cli_missing(
+                "bundled sidecar missing and python3 is not on PATH; packaged builds must ship frozen sidecars",
+            )
+        })
 }
 
 pub fn resolve_cli(tool: ToolKind, opts: &AdapterOptions) -> Result<ResolvedCli> {
-    let python = resolve_python()?;
     if let Some(path) = &opts.cli_override {
-        return existing_script(python, path);
+        return resolve_override(path);
     }
     let env_key = tool.env_cli_key();
     if let Some(path) = opts.extra_env.get(env_key) {
-        return existing_script(python, Path::new(path));
+        return resolve_override(Path::new(path));
     }
     if let Ok(path) = std::env::var(env_key) {
         if !path.trim().is_empty() {
-            return existing_script(python, Path::new(&path));
+            return resolve_override(Path::new(&path));
+        }
+    }
+    if !force_python() {
+        if let Some(bin) = find_sidecar(tool) {
+            return Ok(frozen(bin));
         }
     }
     if let Some(script) = find_vendored_script(tool) {
-        return existing_script(python, &script);
+        return python_script(script);
     }
     if let Ok(path) = which::which(script_basename(tool)) {
-        return existing_script(python, &path);
+        return resolve_override(&path);
+    }
+    if let Ok(path) = which::which(sidecar_basename(tool)) {
+        return Ok(frozen(path));
     }
     Err(Error::cli_missing(format!(
-        "{} CLI not found (set {}, vendored script, or PATH)",
+        "{} CLI not found (bundled sidecar, {}, vendored script, or PATH)",
         tool.as_str(),
         env_key
     )))
 }
 
-fn existing_script(python: PathBuf, path: &Path) -> Result<ResolvedCli> {
+fn force_python() -> bool {
+    matches!(
+        std::env::var(ENV_FORCE_PYTHON).ok().as_deref(),
+        Some("1") | Some("true") | Some("TRUE")
+    )
+}
+
+fn resolve_override(path: &Path) -> Result<ResolvedCli> {
     if !path.exists() {
         return Err(Error::cli_missing(format!(
-            "CLI script does not exist: {}",
+            "CLI path does not exist: {}",
             path.display()
         )));
     }
+    if is_python_script(path) {
+        python_script(path.to_path_buf())
+    } else {
+        Ok(frozen(path.to_path_buf()))
+    }
+}
+
+fn is_python_script(path: &Path) -> bool {
+    match path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("py") => true,
+        Some("exe") | Some("bin") => false,
+        _ => {
+            if let Ok(bytes) = std::fs::read(path) {
+                let head = String::from_utf8_lossy(&bytes[..bytes.len().min(80)]);
+                return head.starts_with("#!") && head.contains("python");
+            }
+            false
+        }
+    }
+}
+
+fn python_script(script: PathBuf) -> Result<ResolvedCli> {
+    let python = resolve_python()?;
     Ok(ResolvedCli {
-        python,
-        script: path.to_path_buf(),
+        program: python,
+        prefix: vec![script.to_string_lossy().into_owned()],
+        frozen: false,
     })
+}
+
+fn frozen(program: PathBuf) -> ResolvedCli {
+    ResolvedCli {
+        program,
+        prefix: Vec::new(),
+        frozen: true,
+    }
 }
 
 fn script_basename(tool: ToolKind) -> &'static str {
@@ -91,6 +185,76 @@ fn script_basename(tool: ToolKind) -> &'static str {
         ToolKind::Grok => "grok-keysmith.py",
         ToolKind::Zcode => "zcode-keysmith.py",
     }
+}
+
+fn sidecar_file_name(tool: ToolKind) -> String {
+    let base = sidecar_basename(tool);
+    if cfg!(windows) {
+        format!("{base}.exe")
+    } else {
+        base.to_string()
+    }
+}
+
+fn target_triple() -> &'static str {
+    env!("TARGET_TRIPLE")
+}
+
+pub fn find_sidecar(tool: ToolKind) -> Option<PathBuf> {
+    let name = sidecar_file_name(tool);
+    let triple_name = if cfg!(windows) {
+        format!("{}-{}.exe", sidecar_basename(tool), target_triple())
+    } else {
+        format!("{}-{}", sidecar_basename(tool), target_triple())
+    };
+    let mut roots = Vec::new();
+    if let Ok(dir) = std::env::var(ENV_SIDECAR_DIR) {
+        roots.push(PathBuf::from(dir));
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            roots.push(dir.to_path_buf());
+            roots.push(dir.join("sidecars"));
+            roots.push(dir.join("../Resources").join("sidecars"));
+            roots.push(dir.join("../Resources").join("binaries"));
+            if let Some(parent) = dir.parent() {
+                roots.push(parent.join("Resources"));
+                roots.push(parent.join("MacOS"));
+            }
+        }
+    }
+    roots.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("binaries"));
+    if let Ok(cwd) = std::env::current_dir() {
+        roots.push(cwd.join("src-tauri/binaries"));
+        roots.push(cwd.join("binaries"));
+    }
+    for root in roots {
+        for candidate in [root.join(&name), root.join(&triple_name)] {
+            if is_runnable(&candidate) {
+                return candidate.canonicalize().ok().or(Some(candidate));
+            }
+        }
+    }
+    None
+}
+
+fn is_runnable(path: &Path) -> bool {
+    if !path.is_file() {
+        return false;
+    }
+    if let Ok(bytes) = std::fs::read(path) {
+        if bytes.starts_with(b"STUB") {
+            return false;
+        }
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(meta) = path.metadata() {
+            return meta.permissions().mode() & 0o111 != 0;
+        }
+    }
+    true
 }
 
 pub fn find_vendored_script(tool: ToolKind) -> Option<PathBuf> {
@@ -126,14 +290,12 @@ pub async fn invoke(
     opts: &AdapterOptions,
     limit: Duration,
 ) -> Result<Captured> {
-    let mut argv = vec![
-        cli.python.to_string_lossy().into_owned(),
-        cli.script.to_string_lossy().into_owned(),
-    ];
+    let mut argv = vec![cli.program.to_string_lossy().into_owned()];
+    argv.extend(cli.prefix.iter().cloned());
     argv.extend(args.iter().cloned());
 
-    let mut command = Command::new(&cli.python);
-    command.arg(&cli.script);
+    let mut command = Command::new(&cli.program);
+    command.args(&cli.prefix);
     command.args(args);
     configure_process_tree(&mut command);
     command.kill_on_drop(true);
@@ -150,9 +312,8 @@ pub async fn invoke(
 
     let mut child = command.spawn().map_err(|error| {
         Error::cli_missing(format!(
-            "failed to start {} {}: {error}",
-            cli.python.display(),
-            cli.script.display()
+            "failed to start {}: {error}",
+            cli.program.display()
         ))
     })?;
     let stdout = child

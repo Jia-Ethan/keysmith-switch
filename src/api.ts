@@ -7,7 +7,12 @@ import type {
   AdvancedKind,
   AdvancedResult,
   AdvancedToolInfo,
+  BackupEntry,
+  ClearPlan,
+  DataDirs,
   Envelope,
+  FirstRunReport,
+  ImportResult,
   OfficialAction,
   OfficialPlan,
   OfficialProductId,
@@ -208,4 +213,72 @@ export function listAdvancedTools(): Promise<{
 
 export function runAdvanced(kind: AdvancedKind, args: Record<string, string>): Promise<AdvancedResult> {
   return call("run_advanced", { kind, args });
+}
+
+export function getStartupReport(): Promise<FirstRunReport> {
+  return call("get_startup_report", {});
+}
+
+export function importExistingPrompts(paths: string[]): Promise<ImportResult> {
+  return call("import_existing_prompts", { paths });
+}
+
+export function importMarkdownFiles(tool: ToolId, paths: string[]): Promise<ImportResult> {
+  return call("import_markdown_files", { tool, paths });
+}
+
+export function importZipArchive(path: string): Promise<ImportResult> {
+  return call("import_zip_archive", { path });
+}
+
+export function exportZipArchive(path: string): Promise<{ ok: boolean; path: string }> {
+  return call("export_zip_archive", { path });
+}
+
+export function createBackup(): Promise<BackupEntry> {
+  return call("create_backup", {});
+}
+
+export function listBackups(): Promise<{ backups: BackupEntry[] }> {
+  return call("list_backups", {});
+}
+
+export function restoreBackup(path: string): Promise<ImportResult> {
+  return call("restore_backup", { path });
+}
+
+export function planClearAllData(): Promise<ClearPlan> {
+  return call("plan_clear_all_data", {});
+}
+
+export function clearAllData(phrase: string): Promise<OkResult> {
+  return call("clear_all_data", { phrase, confirmed: true });
+}
+
+export function getDataDirs(): Promise<DataDirs> {
+  return call("get_data_dirs", {});
+}
+
+export function acknowledgeRecovery(): Promise<OkResult> {
+  return call("acknowledge_recovery", {});
+}
+
+export function logFrontendError(message: string, stack?: string): Promise<OkResult> {
+  return call("log_frontend_error", { message, stack });
+}
+
+export function hideToTray(): Promise<OkResult> {
+  return call("hide_to_tray", {});
+}
+
+export function showMainWindow(): Promise<OkResult> {
+  return call("show_main_window", {});
+}
+
+export function quitApp(): Promise<OkResult> {
+  return call("quit_app", {});
+}
+
+export function markFirstRunDone(): Promise<Settings> {
+  return call("mark_first_run_done", {});
 }

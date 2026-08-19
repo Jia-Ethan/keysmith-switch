@@ -153,7 +153,7 @@ pub async fn run_adapter_with(
     envelope.preview = prepared.preview;
 
     let cli = process::resolve_cli(tool, opts)?;
-    envelope.cli_path = Some(cli.script.to_string_lossy().into_owned());
+    envelope.cli_path = Some(cli.cli_path());
 
     let limit = opts
         .timeout

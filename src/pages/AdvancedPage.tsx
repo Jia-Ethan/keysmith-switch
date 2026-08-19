@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import * as api from "../api";
 import { ErrorBanner } from "../components/ErrorBanner";
-import { Button, Card, Field, Input } from "../components/ui";
+import { Button, Field, Input, Panel, PanelHeader, Segmented } from "../components/ui";
 import type { ToastApi } from "../hooks/useToasts";
 import { toastSafeMessage } from "../lib/redact";
 import type { AdvancedKind, AdvancedResult, AdvancedToolInfo } from "../types";
@@ -66,34 +66,48 @@ export function AdvancedPage({ enabled, toast }: { enabled: boolean; toast: Toas
   };
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-3">
-      <Card title={t("advanced.title")}>
-        <p className="mb-3 text-[12px] text-ink-200">{t("advanced.hint")}</p>
-        {error ? <ErrorBanner message={error} /> : null}
-        <div className="mb-3 flex flex-wrap gap-1">
-          {tools.map((item) => (
-            <Button
-              key={item.kind}
-              variant={kind === item.kind ? "primary" : "outline"}
-              onClick={() => setKind(item.kind)}
-            >
-              {label(item.kind)}
-            </Button>
-          ))}
+    <div className="mx-auto flex h-full min-h-0 w-full max-w-3xl flex-col gap-2 overflow-auto">
+      <Panel>
+        <PanelHeader title={t("advanced.title")} />
+        <div className="flex flex-col gap-2.5 px-3 py-2.5">
+          <p className="text-[11px] text-muted-foreground">{t("advanced.hint")}</p>
+          {error ? <ErrorBanner message={error} /> : null}
+
+          <Segmented<AdvancedKind>
+            value={kind}
+            ariaLabel={t("advanced.title")}
+            onChange={setKind}
+            options={tools.map((item) => ({ value: item.kind, label: label(item.kind) }))}
+          />
+
+          <Field label={t("advanced.args")}>
+            <Input
+              value={args}
+              disabled={busy}
+              data-testid="advanced-args"
+              onChange={(event) => setArgs(event.target.value)}
+            />
+          </Field>
+
+          <Button
+            variant="primary"
+            className="self-start"
+            disabled={busy}
+            data-testid="advanced-run"
+            onClick={() => void run()}
+          >
+            {busy ? t("common.busy") : t("advanced.run")}
+          </Button>
         </div>
-        <Field label={t("advanced.args")}>
-          <Input value={args} onChange={(event) => setArgs(event.target.value)} />
-        </Field>
-        <Button className="mt-2" variant="primary" disabled={busy} onClick={() => void run()}>
-          {t("advanced.run")}
-        </Button>
-      </Card>
+      </Panel>
+
       {result ? (
-        <Card title={t("advanced.output")}>
-          <pre className="overflow-auto whitespace-pre-wrap font-mono text-[11px]">
+        <Panel>
+          <PanelHeader title={t("advanced.output")} />
+          <pre className="max-h-[50vh] overflow-auto whitespace-pre-wrap px-3 py-2.5 font-mono text-[11px] leading-relaxed">
             {result.output || result.error || t("common.empty")}
           </pre>
-        </Card>
+        </Panel>
       ) : null}
     </div>
   );

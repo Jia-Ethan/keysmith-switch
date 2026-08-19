@@ -26,7 +26,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
-REPO_ROOT = Path(__file__).resolve().parent
+def _resource_base() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(getattr(sys, "_MEIPASS"))
+    return Path(__file__).resolve().parent
+
+
+REPO_ROOT = _resource_base()
 __version__ = "0.1.0"
 VERSION = __version__
 DEFAULT_SOURCE_SYSTEM_FILE = REPO_ROOT / "examples" / "system-role.md"

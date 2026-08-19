@@ -93,6 +93,7 @@ fn resolve_update_endpoint_selects_stable_and_beta() {
 
 #[test]
 fn check_update_selects_stable_endpoint_by_default() {
+    let _guard = env_lock();
     let server = MockServer::start();
     let artifact = "/artifact-0.2.0.bin";
     let sig = load_text("artifact-0.2.0.bin.sig");
@@ -120,6 +121,7 @@ fn check_update_selects_stable_endpoint_by_default() {
 
 #[test]
 fn check_update_selects_beta_channel() {
+    let _guard = env_lock();
     let server = MockServer::start();
     let sig = load_text("artifact-0.2.0-beta.1.bin.sig");
     let body = fixture_manifest(
@@ -167,6 +169,7 @@ fn check_update_env_channel_selects_beta() {
 
 #[test]
 fn check_update_rejects_downgrade() {
+    let _guard = env_lock();
     let server = MockServer::start();
     let sig = load_text("artifact-0.0.9.bin.sig");
     let body = fixture_manifest("0.0.9", &server.url("/artifact-0.0.9.bin"), &sig);
@@ -189,6 +192,7 @@ fn check_update_rejects_downgrade() {
 
 #[test]
 fn check_update_rejects_corrupt_metadata() {
+    let _guard = env_lock();
     let server = MockServer::start();
     serve_json(
         &server,
@@ -245,6 +249,7 @@ fn check_update_rejects_corrupt_metadata() {
 
 #[test]
 fn check_update_offline_keeps_current_version() {
+    let _guard = env_lock();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     drop(listener);
@@ -267,6 +272,7 @@ fn check_update_offline_keeps_current_version() {
 
 #[test]
 fn check_update_linux_unsupported_keeps_current_version() {
+    let _guard = env_lock();
     let req = UpdateRequest {
         current_version: Some(APP_VERSION.to_string()),
         platform_key: Some("linux-x86_64".to_string()),
@@ -285,6 +291,7 @@ fn check_update_linux_unsupported_keeps_current_version() {
 
 #[test]
 fn install_update_requires_confirmed() {
+    let _guard = env_lock();
     let server = MockServer::start();
     let sig = load_text("artifact-0.2.0.bin.sig");
     serve_json(
@@ -304,6 +311,7 @@ fn install_update_requires_confirmed() {
 
 #[test]
 fn install_update_rejects_signature_error() {
+    let _guard = env_lock();
     let server = MockServer::start();
     let wrong = load_text("artifact-0.2.0.bin.sig.wrong");
     serve_json(
@@ -327,6 +335,7 @@ fn install_update_rejects_signature_error() {
 
 #[test]
 fn install_update_download_interrupt_keeps_current_version() {
+    let _guard = env_lock();
     let interrupt = spawn_interrupt_server();
     let server = MockServer::start();
     let sig = load_text("artifact-0.2.0.bin.sig");
@@ -352,6 +361,7 @@ fn install_update_download_interrupt_keeps_current_version() {
 
 #[test]
 fn install_update_failure_keeps_current_version() {
+    let _guard = env_lock();
     let server = MockServer::start();
     serve_json(
         &server,
@@ -377,6 +387,7 @@ fn install_update_failure_keeps_current_version() {
 
 #[test]
 fn install_update_success_when_confirmed() {
+    let _guard = env_lock();
     let server = MockServer::start();
     let sig = load_text("artifact-0.2.0.bin.sig");
     serve_json(
@@ -392,6 +403,27 @@ fn install_update_success_when_confirmed() {
     assert!(install.ok, "{:?}", install.error);
     assert!(install.restart_required);
     assert!(install.error.is_none());
+}
+
+#[test]
+fn apply_mode_reads_env() {
+    let _guard = env_lock();
+    std::env::remove_var("KEYSMITH_SWITCH_UPDATER_APPLY");
+    assert_eq!(
+        keysmith_switch_lib::updater::apply_mode(),
+        keysmith_switch_lib::updater::ApplyMode::Real
+    );
+    std::env::set_var("KEYSMITH_SWITCH_UPDATER_APPLY", "simulate");
+    assert_eq!(
+        keysmith_switch_lib::updater::apply_mode(),
+        keysmith_switch_lib::updater::ApplyMode::Simulate
+    );
+    std::env::set_var("KEYSMITH_SWITCH_UPDATER_APPLY", "fail");
+    assert_eq!(
+        keysmith_switch_lib::updater::apply_mode(),
+        keysmith_switch_lib::updater::ApplyMode::Fail
+    );
+    std::env::remove_var("KEYSMITH_SWITCH_UPDATER_APPLY");
 }
 
 fn spawn_interrupt_server() -> String {

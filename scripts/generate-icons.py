@@ -61,21 +61,41 @@ def pixel(x: int, y: int, w: int, h: int) -> bytes:
     return bytes((r, g, b, 255))
 
 
-def write_ico(path: Path, png_bytes: bytes, size: int) -> None:
-    # PNG-in-ICO
-    header = struct.pack("<HHH", 0, 1, 1)
-    entry = struct.pack(
-        "<BBBBHHII",
-        size if size < 256 else 0,
-        size if size < 256 else 0,
-        0,
-        0,
-        1,
-        32,
-        len(png_bytes),
-        22,
-    )
-    path.write_bytes(header + entry + png_bytes)
+def write_ico(path: Path, images: list[tuple[int, bytes]]) -> None:
+    header = struct.pack("<HHH", 0, 1, len(images))
+    offset = 6 + 16 * len(images)
+    entries = b""
+    payload = b""
+    for size, png_bytes in images:
+        entries += struct.pack(
+            "<BBBBHHII",
+            size if size < 256 else 0,
+            size if size < 256 else 0,
+            0,
+            0,
+            1,
+            32,
+            len(png_bytes),
+            offset,
+        )
+        payload += png_bytes
+        offset += len(png_bytes)
+    path.write_bytes(header + entries + payload)
+
+
+def dmg_pixel(x: int, y: int, w: int, h: int) -> bytes:
+    nx = x / max(w - 1, 1)
+    ny = y / max(h - 1, 1)
+    r, g, b = 18, 24, 30
+    if 0.08 < ny < 0.92:
+        r, g, b = 24, 36, 42
+    # left drop target
+    if 0.14 < nx < 0.42 and 0.28 < ny < 0.72:
+        r, g, b = 15, 118, 110
+    # right Applications target
+    if 0.58 < nx < 0.86 and 0.28 < ny < 0.72:
+        r, g, b = 45, 55, 64
+    return bytes((r, g, b, 255))
 
 
 def main() -> None:
@@ -92,10 +112,13 @@ def main() -> None:
         data = png(size, size, pixel)
         (ROOT / name).write_bytes(data)
         pngs[size] = data
-    write_ico(ROOT / "icon.ico", pngs[256], 256)
-    # icon.icns is generated later on macOS if iconutil is available;
-    # keep a PNG fallback copy named icon.icns only if conversion fails.
-    print(f"wrote icons under {ROOT}")
+    ico_sizes = [16, 24, 32, 48, 64, 128, 256]
+    ico_images = [(size, png(size, size, pixel)) for size in ico_sizes]
+    write_ico(ROOT / "icon.ico", ico_images)
+    dmg_dir = ROOT.parent / "images"
+    dmg_dir.mkdir(parents=True, exist_ok=True)
+    (dmg_dir / "dmg-background.png").write_bytes(png(660, 400, dmg_pixel))
+    print(f"wrote icons under {ROOT} and DMG background")
 
 
 if __name__ == "__main__":
