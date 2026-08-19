@@ -1,7 +1,7 @@
 # Keysmith Switch — 实现状态
 
 更新时间：2026-08-19 17:37 +08:00（Asia/Hong_Kong）  
-阶段：**本地实现完成 → 已本地验证，待 commit 后停止（不 push）**  
+阶段：**本地实现完成，已 commit ，已停止（不 push）**  
 工作区：`/Users/ethan/Documents/Codex/2026-08-19/ccswitch-keysmithswith-jia-github`  
 GitHub：`Jia-Ethan/keysmith-switch`（Private）
 
@@ -77,7 +77,7 @@ GitHub：`Jia-Ethan/keysmith-switch`（Private）
 - [x] updater + 官方工具 + 打包配置
 - [x] Tauri command 接线
 - [x] 测试与本机验证
-- [ ] 本地 commit（本文件写入后执行，不 push）
+- [x] 本地 commit （不 push）
 
 ## 7. 验证证据
 
