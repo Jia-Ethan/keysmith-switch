@@ -24,6 +24,7 @@ export function App() {
   const [page, setPage] = useState<AppPage>({ kind: "tool", tool: "claude" });
   const [dirty, setDirty] = useState(false);
   const [startup, setStartup] = useState<FirstRunReport | null>(null);
+  const [libraryEpoch, setLibraryEpoch] = useState(0);
 
   const advancedEnabled = settingsState.settings.advancedToolsEnabled;
   const visiblePage = useMemo<AppPage>(() => {
@@ -82,6 +83,7 @@ export function App() {
             toast={toast}
             onRememberProject={(dir) => void rememberProject(dir)}
             onDirtyChange={setDirty}
+            libraryEpoch={libraryEpoch}
           />
         ) : null}
         {visiblePage.kind === "settings" ? (
@@ -108,6 +110,7 @@ export function App() {
         onImport={(paths) => {
           void api.importExistingPrompts(paths).then(() => {
             void api.markFirstRunDone();
+            setLibraryEpoch((value) => value + 1);
             setStartup((current) =>
               current ? { ...current, firstRun: false, candidates: [] } : current,
             );

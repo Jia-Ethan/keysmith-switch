@@ -17,6 +17,12 @@ function activation(overrides: Partial<Activation>): Activation {
   };
 }
 
+describe("scopesFromEnvelope", () => {
+  it("does not throw when the envelope omitted scopes", () => {
+    expect(scopesFromEnvelope({} as Envelope, "claude")).toEqual(["user", "project", "local"]);
+  });
+});
+
 describe("scope support per tool", () => {
   it("keeps user / project / local for claude only", () => {
     expect(scopesForTool("claude")).toEqual(["user", "project", "local"]);

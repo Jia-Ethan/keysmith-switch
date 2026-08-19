@@ -71,7 +71,9 @@ export function scopesForTool(tool: ToolId, reported?: ScopeId[]): ScopeId[] {
 
 export function scopesFromEnvelope(envelope: Envelope | null, tool: ToolId): ScopeId[] {
   if (!envelope) return scopesForTool(tool);
-  const supported = envelope.scopes.filter((item) => item.supported).map((item) => item.id);
+  const supported = (envelope.scopes ?? [])
+    .filter((item) => item.supported)
+    .map((item) => item.id);
   return scopesForTool(tool, supported);
 }
 

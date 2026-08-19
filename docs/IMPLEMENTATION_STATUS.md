@@ -1,7 +1,7 @@
 # Keysmith Switch — 实现状态
 
-更新时间：2026-08-19 21:35 +08:00（Asia/Hong_Kong）  
-阶段：**Preview 未签名本地实现。macOS Apple Silicon 已产出 .dmg。Windows 无原生实机。不 push / 不 Release / 不配置 Secrets。**  
+更新时间：2026-08-19 22:29 +08:00（Asia/Hong_Kong）  
+阶段：**Preview 未签名。已修复打包应用提示词列表卡在「加载中」。macOS Apple Silicon 已重新产出 .dmg。Windows 无原生实机。不 push。**  
 工作区：`/Users/ethan/Documents/Codex/2026-08-19/ccswitch-keysmithswith-jia-github`
 
 每次中断或恢复前必须先重读本文件。
@@ -39,8 +39,7 @@
 
 | 文件 | 大小 | SHA-256 |
 | --- | --- | --- |
-| `src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/Keysmith Switch_0.1.0_aarch64.dmg` | 21 MB | `59fbbbc30f0d9eba5d3ff6dee32f8e10df98c5ffd5815e0611ac9fff02ef4432` |
-| `.../macos/Keysmith Switch.app.tar.gz` | 21 MB | `9fe412445a72726dd4b2b658a7a016f0e0a8e3aad638a2c0e5b58cf4f8b75d5d` |
+| `src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/Keysmith Switch_0.1.0_aarch64.dmg` | 21 MB | `173104bca6e4b2ce259498fe141fd78a7af2fad32f1bcbe9730a092c77788ee6`（含列表加载修复，22:15 重新打包） |
 
 `npx tauri build` 退出码 1：**公钥在配置中，但没有 `TAURI_SIGNING_PRIVATE_KEY`，updater `.sig` 未生成。** DMG 与 `.app` 已写出。这不是签名失败冒充成功。
 
@@ -62,14 +61,14 @@ codesign：`flags=0x20002(adhoc,linker-signed)`，`TeamIdentifier=not set`。
 
 | 命令 | 结果 |
 | --- | --- |
-| `npm test` | **35 passed** |
+| `npm test` | **37 passed** |
 | `npm run build` | Vite 生产构建成功 |
 | `cargo fmt --check` | 通过 |
 | `cargo check --offline` | 通过 |
 | `cargo test --offline` | 通过（含 data_lifecycle 6、updater_policy 15、auto_launch 3） |
 | sidecar `--version`，`PATH=/bin`（无 python） | claude v7.1 / codex 0.3.8 / grok 0.4.1 / zcode 0.1.0 |
 | otool sidecar | 仅 `libSystem` + `libz`，无 Python.framework |
-| 隔离 HOME 启动打包应用 | 数据写入 `/tmp/ks-gui-20260819/.keysmith-switch`（21:29）。真实 `~/.keysmith-switch` mtime 仍为 17:49 |
+| 隔离 HOME 启动打包应用 | `HOME` + `KEYSMITH_SWITCH_HOME` + `KEYSMITH_SWITCH_TOOL_HOME` + `KEYSMITH_SWITCH_SCAN_HOME` = `/tmp/ks-iso-cont`。真实 `~/.keysmith-switch` / `~/.claude` / `~/.zcode-keysmith` mtime 未变。`~/.codex` / `~/.grok` 在本机有其他进程（Codex/Grok Bot）同时写入，不能算进本应用 |
 | 上游 claude-keysmith pytest | **135 passed** |
 | 上游 codex-keysmith pytest | **1008 passed, 25 skipped** |
 | 上游 grok-keysmith pytest | **134 passed** |

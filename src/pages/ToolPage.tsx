@@ -66,12 +66,14 @@ export function ToolPage({
   toast,
   onRememberProject,
   onDirtyChange,
+  libraryEpoch = 0,
 }: {
   tool: ToolId;
   settings: Settings;
   toast: ToastApi;
   onRememberProject: (dir: string) => void;
   onDirtyChange?: (dirty: boolean) => void;
+  libraryEpoch?: number;
 }) {
   const { t } = useTranslation();
   const [toolInfo, setToolInfo] = useState<ToolInfo>(
@@ -104,7 +106,9 @@ export function ToolPage({
   // activated prompt silently renders as inactive and invites a duplicate activate.
   const [activations, setActivations] = useState<Activation[] | null>(null);
   const [formOpen, setFormOpen] = useState(false);
-  const requestSeq = useRef(0);
+  const promptListSeq = useRef(0);
+  const promptDetailSeq = useRef(0);
+  const statusSeq = useRef(0);
   const toolRef = useRef(tool);
   toolRef.current = tool;
 
@@ -124,12 +128,12 @@ export function ToolPage({
   );
 
   const loadStatus = useCallback(async () => {
-    const seq = ++requestSeq.current;
+    const seq = ++statusSeq.current;
     const args: { tool: ToolId; scope?: ScopeId; projectDir?: string } = { tool, scope };
     if (scopeNeedsProjectDir(scope) && projectDir) args.projectDir = projectDir;
     try {
       const envelope = await api.toolStatus(args);
-      if (seq !== requestSeq.current || toolRef.current !== tool) return;
+      if (seq !== statusSeq.current || toolRef.current !== tool) return;
       setStatus(envelope);
       if (envelope.available === false && tool === "zcode") {
         setToolInfo((current) => ({
@@ -139,18 +143,22 @@ export function ToolPage({
         }));
       }
     } catch (err) {
+      if (seq !== statusSeq.current) return;
       setStatus(null);
       setError(toastSafeMessage(err) || t("errors.loadFailed"));
     }
     try {
-      setDoctorEnv(await api.doctor(tool));
+      const report = await api.doctor(tool);
+      if (seq !== statusSeq.current) return;
+      setDoctorEnv(report);
     } catch {
+      if (seq !== statusSeq.current) return;
       setDoctorEnv(null);
     }
-  }, [projectDir, scope, t, tool]);
+  }, [projectDir, scope, tool]);
 
   const loadPrompts = useCallback(async () => {
-    const seq = ++requestSeq.current;
+    const seq = ++promptListSeq.current;
     setPromptsLoading(true);
     try {
       const result = await api.listPrompts({
@@ -159,17 +167,17 @@ export function ToolPage({
         tag: tag || undefined,
         sort,
       });
-      if (seq !== requestSeq.current || toolRef.current !== tool) return;
+      if (seq !== promptListSeq.current || toolRef.current !== tool) return;
       setPrompts(sortPrompts(result.prompts ?? [], sort));
       setError(null);
     } catch (err) {
-      if (seq !== requestSeq.current || toolRef.current !== tool) return;
+      if (seq !== promptListSeq.current || toolRef.current !== tool) return;
       setPrompts([]);
       setError(toastSafeMessage(err) || t("errors.apiUnavailable"));
     } finally {
-      if (seq === requestSeq.current) setPromptsLoading(false);
+      if (seq === promptListSeq.current) setPromptsLoading(false);
     }
-  }, [query, sort, t, tag, tool]);
+  }, [query, sort, tag, tool]);
 
   const loadOps = useCallback(async () => {
     try {
@@ -202,7 +210,9 @@ export function ToolPage({
   }, [loadPrompts, refreshMeta]);
 
   useEffect(() => {
-    requestSeq.current += 1;
+    promptListSeq.current += 1;
+    promptDetailSeq.current += 1;
+    statusSeq.current += 1;
     setSelectedId(null);
     setDetail(null);
     setCreating(false);
@@ -227,14 +237,18 @@ export function ToolPage({
   }, [refreshMeta]);
 
   useEffect(() => {
+    // Filter keystrokes debounce. Tool switches load immediately so the list
+    // cannot stay on "loading" because a later status/doctor request bumped a
+    // shared sequence or because `t` changed identity every render.
+    const delay = query || tag ? 180 : 0;
     const handle = window.setTimeout(() => {
       void loadPrompts();
-    }, 180);
+    }, delay);
     return () => window.clearTimeout(handle);
-  }, [loadPrompts]);
+  }, [loadPrompts, query, tag, libraryEpoch]);
 
   const selectPrompt = async (id: string) => {
-    const seq = ++requestSeq.current;
+    const seq = ++promptDetailSeq.current;
     setSelectedId(id);
     setCreating(false);
     setEditing(false);
@@ -242,10 +256,11 @@ export function ToolPage({
     setDiff("");
     try {
       const next = await api.getPrompt(id);
-      if (seq !== requestSeq.current) return;
+      if (seq !== promptDetailSeq.current) return;
       setDetail(next);
       setDraft({ title: next.title, content: next.content, tags: next.tags.join(", ") });
       const history = await api.promptHistory(id);
+      if (seq !== promptDetailSeq.current) return;
       setVersions(history.versions ?? []);
     } catch (err) {
       toast.err(err);

@@ -40,7 +40,14 @@ impl AppState {
 }
 
 fn opts() -> AdapterOptions {
-    AdapterOptions::default()
+    let mut opts = AdapterOptions::default();
+    if let Ok(home) = std::env::var("KEYSMITH_SWITCH_TOOL_HOME") {
+        let trimmed = home.trim();
+        if !trimmed.is_empty() {
+            opts.home = Some(PathBuf::from(trimmed));
+        }
+    }
+    opts
 }
 
 fn parse_sort(raw: Option<&str>) -> PromptSort {
@@ -1022,6 +1029,8 @@ pub fn get_startup_report(state: State<'_, AppState>) -> Result<crate::data::Fir
     let settings = state.store.get_settings()?;
     let home = if let Ok(override_home) = std::env::var("KEYSMITH_SWITCH_SCAN_HOME") {
         PathBuf::from(override_home)
+    } else if let Ok(tool_home) = std::env::var("KEYSMITH_SWITCH_TOOL_HOME") {
+        PathBuf::from(tool_home)
     } else {
         user_home()
     };
