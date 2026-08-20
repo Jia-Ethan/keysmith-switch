@@ -40,6 +40,47 @@ assert_arm64_executable() {
   echo "$label ok: $architectures"
 }
 
+assert_sidecar_runs() {
+  local binary="$1"
+  local label="$2"
+  local output
+  if ! output="$("$binary" --version 2>&1)"; then
+    echo "$label runtime smoke failed: $output" >&2
+    exit 1
+  fi
+  if [[ -z "$output" ]]; then
+    echo "$label returned an empty version response" >&2
+    exit 1
+  fi
+  echo "$label runtime ok: ${output%%$'\n'*}"
+}
+
+assert_sidecar_previews() {
+  local smoke_home prompt
+  smoke_home="$(mktemp -d "${TMPDIR:-/tmp}/keysmith-bundle-smoke.XXXXXX")"
+  prompt="$smoke_home/prompt.md"
+  printf '# Bundle smoke\nPreview only.\n' > "$prompt"
+  mkdir -p "$smoke_home/.codex"
+  : > "$smoke_home/.codex/config.toml"
+
+  HOME="$smoke_home" "$MACOS/keysmith-claude" install --scope user \
+    --file "$prompt" --name bundle-smoke --json >/dev/null
+  HOME="$smoke_home" "$MACOS/keysmith-codex" --file "$prompt" \
+    --name bundle-smoke --dry-run --lang en --codex-dir "$smoke_home/.codex" >/dev/null
+  HOME="$smoke_home" "$MACOS/keysmith-grok" --json --file "$prompt" \
+    --name bundle-smoke --dry-run --grok-dir "$smoke_home/.grok" >/dev/null
+  HOME="$smoke_home" "$MACOS/keysmith-zcode" doctor \
+    --managed-dir "$smoke_home/.zcode-keysmith" >/dev/null
+
+  if [[ -e "$smoke_home/.claude" || -e "$smoke_home/.grok" || -e "$smoke_home/.zcode-keysmith" ]]; then
+    echo "sidecar preview smoke unexpectedly wrote managed configuration" >&2
+    rm -rf "$smoke_home"
+    exit 1
+  fi
+  rm -rf "$smoke_home"
+  echo "sidecar preview smoke passed"
+}
+
 if [[ ! -f "$PLIST" ]]; then
   echo "missing Info.plist: $PLIST" >&2
   exit 1
@@ -54,11 +95,13 @@ assert_arm64_executable "$MACOS/keysmith-switch" "main executable"
 for name in keysmith-claude keysmith-codex keysmith-grok keysmith-zcode; do
   if [[ -x "$MACOS/$name" ]]; then
     assert_arm64_executable "$MACOS/$name" "sidecar $name"
+    assert_sidecar_runs "$MACOS/$name" "sidecar $name"
   else
     echo "MISSING sidecar $name" >&2
     exit 1
   fi
 done
+assert_sidecar_previews
 
 if [[ "$RESIGN" == true ]]; then
   echo "re-signing app with a local ad-hoc identity"

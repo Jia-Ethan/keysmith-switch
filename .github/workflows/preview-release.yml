@@ -1,0 +1,116 @@
+# Unsigned Preview packaging only. This uploads Actions artifacts but never publishes a Release.
+name: preview-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Preview version; must match the source version
+        default: 0.1.0
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  source-gates:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: npm ci
+      - name: Require the default branch
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "Unsigned Preview candidates must be built from main." >&2
+          exit 1
+      - name: Verify version consistency
+        env:
+          EXPECTED_VERSION: ${{ inputs.version }}
+        run: python3 scripts/check-version.py --expected "$EXPECTED_VERSION"
+      - run: npm test
+      - run: npm run build
+      - run: python3 scripts/build-sidecars.py
+      - run: cargo fmt --check
+        working-directory: src-tauri
+      - run: cargo check
+        working-directory: src-tauri
+      - run: cargo test
+        working-directory: src-tauri
+
+  macos:
+    needs: source-gates
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: npm ci
+      - name: Build unsigned macOS Preview
+        run: npx tauri build --target aarch64-apple-darwin --config src-tauri/tauri.preview.macos.conf.json
+      - name: Verify macOS Preview and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Keysmith Switch.app"
+          bash scripts/verify-bundle.sh "$app"
+          shopt -s nullglob
+          dmgs=(src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg)
+          [[ ${#dmgs[@]} -eq 1 ]] || { echo "Expected one DMG, found ${#dmgs[@]}" >&2; exit 1; }
+          shasum -a 256 "${dmgs[0]}" > src-tauri/target/aarch64-apple-darwin/release/bundle/SHA256SUMS-macos-aarch64.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: keysmith-switch-${{ inputs.version }}-unsigned-preview-macos-aarch64
+          if-no-files-found: error
+          path: |
+            src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+            src-tauri/target/aarch64-apple-darwin/release/bundle/SHA256SUMS-macos-aarch64.txt
+
+  windows:
+    needs: source-gates
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: npm ci
+      - name: Build unsigned Windows Preview
+        run: npx tauri build --target x86_64-pc-windows-msvc --config src-tauri/tauri.preview.windows.conf.json
+      - name: Verify Windows Preview and checksums
+        shell: pwsh
+        run: |
+          $setups = @(Get-ChildItem "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe")
+          if ($setups.Count -ne 1) { throw "Expected exactly one NSIS Setup.exe, found $($setups.Count)" }
+          $signature = Get-AuthenticodeSignature -LiteralPath $setups[0].FullName
+          if ($signature.Status -eq "Valid") { throw "Unsigned Preview unexpectedly has a production Authenticode signature." }
+          $hash = Get-FileHash $setups[0].FullName -Algorithm SHA256
+          "$($hash.Hash.ToLower())  $($setups[0].Name)" | Set-Content "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/SHA256SUMS-windows-x86_64.txt" -Encoding ascii
+      - uses: actions/upload-artifact@v4
+        with:
+          name: keysmith-switch-${{ inputs.version }}-unsigned-preview-windows-x86_64
+          if-no-files-found: error
+          path: |
+            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/SHA256SUMS-windows-x86_64.txt

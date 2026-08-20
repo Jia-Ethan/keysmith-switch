@@ -2,7 +2,7 @@
 
 本地提示词管理桌面工具，面向 Claude Code、Codex、Grok Build 与 ZCode。
 
-**当前发行形态：unsigned Preview。** 安装时 macOS / Windows 系统安全警告是预期行为，产物不得称为已签名正式版。
+**当前发行形态：unsigned Preview。** 安装时 macOS / Windows 系统安全警告是预期行为，产物不得称为已签名正式版。由于 Preview 不发布 updater artifacts，关于页的应用内更新仅在未来生产签名通道启用后可用。
 
 所有真实配置写入都经过四个随应用交付的 Keysmith sidecar（frozen，不需要用户安装 Python）。GUI 不直接改写 `CLAUDE.md`、`~/.codex`、`~/.grok` 或 `~/.zcode-keysmith`。
 
@@ -33,11 +33,13 @@ cd src-tauri && cargo fmt --check && cargo check && cargo test
 npx tauri dev
 ```
 
-macOS Apple Silicon 打包（未签名，正式签名是发布门槛）：
+macOS Apple Silicon 打包（未签名 Preview，不生成 updater artifact）：
 
 ```bash
-npx tauri build --target aarch64-apple-darwin
+npx tauri build --target aarch64-apple-darwin --config src-tauri/tauri.preview.macos.conf.json
 ```
+
+GitHub Actions 的 `preview-release` 工作流只构建并保存 unsigned DMG/NSIS 与 SHA-256，不创建 GitHub Release。正式签名候选继续使用独立的 `release` 工作流。
 
 ## 数据位置
 

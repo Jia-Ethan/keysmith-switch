@@ -10,9 +10,18 @@ identifier：`com.jia-ethan.keysmith-switch`
 
 | 平台 | 目标 | 当前状态 |
 | --- | --- | --- |
-| macOS Apple Silicon | `.app` + `.dmg` + updater `.tar.gz` / `.sig` | 本机 Preview 已产出并严格验证；adhoc/linker-signed；无 Developer ID、公证或生产 updater 签名 |
-| Windows x64 | NSIS `currentUser` + updater `.exe.sig` | workflow 已配置正式签名门槛；本机无 Windows 实体验收，交叉编译不计通过 |
+| macOS Apple Silicon | `.app` + `.dmg` | unsigned Preview 已重建并通过 app/DMG 内 sidecar 运行时 smoke；adhoc、关闭 hardened runtime；无 Developer ID、公证或 updater artifact |
+| Windows x64 | unsigned Preview NSIS `currentUser` `.exe` | Preview workflow 已准备但尚无产物；正式通道另要求 `.exe.sig`、Authenticode 和实体机验收 |
 | Linux | 非首发目标 | 客户端显示 unsupported，不安装 |
+
+## unsigned Preview 通道
+
+- `.github/workflows/preview-release.yml` 只允许从 `main` 手动构建。
+- 版本必须与 `package.json`、`package-lock.json`、Cargo、Tauri 和 Rust 常量一致。
+- macOS 使用 adhoc app 签名且关闭 hardened runtime，避免 PyInstaller sidecar 被 library validation 阻断；Windows 不要求 Authenticode，产物名称明确包含 `unsigned-preview`。
+- macOS 最终 app 内四个 sidecar 都必须通过 `--version` 运行时 smoke，不能只验证文件架构和签名完整性。
+- Preview 不生成 updater artifact、`.sig` 或 `latest.json`，只保存 DMG/NSIS 和 SHA-256 Actions artifacts。
+- 该通道不创建 GitHub Release，不等同于正式发布，也不启用关于页的生产应用内更新。
 
 ## 签名门槛
 

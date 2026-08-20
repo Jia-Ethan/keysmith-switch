@@ -1,27 +1,26 @@
-# 0.1.0 本地发布笔记（不公开）
+# 0.1.0 unsigned Preview 发布笔记
 
-本文件只留在源码仓，不对应 GitHub Release。公开仓库 `keysmith-switch-releases` 尚未创建。
+当前只准备未签名 Preview 候选，不对应 GitHub Release。公开仓库 `keysmith-switch-releases` 尚未创建。
 
 ## 产物意图
 
-- macOS Apple Silicon：`.app` + `.dmg` + `*.app.tar.gz` updater artifact
-- Windows x64：NSIS per-user + `*.exe.sig`
+- macOS Apple Silicon：adhoc `.app` + unsigned `.dmg`
+- Windows x64：unsigned NSIS per-user `.exe`
 - Linux：非首发
+
+两个平台都附带 SHA-256。Actions artifact 名称包含 `unsigned-preview`，不得改称正式签名包。
 
 ## 更新通道
 
-- 默认 stable metadata：`releases/latest/download/latest.json`
-- beta metadata：`releases/download/beta-latest/latest.json`
-- 公钥：当前为 fixtures/updater TEST ONLY 公钥；正式发布前必须轮换
-- 安装必须用户确认；失败则保留 0.1.0
+- Preview 不生成 updater artifact 或 `latest.json`
+- 应用内更新暂不用于 Preview 分发
+- 正式更新通道仍需生产 updater 密钥、公钥和独立发布仓库
 
 ## 明确未做
 
-- 未 push
-- 未建 PR
 - 未创建 `Jia-Ethan/keysmith-switch-releases`
 - 未配置 GitHub Secrets
-- 未生成生产 updater 私钥并入库
 - 未完成 Developer ID / 公证 / Authenticode
+- 未完成 Windows 实机安装、更新和卸载验收
 
 门槛清单见 `docs/RELEASE_GATES.md`。

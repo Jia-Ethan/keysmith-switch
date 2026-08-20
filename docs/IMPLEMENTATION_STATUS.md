@@ -2,7 +2,7 @@
 
 更新时间：2026-08-20 00:00 +08:00（Asia/Shanghai）
 
-阶段：**Preview 本地验收通过；未发布、未 push。**
+阶段：**Preview 本地验收通过；源码已 push，尚未发布。**
 
 工作区：`/Users/ethan/Documents/Codex/2026-08-19/ccswitch-keysmithswith-jia-github`
 
@@ -18,21 +18,23 @@
 - 首次启动检查四个 sidecar；无候选文件时仍可完成首次检查。
 - 关于页三层结构：应用更新、适配器状态、官方工具；更新必须用户确认，不静默安装。签名失败、离线、损坏 metadata、降级和版本漂移均保留现版。
 - 官方 CLI 安装有超时、输出脱敏、运行时间反馈和用户取消；取消会终止正在运行的安装命令。
-- macOS 本地包、DMG、四个 arm64 sidecar、托盘、单实例、窗口状态和 close-to-tray 生命周期已验证。
+- macOS 旧 Preview 包只完成架构和签名检查，后续发现 hardened runtime 会阻断 PyInstaller sidecar；旧 DMG 已作废，新包已关闭 hardened runtime 并通过 sidecar 运行时 smoke。
 - Release workflow 已加入 updater 公钥与私钥匹配校验、macOS Developer ID/公证门槛、Windows Authenticode 门槛，以及每个平台单一产物断言。
+- 独立 unsigned Preview workflow 已准备：固定从 `main` 构建，不生成 updater artifacts，只保存明确标注未签名的 DMG/NSIS 与 SHA-256；macOS 验证包含四个 sidecar 的实际执行。
 
 ## 本地证据
 
-主机：macOS arm64。以下产物使用仓库内 **TEST ONLY** updater fixture 私钥，仅用于本地验证：
+主机：macOS arm64。以下产物不包含 updater artifact，也未使用 updater 私钥：
 
 | 文件 | SHA-256 |
 | --- | --- |
-| `src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/Keysmith Switch_0.1.0_aarch64.dmg` | `b9402be8d529af2b7871aa9a84b7039054cb65ad9c5a02874f59dcbc09b2bd96` |
-| `src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Keysmith Switch.app.tar.gz` | `e95d857bad4555d5e48544aa11c2f0c9ce5c11cba6217c6cf37cf9d81e255720` |
+| `outputs/keysmith-switch-0.1.0-unsigned-preview/Keysmith Switch_0.1.0_aarch64.dmg` | `4f4726b56730755dc72309f3c8185398647d3682d731a5f43bc90f69bb47fef8` |
 
-`Keysmith Switch.app` 已通过 `codesign --verify --deep --strict` 和 `scripts/verify-bundle.sh`：主程序与四 sidecar 均为 thin arm64，identifier 为 `com.jia-ethan.keysmith-switch`，签名为 **adhoc**，无 TeamIdentifier/Authority。该结果不等于 Developer ID 或公证。
+旧 `Keysmith Switch.app` 曾通过 `codesign --verify --deep --strict`，但该证据没有执行 sidecar。2026-08-20 复核确认旧包内四个 PyInstaller sidecar 因 `adhoc,runtime` library validation 返回 255，旧 DMG 和 updater archive 已作废。
 
-updater `.sig` 已由 fixture key 生成并通过本地 minisign 验证；fixture key 不得用于正式 release。正式构建通过 `KEYSMITH_SWITCH_UPDATER_PUBKEY` 注入与生产私钥匹配的公钥，workflow 会拒绝缺失或不匹配的签名材料。
+当前 unsigned Preview 已关闭 hardened runtime 并重新构建。新 app 及从 DMG 挂载后的 app 均通过 `scripts/verify-bundle.sh`：主程序和四 sidecar 为 thin arm64，四 sidecar 的 `--version` 与隔离 HOME 预览动作实际通过，未写入托管配置；app 为 adhoc、无 TeamIdentifier/Authority。主程序在清空环境和隔离 HOME 下保持运行 6 秒并只创建自己的数据库与日志。DMG 通过 `hdiutil verify` 并包含 app、Applications 链接和品牌背景。该证据不等于 Developer ID、公证或 Gatekeeper 接受。
+
+unsigned Preview 不生成 updater `.sig` 或 `latest.json`。仓库内 fixture key 只用于 updater 策略测试；正式构建通过 `KEYSMITH_SWITCH_UPDATER_PUBKEY` 注入与生产私钥匹配的公钥，workflow 会拒绝缺失或不匹配的签名材料。
 
 ## 测试证据
 
@@ -61,4 +63,4 @@ updater `.sig` 已由 fixture key 生成并通过本地 minisign 验证；fixtur
 
 ## 明确未做
 
-本轮没有 commit、push、创建或更新 PR/Release、创建公开 release 仓库、配置 GitHub Secrets，也没有修改 `work/source-audit-20260819/`。
+尚未创建或更新 PR/Release、公开 release 仓库或 GitHub Secrets，也没有修改 `work/source-audit-20260819/`。
