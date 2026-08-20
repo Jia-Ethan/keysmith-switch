@@ -1,8 +1,8 @@
 # Keysmith Switch 实现状态
 
-更新时间：2026-08-20 10:35 +08:00（Asia/Shanghai）
+更新时间：2026-08-20 11:45 +08:00（Asia/Shanghai）
 
-阶段：**unsigned Preview 本地与 CI 产物验证通过；源码已 push，尚未发布。**
+阶段：**unsigned Preview 本地与 CI 产物验证通过；`v0.1.0` 已发布为私有仓库 Pre-release。**
 
 工作区：`/Users/ethan/Documents/Codex/2026-08-19/ccswitch-keysmithswith-jia-github`
 
@@ -39,6 +39,8 @@ GitHub Actions unsigned Preview [run 32323351213](https://github.com/Jia-Ethan/k
 
 CI DMG 通过 `hdiutil verify`；从 DMG 挂载的 app 再次通过 `scripts/verify-bundle.sh`，版本为 `0.1.0`，主程序在清空环境和隔离 HOME 下持续运行 8 秒，未创建 `.claude`、`.codex`、`.grok` 或 `.zcode-keysmith`。Windows 产物由 `windows-latest` 原生 runner 构建为 NSIS GUI installer，CI 确认它没有有效 Authenticode 签名；没有 Windows 实体机安装、启动、升级和卸载证据，因此仍只能标记为 Windows 候选包。
 
+Git 签名标签 `v0.1.0` 指向 `1ac3f35b405bb700a822512038e3979aab4a2edf`。私有仓库 [Pre-release](https://github.com/Jia-Ethan/keysmith-switch/releases/tag/v0.1.0) 已上传上述 DMG、EXE 和 `SHA256SUMS.txt`，GitHub 记录的产物大小与 SHA-256 与本地候选包一致。
+
 旧 `Keysmith Switch.app` 曾通过 `codesign --verify --deep --strict`，但该证据没有执行 sidecar。2026-08-20 复核确认旧包内四个 PyInstaller sidecar 因 `adhoc,runtime` library validation 返回 255，旧 DMG 和 updater archive 已作废。
 
 当前 unsigned Preview 已关闭 hardened runtime 并重新构建。新 app 及从 DMG 挂载后的 app 均通过 `scripts/verify-bundle.sh`：主程序和四 sidecar 为 thin arm64，四 sidecar 的 `--version` 与隔离 HOME 预览动作实际通过，未写入托管配置；app 为 adhoc、无 TeamIdentifier/Authority。主程序在清空环境和隔离 HOME 下保持运行 6 秒并只创建自己的数据库与日志。DMG 通过 `hdiutil verify` 并包含 app、Applications 链接和品牌背景。该证据不等于 Developer ID、公证或 Gatekeeper 接受。
@@ -72,4 +74,4 @@ unsigned Preview 不生成 updater `.sig` 或 `latest.json`。仓库内 fixture 
 
 ## 明确未做
 
-尚未创建或更新 PR/Release、公开 release 仓库或 GitHub Secrets，也没有修改 `work/source-audit-20260819/`。
+未创建或更新 PR、公开 release 仓库或 GitHub Secrets；未发布正式签名版本，也没有修改 `work/source-audit-20260819/`。

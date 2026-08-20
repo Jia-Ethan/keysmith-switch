@@ -16,6 +16,7 @@ identifier：`com.jia-ethan.keysmith-switch`
 
 ## unsigned Preview 通道
 
+- 私有产品仓库已发布 [`v0.1.0` Pre-release](https://github.com/Jia-Ethan/keysmith-switch/releases/tag/v0.1.0)，包含签名 Git tag、DMG、NSIS EXE 和 `SHA256SUMS.txt`。该 Pre-release 不是正式签名发布或 updater 发布通道。
 - GitHub Actions [run 32323351213](https://github.com/Jia-Ethan/keysmith-switch/actions/runs/32323351213) 已通过 `source-gates`、`macos` 和 `windows`，上传 macOS Apple Silicon DMG 与 Windows x64 NSIS Actions artifacts。
 - CI DMG SHA-256 为 `9b429800d3ce55f3d71ac37e84258a5ded2677910232033f19cb147d50f79786`；CI NSIS SHA-256 为 `692d6796891c795116feb54f6f6c3d09372322efa93e58f7102275026bb33e6f`。
 - macOS Actions artifact 已下载并在本机重新挂载验证；Windows artifact 仅有 Windows runner 构建、无有效 Authenticode 断言和校验和，不等同于实体机验收。
