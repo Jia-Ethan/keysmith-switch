@@ -1,6 +1,6 @@
 # Keysmith Switch 实现状态
 
-更新时间：2026-08-20 11:45 +08:00（Asia/Shanghai）
+更新日期：2026-08-20（Asia/Shanghai）
 
 阶段：**unsigned Preview 本地与 CI 产物验证通过；`v0.1.0` 已发布为私有仓库 Pre-release。**
 
