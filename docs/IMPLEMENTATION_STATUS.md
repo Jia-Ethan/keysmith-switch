@@ -1,8 +1,8 @@
 # Keysmith Switch 实现状态
 
-更新时间：2026-08-20 00:00 +08:00（Asia/Shanghai）
+更新时间：2026-08-20 10:35 +08:00（Asia/Shanghai）
 
-阶段：**Preview 本地验收通过；源码已 push，尚未发布。**
+阶段：**unsigned Preview 本地与 CI 产物验证通过；源码已 push，尚未发布。**
 
 工作区：`/Users/ethan/Documents/Codex/2026-08-19/ccswitch-keysmithswith-jia-github`
 
@@ -30,6 +30,15 @@
 | --- | --- |
 | `outputs/keysmith-switch-0.1.0-unsigned-preview/Keysmith Switch_0.1.0_aarch64.dmg` | `4f4726b56730755dc72309f3c8185398647d3682d731a5f43bc90f69bb47fef8` |
 
+GitHub Actions unsigned Preview [run 32323351213](https://github.com/Jia-Ethan/keysmith-switch/actions/runs/32323351213) 的 `source-gates`、`macos` 和 `windows` 均通过。已下载并独立复核 Actions artifacts：
+
+| 平台 | 文件 | 大小 | SHA-256 |
+| --- | --- | --- | --- |
+| macOS Apple Silicon | `outputs/keysmith-switch-0.1.0-ci-preview/keysmith-switch-0.1.0-unsigned-preview-macos-aarch64/dmg/Keysmith Switch_0.1.0_aarch64.dmg` | 38,694,673 bytes | `9b429800d3ce55f3d71ac37e84258a5ded2677910232033f19cb147d50f79786` |
+| Windows x64 | `outputs/keysmith-switch-0.1.0-ci-preview/keysmith-switch-0.1.0-unsigned-preview-windows-x86_64/nsis/Keysmith Switch_0.1.0_x64-setup.exe` | 40,030,350 bytes | `692d6796891c795116feb54f6f6c3d09372322efa93e58f7102275026bb33e6f` |
+
+CI DMG 通过 `hdiutil verify`；从 DMG 挂载的 app 再次通过 `scripts/verify-bundle.sh`，版本为 `0.1.0`，主程序在清空环境和隔离 HOME 下持续运行 8 秒，未创建 `.claude`、`.codex`、`.grok` 或 `.zcode-keysmith`。Windows 产物由 `windows-latest` 原生 runner 构建为 NSIS GUI installer，CI 确认它没有有效 Authenticode 签名；没有 Windows 实体机安装、启动、升级和卸载证据，因此仍只能标记为 Windows 候选包。
+
 旧 `Keysmith Switch.app` 曾通过 `codesign --verify --deep --strict`，但该证据没有执行 sidecar。2026-08-20 复核确认旧包内四个 PyInstaller sidecar 因 `adhoc,runtime` library validation 返回 255，旧 DMG 和 updater archive 已作废。
 
 当前 unsigned Preview 已关闭 hardened runtime 并重新构建。新 app 及从 DMG 挂载后的 app 均通过 `scripts/verify-bundle.sh`：主程序和四 sidecar 为 thin arm64，四 sidecar 的 `--version` 与隔离 HOME 预览动作实际通过，未写入托管配置；app 为 adhoc、无 TeamIdentifier/Authority。主程序在清空环境和隔离 HOME 下保持运行 6 秒并只创建自己的数据库与日志。DMG 通过 `hdiutil verify` 并包含 app、Applications 链接和品牌背景。该证据不等于 Developer ID、公证或 Gatekeeper 接受。
@@ -56,7 +65,7 @@ unsigned Preview 不生成 updater `.sig` 或 `latest.json`。仓库内 fixture 
 ## 正式发布仍阻塞
 
 - macOS Developer ID Application、notarization、stapling 和真实 Gatekeeper 验收。
-- Windows x64 原生 NSIS 安装包、Authenticode、安装/升级/卸载验收；无 Windows 实体机时，CI 交叉编译不能算实体验收。
+- Windows x64 已有 GitHub-hosted Windows runner 原生 NSIS 候选包；正式通道仍缺 Authenticode 以及 Windows 实体机安装、启动、升级和卸载验收。
 - 生产 updater 密钥对、私有 release 仓库和 GitHub Secrets；本轮没有生成、配置或发布它们。
 - updater 生产 endpoint、生产公钥和 release artifact 的最终绑定。
 - 前端主 JS chunk 约 898 KB，正式发布前可做代码分包优化。

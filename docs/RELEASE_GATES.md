@@ -11,10 +11,14 @@ identifier：`com.jia-ethan.keysmith-switch`
 | 平台 | 目标 | 当前状态 |
 | --- | --- | --- |
 | macOS Apple Silicon | `.app` + `.dmg` | unsigned Preview 已重建并通过 app/DMG 内 sidecar 运行时 smoke；adhoc、关闭 hardened runtime；无 Developer ID、公证或 updater artifact |
-| Windows x64 | unsigned Preview NSIS `currentUser` `.exe` | Preview workflow 已准备但尚无产物；正式通道另要求 `.exe.sig`、Authenticode 和实体机验收 |
+| Windows x64 | unsigned Preview NSIS `currentUser` `.exe` | GitHub-hosted Windows runner 原生候选包已构建并校验 SHA-256；无有效 Authenticode，尚无 Windows 实体机安装、启动、升级和卸载验收 |
 | Linux | 非首发目标 | 客户端显示 unsupported，不安装 |
 
 ## unsigned Preview 通道
+
+- GitHub Actions [run 32323351213](https://github.com/Jia-Ethan/keysmith-switch/actions/runs/32323351213) 已通过 `source-gates`、`macos` 和 `windows`，上传 macOS Apple Silicon DMG 与 Windows x64 NSIS Actions artifacts。
+- CI DMG SHA-256 为 `9b429800d3ce55f3d71ac37e84258a5ded2677910232033f19cb147d50f79786`；CI NSIS SHA-256 为 `692d6796891c795116feb54f6f6c3d09372322efa93e58f7102275026bb33e6f`。
+- macOS Actions artifact 已下载并在本机重新挂载验证；Windows artifact 仅有 Windows runner 构建、无有效 Authenticode 断言和校验和，不等同于实体机验收。
 
 - `.github/workflows/preview-release.yml` 只允许从 `main` 手动构建。
 - 版本必须与 `package.json`、`package-lock.json`、Cargo、Tauri 和 Rust 常量一致。
