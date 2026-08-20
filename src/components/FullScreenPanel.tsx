@@ -6,6 +6,7 @@
 import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { useTranslation } from "react-i18next";
 import { Button } from "./ui";
 import { IconChevronRight } from "./icons";
 
@@ -22,6 +23,7 @@ export function FullScreenPanel({
   children: ReactNode;
   footer?: ReactNode;
 }) {
+  const { t } = useTranslation();
   const closeRef = useRef(onClose);
   const panelRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
@@ -88,7 +90,7 @@ export function FullScreenPanel({
           type="button"
           variant="outline"
           size="icon"
-          aria-label="Back"
+          aria-label={t("common.back")}
           data-testid="fullscreen-back"
           onClick={onClose}
           className="h-9 w-9"

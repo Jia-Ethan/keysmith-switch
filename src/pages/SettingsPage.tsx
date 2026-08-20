@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import * as api from "../api";
 import { AboutPage } from "./AboutPage";
@@ -18,7 +19,6 @@ import {
 } from "../components/ui";
 import { useTheme, type ThemeMode } from "../hooks/useTheme";
 import type { ToastApi } from "../hooks/useToasts";
-import { shortPath } from "../lib/format";
 import { openExternal, pickFiles, pickSavePath } from "../lib/runtime";
 import type {
   BackupEntry,
@@ -40,14 +40,12 @@ const TABS: TabId[] = ["general", "tools", "data", "updates", "advanced", "about
 
 export function SettingsPage({
   settings,
-  loadError,
   onSave,
   onDataChanged,
   toast,
   initialTab = "general",
 }: {
   settings: Settings;
-  loadError: string | null;
   onSave: (patch: SettingsPatch) => Promise<Settings>;
   onDataChanged?: () => Promise<void> | void;
   toast: ToastApi;
@@ -58,8 +56,12 @@ export function SettingsPage({
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<TabId>("general");
   const [tools, setTools] = useState<ToolInfo[]>([]);
+  const [toolsLoading, setToolsLoading] = useState(true);
+  const [toolsError, setToolsError] = useState(false);
   const [dirs, setDirs] = useState<DataDirs | null>(null);
   const [backups, setBackups] = useState<BackupEntry[]>([]);
+  const [backupsLoading, setBackupsLoading] = useState(true);
+  const [backupsError, setBackupsError] = useState(false);
   const [clearPlan, setClearPlan] = useState<ClearPlan | null>(null);
   const [clearPhrase, setClearPhrase] = useState("");
   const [clearConfirm, setClearConfirm] = useState(false);
@@ -74,10 +76,38 @@ export function SettingsPage({
     if (TABS.includes(initialTab as TabId)) setTab(initialTab as TabId);
   }, [initialTab]);
 
+  const loadTools = async () => {
+    setToolsLoading(true);
+    setToolsError(false);
+    try {
+      const result = await api.listTools();
+      setTools(result.tools ?? []);
+    } catch {
+      setTools([]);
+      setToolsError(true);
+    } finally {
+      setToolsLoading(false);
+    }
+  };
+
+  const loadBackups = async () => {
+    setBackupsLoading(true);
+    setBackupsError(false);
+    try {
+      const result = await api.listBackups();
+      setBackups(result.backups ?? []);
+    } catch {
+      setBackups([]);
+      setBackupsError(true);
+    } finally {
+      setBackupsLoading(false);
+    }
+  };
+
   useEffect(() => {
-    void api.listTools().then((result) => setTools(result.tools ?? [])).catch(() => setTools([]));
+    void loadTools();
     void api.getDataDirs().then(setDirs).catch(() => setDirs(null));
-    void api.listBackups().then((result) => setBackups(result.backups ?? [])).catch(() => setBackups([]));
+    void loadBackups();
   }, []);
 
   const patch = async (next: SettingsPatch) => {
@@ -103,11 +133,31 @@ export function SettingsPage({
     }
   };
 
+  const selectTab = (next: TabId, focus = false) => {
+    setTab(next);
+    if (focus) {
+      requestAnimationFrame(() => {
+        document.querySelector<HTMLElement>(`[data-testid="settings-nav-${next}"]`)?.focus();
+      });
+    }
+  };
+
+  const onTabKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, item: TabId) => {
+    const index = TABS.indexOf(item);
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowRight") nextIndex = (index + 1) % TABS.length;
+    if (event.key === "ArrowLeft") nextIndex = (index - 1 + TABS.length) % TABS.length;
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = TABS.length - 1;
+    if (nextIndex === null) return;
+    event.preventDefault();
+    selectTab(TABS[nextIndex]!, true);
+  };
+
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3">
-      {loadError ? <ErrorBanner message={t("settings.loadFailed")} /> : null}
+    <div className="mx-auto flex h-full min-h-0 w-full max-w-6xl flex-col gap-3">
       <div
-        className="flex shrink-0 gap-1 overflow-x-auto rounded-xl border border-border bg-muted p-1"
+        className="flex shrink-0 gap-1 overflow-x-auto rounded-xl border border-border bg-card p-1.5"
         role="tablist"
         aria-label={t("settings.title")}
       >
@@ -119,8 +169,11 @@ export function SettingsPage({
               type="button"
               role="tab"
               aria-selected={active}
+              tabIndex={active ? 0 : -1}
+              aria-controls={`settings-panel-${item}`}
               data-testid={`settings-nav-${item}`}
-              onClick={() => setTab(item)}
+              onClick={() => selectTab(item)}
+              onKeyDown={(event) => onTabKeyDown(event, item)}
               className={cx(
                 "h-9 shrink-0 rounded-lg px-3 text-sm font-medium transition-colors",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -133,14 +186,21 @@ export function SettingsPage({
         })}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-border bg-card">
+      <div
+        id={`settings-panel-${tab}`}
+        role="tabpanel"
+        className="min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-card shadow-[0_16px_50px_hsl(var(--foreground)/0.04)]"
+        aria-busy={busy || undefined}
+      >
         {tab === "general" ? (
           <div>
             <SettingRow
               label={t("settings.language")}
               control={
                 <Select
+                  aria-label={t("settings.language")}
                   value={settings.language}
+                  disabled={busy}
                   onChange={(event) => void patch({ language: event.target.value as Language })}
                 >
                   <option value="zh-CN">{t("settings.languageZhCN")}</option>
@@ -155,6 +215,7 @@ export function SettingsPage({
                 <Segmented
                   ariaLabel={t("settings.theme")}
                   value={theme}
+                  disabled={busy}
                   onChange={(value) => {
                     setTheme(value);
                     void patch({ theme: value });
@@ -169,33 +230,33 @@ export function SettingsPage({
             />
             <SettingRow
               label={t("settings.closeToTray")}
-              description={t("settings.closeToTrayHint")}
               control={
                 <Checkbox
-                  label={t("settings.closeToTray")}
+                  aria-label={t("settings.closeToTray")}
                   checked={settings.closeToTray}
+                  disabled={busy}
                   onChange={(event) => void patch({ closeToTray: event.target.checked })}
                 />
               }
             />
             <SettingRow
               label={t("settings.autoLaunch")}
-              description={t("settings.autoLaunchHint")}
               control={
                 <Checkbox
-                  label={t("settings.autoLaunch")}
+                  aria-label={t("settings.autoLaunch")}
                   checked={settings.autoLaunch}
+                  disabled={busy}
                   onChange={(event) => void patch({ autoLaunch: event.target.checked })}
                 />
               }
             />
             <SettingRow
               label={t("settings.silentStart")}
-              description={t("settings.silentStartHint")}
               control={
                 <Checkbox
-                  label={t("settings.silentStart")}
+                  aria-label={t("settings.silentStart")}
                   checked={settings.silentStart}
+                  disabled={busy}
                   onChange={(event) => void patch({ silentStart: event.target.checked })}
                 />
               }
@@ -204,7 +265,9 @@ export function SettingsPage({
               label={t("settings.defaultClaudeScope")}
               control={
                 <Select
+                  aria-label={t("settings.defaultClaudeScope")}
                   value={settings.defaultClaudeScope}
+                  disabled={busy}
                   onChange={(event) => void patch({ defaultClaudeScope: event.target.value as ScopeId })}
                 >
                   <option value="user">{t("scope.user")}</option>
@@ -217,29 +280,42 @@ export function SettingsPage({
         ) : null}
 
         {tab === "tools" ? (
-          <div className="divide-y divide-border">
-            {TOOL_IDS.map((id) => {
-              const info = tools.find((item) => item.id === id);
-              return (
-                <div key={id} className="flex items-start gap-3 px-4 py-3">
-                  <ToolLogo tool={id} size={20} />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium">{info?.name ?? id}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {info?.available ? t("about.installed") : info?.unavailableReason || t("status.unavailable")}
-                    </p>
-                    {info?.cliPath ? <Mono>{shortPath(info.cliPath)}</Mono> : null}
-                    <p className="text-xs text-muted-foreground">v{info?.adapterVersion}</p>
+          toolsLoading ? (
+            <div className="flex min-h-[220px] items-center justify-center text-sm text-muted-foreground" role="status">
+              <span className="mr-2 h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary/25 border-t-primary" aria-hidden="true" />
+              {t("common.loading")}
+            </div>
+          ) : toolsError ? (
+            <div className="p-4">
+              <ErrorBanner
+                message={t("settings.toolsLoadFailed")}
+                onRetry={() => void loadTools()}
+                retryLabel={t("common.retry")}
+              />
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
+              {TOOL_IDS.map((id) => {
+                const info = tools.find((item) => item.id === id);
+                return (
+                  <div key={id} className="flex items-center gap-3 rounded-xl border border-border bg-background/45 px-4 py-3">
+                    <ToolLogo tool={id} size={22} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium">{info?.name ?? id}</p>
+                      <p className="mt-0.5 break-words text-xs text-muted-foreground">
+                        {info?.available ? t("about.installed") : info?.unavailableReason || t("status.unavailable")}
+                      </p>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )
         ) : null}
 
         {tab === "data" ? (
-          <div className="flex flex-col gap-3 p-4">
-            <div className="flex flex-wrap gap-2">
+          <div className="flex flex-col gap-5 p-4 sm:p-5">
+            <div className="flex flex-wrap gap-2 rounded-xl border border-border bg-background/45 p-3">
               <Select
                 aria-label={t("data.importTarget")}
                 value={importTool}
@@ -338,24 +414,42 @@ export function SettingsPage({
                 </>
               ) : null}
             </div>
-            <ul className="text-sm">
-              {backups.map((item) => (
-                <li key={item.id} className="flex items-center gap-2 border-b border-border py-2">
-                  <span className="min-w-0 flex-1 truncate">{item.id}</span>
-                  <Button
-                    size="sm"
-                    disabled={busy}
-                    onClick={() => {
-                      setPendingRestore({ path: item.path, source: "backup", label: item.id });
-                    }}
-                  >
-                    {t("data.restore")}
-                  </Button>
-                </li>
-              ))}
-            </ul>
+            {backupsLoading ? (
+              <div className="flex min-h-[120px] items-center justify-center rounded-xl border border-border text-sm text-muted-foreground" role="status" data-testid="data-backups-loading">
+                <span className="mr-2 h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary/25 border-t-primary" aria-hidden="true" />
+                {t("common.loading")}
+              </div>
+            ) : backupsError ? (
+              <ErrorBanner
+                message={t("data.backupsLoadFailed")}
+                onRetry={() => void loadBackups()}
+                retryLabel={t("common.retry")}
+              />
+            ) : backups.length > 0 ? (
+              <ul className="overflow-hidden rounded-xl border border-border text-sm">
+                {backups.map((item) => (
+                  <li key={item.id} className="flex items-center gap-2 border-b border-border px-3 py-2.5 last:border-b-0">
+                    <span className="min-w-0 flex-1 truncate">{item.id}</span>
+                    <Button
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => {
+                        setPendingRestore({ path: item.path, source: "backup", label: item.id });
+                      }}
+                    >
+                      {t("data.restore")}
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground" data-testid="data-backups-empty">
+                {t("data.noBackups")}
+              </p>
+            )}
             <Button
               variant="danger"
+              className="self-start"
               disabled={busy}
               onClick={() => {
                 void runDataAction(async () => {
@@ -376,10 +470,11 @@ export function SettingsPage({
           <div>
             <SettingRow
               label={t("settings.updateChannel")}
-              description={t("settings.updateChannelHint")}
               control={
                 <Select
+                  aria-label={t("settings.updateChannel")}
                   value={settings.updateChannel}
+                  disabled={busy}
                   onChange={(event) => void patch({ updateChannel: event.target.value as UpdateChannel })}
                 >
                   <option value="stable">{t("settings.channelStable")}</option>
@@ -389,11 +484,11 @@ export function SettingsPage({
             />
             <SettingRow
               label={t("settings.autoCheck")}
-              description={t("about.autoCheck")}
               control={
                 <Checkbox
-                  label={t("settings.autoCheck")}
+                  aria-label={t("settings.autoCheck")}
                   checked={settings.autoCheckUpdates}
+                  disabled={busy}
                   onChange={(event) => void patch({ autoCheckUpdates: event.target.checked })}
                 />
               }
@@ -404,11 +499,11 @@ export function SettingsPage({
         {tab === "advanced" ? (
           <SettingRow
             label={t("settings.advancedTools")}
-            description={t("settings.advancedToolsHint")}
             control={
               <Checkbox
-                label={t("settings.advancedTools")}
+                aria-label={t("settings.advancedTools")}
                 checked={settings.advancedToolsEnabled}
+                disabled={busy}
                 onChange={(event) => void patch({ advancedToolsEnabled: event.target.checked })}
               />
             }
@@ -423,11 +518,15 @@ export function SettingsPage({
         title={t("data.clearAll")}
         description={t("data.clearAllHint")}
         danger
-        confirmLabel={t("data.clearConfirm")}
+        confirmLabel={busy ? t("common.busy") : t("data.clearConfirm")}
         cancelLabel={t("common.cancel")}
-        confirmDisabled={clearPhrase !== clearPlan?.confirmPhrase || !clearConfirm}
+        closeLabel={t("common.close")}
+        busy={busy}
+        confirmDisabled={busy || clearPhrase !== clearPlan?.confirmPhrase || !clearConfirm}
         confirmTestId="clear-all-confirm"
-        onClose={() => setClearPlan(null)}
+        onClose={() => {
+          if (!busy) setClearPlan(null);
+        }}
         onConfirm={() => {
           if (!clearPlan) return;
           void runDataAction(async () => {
@@ -468,8 +567,10 @@ export function SettingsPage({
         title={pendingRestore?.source === "zip-import" ? t("data.importLegacyTitle") : t("data.restoreTitle")}
         description={pendingRestore?.source === "zip-import" ? t("data.importLegacyHint") : t("data.restoreHint")}
         danger={pendingRestore?.source !== "zip-import"}
-        confirmLabel={pendingRestore?.source === "zip-import" ? t("data.importZip") : t("data.restore")}
+        confirmLabel={busy ? t("common.busy") : pendingRestore?.source === "zip-import" ? t("data.importZip") : t("data.restore")}
         cancelLabel={t("common.cancel")}
+        closeLabel={t("common.close")}
+        busy={busy}
         confirmDisabled={busy}
         confirmTestId="restore-backup-confirm"
         onClose={() => {

@@ -71,7 +71,7 @@ export function PromptFormPanel({
             onChange={(event) => update({ ...local, title: event.target.value })}
           />
         </Field>
-        <Field label={t("prompts.tags")} hint={t("prompts.tagsPlaceholder")}>
+        <Field label={t("prompts.tags")}>
           <Input
             value={local.tags}
             onChange={(event) => update({ ...local, tags: event.target.value })}
@@ -80,7 +80,6 @@ export function PromptFormPanel({
         <div>
           <div className="mb-2 flex items-center justify-between">
             <span className="text-sm font-medium text-foreground">{t("prompts.content")}</span>
-            <span className="text-xs text-muted-foreground">{t("editor.findHint")}</span>
           </div>
           <MarkdownEditor
             value={local.content}

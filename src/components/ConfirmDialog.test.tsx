@@ -37,4 +37,27 @@ describe("ConfirmDialog focus management", () => {
     rerender(closed);
     expect(screen.getByRole("button", { name: "opener" })).toHaveFocus();
   });
+
+  it("locks close actions while busy", () => {
+    const onClose = vi.fn();
+    render(
+      <ConfirmDialog
+        open
+        busy
+        title="Working"
+        confirmLabel="Working"
+        cancelLabel="Cancel"
+        onConfirm={vi.fn()}
+        onClose={onClose}
+      >
+        <p>Body</p>
+      </ConfirmDialog>,
+    );
+
+    expect(screen.getByRole("dialog")).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("button", { name: "Close" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(onClose).not.toHaveBeenCalled();
+  });
 });

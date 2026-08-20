@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { PromptDetail, PromptVersion, ToolId } from "../types";
@@ -67,11 +67,20 @@ export function PromptEditor({
   const [menuOpen, setMenuOpen] = useState(false);
   const readOnly = !creating && !editing;
 
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenuOpen(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [menuOpen]);
+
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-1.5">
+    <div className="flex min-h-[430px] flex-col">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-4 py-3">
         <div className="flex min-w-0 flex-1 items-center gap-2">
-          <h2 className="min-w-0 truncate text-[12px] font-semibold text-foreground">
+          <h2 className="min-w-0 truncate text-[15px] font-semibold tracking-tight text-foreground">
             {creating ? t("prompts.new") : detail?.title || "—"}
           </h2>
           {!creating && isActiveHere === true ? (
@@ -84,7 +93,7 @@ export function PromptEditor({
           ) : null}
         </div>
 
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="ml-auto flex shrink-0 items-center gap-1">
           {creating || editing ? (
             <>
               <Button size="sm" disabled={busy} onClick={onCancelEdit}>
@@ -102,7 +111,16 @@ export function PromptEditor({
             </>
           ) : detail ? (
             <>
-              {isActiveHere !== false ? (
+              {isActiveHere === null ? (
+                <span
+                  className="inline-flex items-center rounded-md border border-amber-600/30 bg-amber-500/10 px-2 py-1 text-[11px] text-amber-700 dark:text-amber-300"
+                  role="status"
+                  data-testid="prompt-activation-unknown"
+                >
+                  {t("prompts.activationUnknownShort")}
+                </span>
+              ) : null}
+              {isActiveHere === true ? (
                 <Button
                   size="sm"
                   disabled={disabled || busy}
@@ -113,7 +131,7 @@ export function PromptEditor({
                   {t("prompts.deactivate")}
                 </Button>
               ) : null}
-              {isActiveHere !== true ? (
+              {isActiveHere === false ? (
                 <Button
                   size="sm"
                   variant="primary"
@@ -142,8 +160,8 @@ export function PromptEditor({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto px-3 py-3">
-        <div className="flex flex-col gap-3">
+      <div className="px-4 py-4 sm:px-5 sm:py-5">
+        <div className="flex flex-col gap-4">
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label={t("prompts.title")}>
               <Input
@@ -174,7 +192,7 @@ export function PromptEditor({
               readOnly={readOnly}
               data-testid="prompt-content"
               onChange={(event) => onDraftChange({ ...draft, content: event.target.value })}
-              className={cx("min-h-[240px] max-h-[52vh]", readOnly && "bg-muted/40")}
+              className={cx("min-h-[320px]", readOnly && "bg-muted/35")}
             />
           </Field>
 

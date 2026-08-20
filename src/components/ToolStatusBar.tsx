@@ -8,9 +8,7 @@ import { IconAlert, IconRefresh } from "./icons";
 import { ToolLogo } from "./ToolLogos";
 
 /**
- * Compact status strip. Normal state shows only what the user needs to judge:
- * tool, state, adapter version, availability. CLI path / fingerprints / write
- * paths stay behind the advanced disclosure.
+ * 紧凑状态条。正常状态只显示工具和状态；CLI、版本、指纹和写入路径收入 advanced 展开。
  */
 export function ToolStatusBar({
   tool,
@@ -48,10 +46,6 @@ export function ToolStatusBar({
         </div>
 
         <StatusBadge status={status?.status ?? (unavailable ? "unavailable" : null)} />
-
-        <span className="text-[11px] text-muted-foreground">
-          {t("tool.adapterVersion")} {adapterVersion}
-        </span>
 
         {doctorOk === false ? (
           <span className="inline-flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-500">
@@ -97,11 +91,20 @@ export function ToolStatusBar({
         <div className="border-t border-border p-2">
           <Disclosure title={t("tool.diagnostics")} testId="tool-diagnostics">
             <dl className="space-y-1.5 text-[11px]">
+              <Row label={t("tool.adapterVersion")}>
+                <span>v{adapterVersion}</span>
+              </Row>
               <Row label={t("tool.cliPath")}>
                 <Mono>{status?.cliPath ? shortPath(status.cliPath, 72) : "—"}</Mono>
               </Row>
               <Row label={t("tool.doctor")}>
-                <span>{doctorOk ? t("tool.doctorOk") : t("tool.doctorFail")}</span>
+                <span>
+                  {doctorOk === undefined
+                    ? t("common.unknown")
+                    : doctorOk
+                      ? t("tool.doctorOk")
+                      : t("tool.doctorFail")}
+                </span>
               </Row>
               <Row label={t("plan.fingerprintCurrent")}>
                 <Mono>{status?.currentFingerprint ?? "—"}</Mono>

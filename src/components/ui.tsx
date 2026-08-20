@@ -131,7 +131,16 @@ export function Checkbox({
   hint,
   className,
   ...props
-}: InputHTMLAttributes<HTMLInputElement> & { label: ReactNode; hint?: ReactNode }) {
+}: InputHTMLAttributes<HTMLInputElement> & { label?: ReactNode; hint?: ReactNode }) {
+  if (label === undefined) {
+    return (
+      <input
+        type="checkbox"
+        {...props}
+        className={cx("h-4 w-4 shrink-0 accent-[hsl(var(--primary))]", FOCUS_RING, className)}
+      />
+    );
+  }
   return (
     <label className={cx("flex items-start gap-2 text-[12px]", className)}>
       <input
@@ -225,12 +234,14 @@ export function Segmented<T extends string>({
   onChange,
   ariaLabel,
   className,
+  disabled = false,
 }: {
   value: T;
   options: Array<{ value: T; label: ReactNode; title?: string }>;
   onChange: (value: T) => void;
   ariaLabel: string;
   className?: string;
+  disabled?: boolean;
 }) {
   return (
     <div
@@ -247,6 +258,7 @@ export function Segmented<T extends string>({
             role="radio"
             aria-checked={active}
             title={option.title}
+            disabled={disabled}
             onClick={() => onChange(option.value)}
             className={cx(
               "inline-flex h-7 items-center gap-1.5 rounded px-2 text-[12px] font-medium transition-colors",

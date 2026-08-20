@@ -18,6 +18,7 @@ export function DataRecoveryDialog({
       description={t("recovery.hint")}
       confirmLabel={t("common.ok")}
       cancelLabel={t("common.close")}
+      closeLabel={t("common.close")}
       onClose={onAck}
       onConfirm={onAck}
     >

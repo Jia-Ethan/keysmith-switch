@@ -29,6 +29,7 @@ export function FirstRunDialog({
       description={t(hasCandidates ? "firstRun.hint" : "firstRun.checkHint")}
       confirmLabel={hasCandidates ? t("firstRun.import") : t("firstRun.complete")}
       cancelLabel={hasCandidates ? t("firstRun.skip") : t("common.cancel")}
+      closeLabel={t("common.close")}
       confirmDisabled={hasCandidates && paths.length === 0}
       onClose={onSkip}
       onConfirm={() => (hasCandidates ? onImport(paths) : onSkip())}

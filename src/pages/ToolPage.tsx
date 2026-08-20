@@ -250,15 +250,23 @@ export function ToolPage({
   const selectPrompt = async (id: string) => {
     const seq = ++promptDetailSeq.current;
     setSelectedId(id);
+    setDetail(null);
+    setVersions([]);
+    setDiff("");
     setCreating(false);
     setEditing(false);
     setFormOpen(false);
-    setDiff("");
     try {
       const next = await api.getPrompt(id);
       if (seq !== promptDetailSeq.current) return;
       setDetail(next);
       setDraft({ title: next.title, content: next.content, tags: next.tags.join(", ") });
+    } catch (err) {
+      if (seq === promptDetailSeq.current) setSelectedId(null);
+      toast.err(err);
+      return;
+    }
+    try {
       const history = await api.promptHistory(id);
       if (seq !== promptDetailSeq.current) return;
       setVersions(history.versions ?? []);
@@ -410,6 +418,10 @@ export function ToolPage({
 
   const openPlan = async (kind: "activate" | "deactivate") => {
     if (unavailable) return;
+    if (activeIds === null) {
+      toast.err(t("prompts.activationUnknown"));
+      return;
+    }
     if (!projectReady) {
       toast.err(t("scope.needsProjectDir"));
       return;
@@ -532,7 +544,7 @@ export function ToolPage({
   const selectedIsActive = detail && activeIds ? activeIds.includes(detail.id) : null;
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-2">
+    <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto pr-0.5">
       {error ? (
         <ErrorBanner message={error} onRetry={() => void refreshAll()} retryLabel={t("common.retry")} />
       ) : null}
@@ -570,10 +582,13 @@ export function ToolPage({
         }}
       />
 
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(420px,1.1fr)_minmax(320px,0.9fr)] gap-3">
-        <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card">
-          <div className="flex shrink-0 flex-col gap-1.5 border-b border-border px-2.5 py-2">
-            <div className="flex items-center gap-1.5">
+      <section className="flex shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-card">
+          <div className="flex flex-col gap-3 border-b border-border px-3 py-3 sm:px-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="text-sm font-semibold text-foreground">{t("prompts.library")}</span>
+                <span className="text-xs tabular-nums text-muted-foreground">{prompts.length}</span>
+              </div>
               <div className="relative min-w-0 flex-1">
                 <IconSearch
                   size={13}
@@ -588,7 +603,7 @@ export function ToolPage({
                   onKeyDown={(event) => {
                     if (event.key === "Escape" && query) setQuery("");
                   }}
-                  className="pl-7"
+                  className="h-10 pl-8"
                 />
               </div>
               <Button
@@ -600,14 +615,14 @@ export function ToolPage({
                 onClick={startCreate}
               >
                 <IconPlus />
-                <span className="hidden xl:inline">{t("prompts.new")}</span>
+                <span className="hidden sm:inline">{t("prompts.new")}</span>
               </Button>
             </div>
-            <div className="flex items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-2">
               <Select
                 value={tag}
                 aria-label={t("prompts.filterTag")}
-                className="min-w-0 flex-1"
+                className="min-w-[140px] flex-1"
                 onChange={(event) => setTag(event.target.value)}
                 data-testid="prompt-filter-tag"
               >
@@ -621,7 +636,7 @@ export function ToolPage({
               <Select
                 value={sort}
                 aria-label={t("prompts.sort")}
-                className="min-w-0 flex-1"
+                className="min-w-[140px] flex-1"
                 onChange={(event) => setSort(event.target.value as PromptSort)}
                 data-testid="prompt-sort"
               >
@@ -633,7 +648,7 @@ export function ToolPage({
             </div>
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-2">
+          <div className="flex flex-col p-3 sm:p-4">
             {unavailable ? (
               <EmptyState
                 title={t("tool.unavailable")}
@@ -657,9 +672,9 @@ export function ToolPage({
               />
             )}
           </div>
-        </section>
+      </section>
 
-        <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card">
+      <section className="flex shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-card">
           {creating || detail ? (
             <PromptEditor
               tool={tool}
@@ -688,7 +703,7 @@ export function ToolPage({
               onShowDiff={(from, to) => void showDiff(from, to)}
             />
           ) : (
-            <div className="flex min-h-0 flex-1 items-center justify-center p-4">
+            <div className="flex min-h-[220px] items-center justify-center p-4">
               <EmptyState
                 title={t("prompts.noSelection")}
                 hint={t("prompts.noSelectionHint")}
@@ -696,8 +711,7 @@ export function ToolPage({
               />
             </div>
           )}
-        </section>
-      </div>
+      </section>
 
       {settings.advancedToolsEnabled && operations.length > 0 ? (
         <Disclosure title={t("operations.title")} testId="tool-operations">
@@ -743,6 +757,7 @@ export function ToolPage({
         }
         cancelLabel={t("common.cancel")}
         closeLabel={t("common.close")}
+        busy={busy}
         confirmDisabled={
           !plan ||
           !canConfirmPlan(plan.result.envelope) ||
@@ -775,7 +790,6 @@ export function ToolPage({
           onChange={setDraft}
           onSave={() => void saveDraft()}
           onClose={() => {
-            if (!confirmLeave()) return;
             cancelEdit();
             setFormOpen(false);
           }}

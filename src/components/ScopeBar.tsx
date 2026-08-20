@@ -34,13 +34,14 @@ export function ScopeBar({
   const projectMissing = needsProject && !projectDir.trim();
 
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-border bg-card px-3 py-2">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-border bg-card px-3 py-2.5 sm:px-4">
       <span className="text-[11px] font-medium text-muted-foreground">{t("scope.label")}</span>
 
       {supportedScopes.length > 1 ? (
         <Segmented
           value={scope}
           ariaLabel={t("scope.label")}
+          disabled={disabled}
           onChange={(next) => onScopeChange(next)}
           options={supportedScopes.map((item) => ({
             value: item,

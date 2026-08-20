@@ -51,8 +51,8 @@ describe("PromptList activation grouping", () => {
       />,
     );
 
-    const activeGroup = screen.getByText("已激活提示词").closest("section");
-    const inactiveGroup = screen.getByText("未激活提示词").closest("section");
+    const activeGroup = screen.getByText("当前激活提示词").closest("section");
+    const inactiveGroup = screen.getByText("其他提示词").closest("section");
     expect(activeGroup).not.toBeNull();
     expect(inactiveGroup).not.toBeNull();
 
@@ -69,8 +69,8 @@ describe("PromptList activation grouping", () => {
     // prompt as inactive, which reads as "nothing is applied".
     expect(screen.getByTestId("prompt-activation-unknown")).toBeInTheDocument();
     expect(screen.getByText("全部提示词")).toBeInTheDocument();
-    expect(screen.queryByText("已激活提示词")).not.toBeInTheDocument();
-    expect(screen.queryByText("未激活提示词")).not.toBeInTheDocument();
+    expect(screen.queryByText("当前激活提示词")).not.toBeInTheDocument();
+    expect(screen.queryByText("其他提示词")).not.toBeInTheDocument();
     expect(screen.getByTestId("prompt-item-a")).toBeInTheDocument();
     expect(screen.getByTestId("prompt-item-b")).toBeInTheDocument();
   });
