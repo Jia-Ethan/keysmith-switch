@@ -1,6 +1,8 @@
 # 0.1.0 unsigned Preview 发布笔记
 
-当前只准备未签名 Preview 候选，不对应 GitHub Release。公开仓库 `keysmith-switch-releases` 尚未创建。
+Keysmith Switch v0.1.0 unsigned Preview：首个预览版本，支持统一管理 Claude Code、Codex、Grok Build 和 ZCode 的提示词。
+
+私有仓库 Pre-release：`https://github.com/Jia-Ethan/keysmith-switch/releases/tag/v0.1.0`
 
 ## 产物意图
 
@@ -8,7 +10,7 @@
 - Windows x64：unsigned NSIS per-user `.exe`
 - Linux：非首发
 
-两个平台都附带 SHA-256。Actions artifact 名称包含 `unsigned-preview`，不得改称正式签名包。
+两个平台都附带 `SHA256SUMS.txt`，不得改称正式签名包。
 
 ## 更新通道
 

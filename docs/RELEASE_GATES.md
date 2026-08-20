@@ -26,7 +26,7 @@ identifier：`com.jia-ethan.keysmith-switch`
 - macOS 使用 adhoc app 签名且关闭 hardened runtime，避免 PyInstaller sidecar 被 library validation 阻断；Windows 不要求 Authenticode，产物名称明确包含 `unsigned-preview`。
 - macOS 最终 app 内四个 sidecar 都必须通过 `--version` 运行时 smoke，不能只验证文件架构和签名完整性。
 - Preview 不生成 updater artifact、`.sig` 或 `latest.json`，只保存 DMG/NSIS 和 SHA-256 Actions artifacts。
-- 该通道不创建 GitHub Release，不等同于正式发布，也不启用关于页的生产应用内更新。
+- `preview-release` workflow 本身不自动创建 GitHub Release；手动发布的 unsigned Pre-release 不等同于正式发布，也不启用关于页的生产应用内更新。
 
 ## 签名门槛
 

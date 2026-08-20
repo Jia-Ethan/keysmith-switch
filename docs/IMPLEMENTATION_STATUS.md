@@ -24,18 +24,12 @@
 
 ## 本地证据
 
-主机：macOS arm64。以下产物不包含 updater artifact，也未使用 updater 私钥：
-
-| 文件 | SHA-256 |
-| --- | --- |
-| `outputs/keysmith-switch-0.1.0-unsigned-preview/Keysmith Switch_0.1.0_aarch64.dmg` | `4f4726b56730755dc72309f3c8185398647d3682d731a5f43bc90f69bb47fef8` |
-
-GitHub Actions unsigned Preview [run 32323351213](https://github.com/Jia-Ethan/keysmith-switch/actions/runs/32323351213) 的 `source-gates`、`macos` 和 `windows` 均通过。已下载并独立复核 Actions artifacts：
+主机：macOS arm64。GitHub Actions unsigned Preview [run 32323351213](https://github.com/Jia-Ethan/keysmith-switch/actions/runs/32323351213) 的 `source-gates`、`macos` 和 `windows` 均通过。已下载并独立复核 Actions artifacts，最终保留的本地发布候选不包含 updater artifact，也未使用 updater 私钥：
 
 | 平台 | 文件 | 大小 | SHA-256 |
 | --- | --- | --- | --- |
-| macOS Apple Silicon | `outputs/keysmith-switch-0.1.0-ci-preview/keysmith-switch-0.1.0-unsigned-preview-macos-aarch64/dmg/Keysmith Switch_0.1.0_aarch64.dmg` | 38,694,673 bytes | `9b429800d3ce55f3d71ac37e84258a5ded2677910232033f19cb147d50f79786` |
-| Windows x64 | `outputs/keysmith-switch-0.1.0-ci-preview/keysmith-switch-0.1.0-unsigned-preview-windows-x86_64/nsis/Keysmith Switch_0.1.0_x64-setup.exe` | 40,030,350 bytes | `692d6796891c795116feb54f6f6c3d09372322efa93e58f7102275026bb33e6f` |
+| macOS Apple Silicon | `outputs/keysmith-switch-v0.1.0-unsigned-preview-release-candidate/Keysmith Switch_0.1.0_aarch64.dmg` | 38,694,673 bytes | `9b429800d3ce55f3d71ac37e84258a5ded2677910232033f19cb147d50f79786` |
+| Windows x64 | `outputs/keysmith-switch-v0.1.0-unsigned-preview-release-candidate/Keysmith Switch_0.1.0_x64-setup.exe` | 40,030,350 bytes | `692d6796891c795116feb54f6f6c3d09372322efa93e58f7102275026bb33e6f` |
 
 CI DMG 通过 `hdiutil verify`；从 DMG 挂载的 app 再次通过 `scripts/verify-bundle.sh`，版本为 `0.1.0`，主程序在清空环境和隔离 HOME 下持续运行 8 秒，未创建 `.claude`、`.codex`、`.grok` 或 `.zcode-keysmith`。Windows 产物由 `windows-latest` 原生 runner 构建为 NSIS GUI installer，CI 确认它没有有效 Authenticode 签名；没有 Windows 实体机安装、启动、升级和卸载证据，因此仍只能标记为 Windows 候选包。
 

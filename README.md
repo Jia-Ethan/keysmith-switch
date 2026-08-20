@@ -10,11 +10,20 @@
 
 ## 状态
 
-当前版本 `0.1.0` Preview。源码仓库保持私有。应用更新 metadata 计划放在独立公开仓库 `Jia-Ethan/keysmith-switch-releases`（**尚未创建**）。
+当前版本 `0.1.0` 已发布为私有仓库 [unsigned Pre-release](https://github.com/Jia-Ethan/keysmith-switch/releases/tag/v0.1.0)。应用更新 metadata 计划放在独立公开仓库 `Jia-Ethan/keysmith-switch-releases`（**尚未创建**）。
 
-macOS Apple Silicon 本机已打出品牌 DMG（未公证）。Windows NSIS 需在原生 Windows 上验收后才能标通过。
+macOS Apple Silicon DMG 已完成挂载、sidecar 与隔离 HOME 启动验证。Windows NSIS EXE 已由 GitHub-hosted Windows runner 原生构建，但仍需 Windows 实体机安装、启动、升级和卸载验收。
 
 详见 [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md) 与 [`docs/RELEASE_GATES.md`](docs/RELEASE_GATES.md)。
+
+## 下载
+
+从 [`v0.1.0` Pre-release](https://github.com/Jia-Ethan/keysmith-switch/releases/tag/v0.1.0) 下载对应平台产物，并使用随附的 `SHA256SUMS.txt` 校验：
+
+- macOS Apple Silicon：`Keysmith.Switch_0.1.0_aarch64.dmg`
+- Windows x64：`Keysmith.Switch_0.1.0_x64-setup.exe`
+
+两个安装包均未使用平台生产签名，系统安全警告属于当前 Preview 的已知边界。
 
 ## 开发
 
@@ -39,7 +48,7 @@ macOS Apple Silicon 打包（未签名 Preview，不生成 updater artifact）�
 npx tauri build --target aarch64-apple-darwin --config src-tauri/tauri.preview.macos.conf.json
 ```
 
-GitHub Actions 的 `preview-release` 工作流只构建并保存 unsigned DMG/NSIS 与 SHA-256，不创建 GitHub Release。正式签名候选继续使用独立的 `release` 工作流。
+GitHub Actions 的 `preview-release` 工作流只构建并保存 unsigned DMG/NSIS 与 SHA-256，不自动创建 GitHub Release；`v0.1.0` Pre-release 由已验证的 Actions 产物手动发布。正式签名候选继续使用独立的 `release` 工作流。
 
 ## 数据位置
 
