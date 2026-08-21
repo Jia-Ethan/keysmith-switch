@@ -47,4 +47,4 @@ npx --yes @tauri-apps/cli signer sign -f fixtures/updater/TEST_ONLY.minisign.key
 
 Copy `TEST_ONLY.minisign.key.pub` into `tauri.conf.json` `plugins.updater.pubkey` and `updater::FIXTURE_PUBKEY`.
 
-Production signing uses a **different** key injected as `TAURI_SIGNING_PRIVATE_KEY` via GitHub Secrets. That secret is not created in this pass.
+Production signing uses a **different** rotated key injected as `TAURI_SIGNING_PRIVATE_KEY` via private-repository GitHub Secrets. The public release repository stores only the production public key and never the updater private key.

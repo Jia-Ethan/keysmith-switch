@@ -20,6 +20,7 @@
 - 官方 CLI 安装有超时、输出脱敏、运行时间反馈和用户取消；取消会终止正在运行的安装命令。
 - macOS 旧 Preview 包只完成架构和签名检查，后续发现 hardened runtime 会阻断 PyInstaller sidecar；旧 DMG 已作废，新包已关闭 hardened runtime 并通过 sidecar 运行时 smoke。
 - Release workflow 已加入 updater 公钥与私钥匹配校验、macOS Developer ID/公证门槛、Windows Authenticode 门槛，以及每个平台单一产物断言。
+- 生产 updater 密钥已轮换并保存在本机受限目录，独立公开 release 仓库、最小权限跨仓库访问、Secrets、受保护 `production` environment 与 stable/beta 发布流水线已配置；公开仓库不持有生产 updater 私钥。
 - 独立 unsigned Preview workflow 已准备：固定从 `main` 构建，不生成 updater artifacts，只保存明确标注未签名的 DMG/NSIS 与 SHA-256；macOS 验证包含四个 sidecar 的实际执行。
 
 ## 本地证据
@@ -64,6 +65,7 @@ unsigned Preview 不生成 updater `.sig` 或 `latest.json`。仓库内 fixture 
 - Windows x64 已有 GitHub-hosted Windows runner 原生 NSIS 候选包；正式通道仍缺 Authenticode 以及 Windows 实体机安装、启动、升级和卸载验收。
 - Apple/Windows 平台签名材料仍未配置，因此正式 updater 候选 workflow 会 fail closed。
 - 生产 updater 密钥、公开 release 仓库、最小权限跨仓库访问、Secrets、endpoint 和发布流水线已配置；尚未发布任何正式 updater Release。
+- 生产密钥已有加密恢复副本；密码保存在 macOS 登录钥匙串，凭证明文不进入仓库、文档或公开 runner。
 - 前端主 JS chunk 约 906 KB，正式发布前可做代码分包优化。
 
 ## 明确未做

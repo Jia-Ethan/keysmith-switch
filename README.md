@@ -10,7 +10,7 @@
 
 ## 状态
 
-当前版本 `0.1.1` 已发布为私有仓库 [unsigned Pre-release](https://github.com/Jia-Ethan/keysmith-switch/releases/tag/v0.1.1)。应用更新 metadata 计划放在独立公开仓库 `Jia-Ethan/keysmith-switch-releases`（**尚未创建**）。
+当前版本 `0.1.1` 已发布为私有仓库 [unsigned Pre-release](https://github.com/Jia-Ethan/keysmith-switch/releases/tag/v0.1.1)。生产 updater 密钥、公开仓库 [`Jia-Ethan/keysmith-switch-releases`](https://github.com/Jia-Ethan/keysmith-switch-releases)、Secrets 与发布流水线已经配置，但尚未发布正式 updater Release；Apple/Windows 平台签名材料缺失时流水线会 fail closed。
 
 macOS Apple Silicon DMG 已完成挂载、sidecar 与隔离 HOME 启动验证。Windows NSIS EXE 已由 GitHub-hosted Windows runner 原生构建，但仍需 Windows 实体机安装、启动、升级和卸载验收。
 

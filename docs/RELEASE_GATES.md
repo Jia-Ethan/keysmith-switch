@@ -45,9 +45,11 @@ identifier：`com.jia-ethan.keysmith-switch`
 
 正式构建必须同时具备：
 
-- Authenticode PFX、密码、时间戳服务
+- Authenticode 证书、私钥可用的合规签名服务或硬件/云 HSM，以及时间戳服务
 - NSIS Setup.exe 的 `Get-AuthenticodeSignature` 状态为 `Valid`
 - Windows 原生安装、启动、更新、卸载验收
+
+当前 workflow 的 `WINDOWS_CERTIFICATE` / `WINDOWS_CERTIFICATE_PASSWORD` PFX 接口只是尚未接入证书时的占位实现。现代公共 OV/EV 代码签名私钥通常不可导出；实际采购后应按 CA 能力改用 Tauri `signCommand`、云签名客户端，或连接 USB Token 的自托管 runner，不得为了适配现有 YAML 要求导出私钥。
 
 ### updater
 

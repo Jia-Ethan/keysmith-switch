@@ -21,12 +21,12 @@ Keysmith Switch v0.1.1 unsigned Preview：完成暖纸张、炭黑与香槟金�
 
 - Preview 不生成 updater artifact 或 `latest.json`
 - 应用内更新暂不用于 Preview 分发
-- 正式更新通道仍需生产 updater 密钥、公钥和独立发布仓库
+- 生产 updater 密钥、公钥、独立公开发布仓库、Secrets 与发布流水线已配置
+- 正式更新通道仍需 Apple Developer ID/notarization、Windows Authenticode 与原生平台验收
 
 ## 明确未做
 
-- 未创建 `Jia-Ethan/keysmith-switch-releases`
-- 未配置 GitHub Secrets
+- 未发布正式 updater Release、tag 或 beta `latest.json`
 - 未完成 Developer ID / 公证 / Authenticode
 - 未完成 Windows 实机安装、更新和卸载验收
 
