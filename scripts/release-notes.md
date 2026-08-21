@@ -1,8 +1,10 @@
-# 0.1.0 unsigned Preview 发布笔记
+# 0.1.1 unsigned Preview 发布笔记
 
-Keysmith Switch v0.1.0 unsigned Preview：首个预览版本，支持统一管理 Claude Code、Codex、Grok Build 和 ZCode 的提示词。
+Keysmith Switch v0.1.1 unsigned Preview：完成暖纸张、炭黑与香槟金视觉重构，同时保留 Claude Code、Codex、Grok Build 和 ZCode 的提示词管理、预览、确认、恢复与安全门禁。
 
-私有仓库 Pre-release：`https://github.com/Jia-Ethan/keysmith-switch/releases/tag/v0.1.0`
+私有仓库 Pre-release：`https://github.com/Jia-Ethan/keysmith-switch/releases/tag/v0.1.1`
+
+构建证据：`https://github.com/Jia-Ethan/keysmith-switch/actions/runs/32433727011`
 
 ## 产物意图
 
@@ -11,6 +13,9 @@ Keysmith Switch v0.1.0 unsigned Preview：首个预览版本，支持统一管�
 - Linux：非首发
 
 两个平台都附带 `SHA256SUMS.txt`，不得改称正式签名包。
+
+- macOS DMG SHA-256：`a911d2dd601d127fe0f5d478695bcbf7882b520bc9c913555509cd96ed89a96e`
+- Windows EXE SHA-256：`f37f9926266f596290e183d3248056d168af24c943732919b4a4c93020c5b461`
 
 ## 更新通道
 

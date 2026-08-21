@@ -1,8 +1,8 @@
 # Keysmith Switch 实现状态
 
-更新日期：2026-08-20（Asia/Shanghai）
+更新日期：2026-08-21（Asia/Shanghai）
 
-阶段：**unsigned Preview 本地与 CI 产物验证通过；`v0.1.0` 已发布为私有仓库 Pre-release。**
+阶段：**前端重构已通过 PR #1 合并；`v0.1.1` unsigned Preview 已构建、复核并发布到私有仓库。**
 
 工作区：`/Users/ethan/Documents/Codex/2026-08-19/ccswitch-keysmithswith-jia-github`
 
@@ -24,16 +24,16 @@
 
 ## 本地证据
 
-主机：macOS arm64。GitHub Actions unsigned Preview [run 32323351213](https://github.com/Jia-Ethan/keysmith-switch/actions/runs/32323351213) 的 `source-gates`、`macos` 和 `windows` 均通过。已下载并独立复核 Actions artifacts，最终保留的本地发布候选不包含 updater artifact，也未使用 updater 私钥：
+主机：macOS arm64。GitHub Actions unsigned Preview [run 32433727011](https://github.com/Jia-Ethan/keysmith-switch/actions/runs/32433727011) 的 `source-gates`、`macos` 和 `windows` 均通过。已下载并独立复核 Actions artifacts，发布资产不包含 updater artifact，也未使用 updater 私钥：
 
 | 平台 | 文件 | 大小 | SHA-256 |
 | --- | --- | --- | --- |
-| macOS Apple Silicon | `outputs/keysmith-switch-v0.1.0-unsigned-preview-release-candidate/Keysmith Switch_0.1.0_aarch64.dmg` | 38,694,673 bytes | `9b429800d3ce55f3d71ac37e84258a5ded2677910232033f19cb147d50f79786` |
-| Windows x64 | `outputs/keysmith-switch-v0.1.0-unsigned-preview-release-candidate/Keysmith Switch_0.1.0_x64-setup.exe` | 40,030,350 bytes | `692d6796891c795116feb54f6f6c3d09372322efa93e58f7102275026bb33e6f` |
+| macOS Apple Silicon | `Keysmith.Switch_0.1.1_aarch64.dmg` | 42,041,349 bytes | `a911d2dd601d127fe0f5d478695bcbf7882b520bc9c913555509cd96ed89a96e` |
+| Windows x64 | `Keysmith.Switch_0.1.1_x64-setup.exe` | 40,189,945 bytes | `f37f9926266f596290e183d3248056d168af24c943732919b4a4c93020c5b461` |
 
-CI DMG 通过 `hdiutil verify`；从 DMG 挂载的 app 再次通过 `scripts/verify-bundle.sh`，版本为 `0.1.0`，主程序在清空环境和隔离 HOME 下持续运行 8 秒，未创建 `.claude`、`.codex`、`.grok` 或 `.zcode-keysmith`。Windows 产物由 `windows-latest` 原生 runner 构建为 NSIS GUI installer，CI 确认它没有有效 Authenticode 签名；没有 Windows 实体机安装、启动、升级和卸载证据，因此仍只能标记为 Windows 候选包。
+CI DMG 通过 `hdiutil verify`；从 DMG 挂载的 app 再次通过 `scripts/verify-bundle.sh`，bundle 版本为 `0.1.1`，四个 sidecar 均通过架构、版本和隔离 HOME smoke。bundle 引用的 `icon.icns` SHA-256 与仓库 canonical 资产一致。Windows 产物由 `windows-latest` 原生 runner 构建为 NSIS GUI installer，CI 确认它没有有效 Authenticode 签名；没有 Windows 实体机安装、启动、升级和卸载证据，因此仍只能标记为 Windows 候选包。
 
-Git 签名标签 `v0.1.0` 指向 `1ac3f35b405bb700a822512038e3979aab4a2edf`。私有仓库 [Pre-release](https://github.com/Jia-Ethan/keysmith-switch/releases/tag/v0.1.0) 已上传上述 DMG、EXE 和 `SHA256SUMS.txt`，GitHub 记录的产物大小与 SHA-256 与本地候选包一致。
+Git 签名标签 `v0.1.1` 指向 PR #1 的 merge commit `026acb500fb099906d6fc8264427247947702c18`。私有仓库 [Pre-release](https://github.com/Jia-Ethan/keysmith-switch/releases/tag/v0.1.1) 已上传上述 DMG、EXE 和 `SHA256SUMS.txt`；从 Release 重新下载后的文件大小与 SHA-256 均与 Actions 候选包一致。
 
 旧 `Keysmith Switch.app` 曾通过 `codesign --verify --deep --strict`，但该证据没有执行 sidecar。2026-08-20 复核确认旧包内四个 PyInstaller sidecar 因 `adhoc,runtime` library validation 返回 255，旧 DMG 和 updater archive 已作废。
 
@@ -45,8 +45,8 @@ unsigned Preview 不生成 updater `.sig` 或 `latest.json`。仓库内 fixture 
 
 | 命令 | 结果 |
 | --- | --- |
-| `npm test` | 15 files / 44 tests passed |
-| `npm run build` | 通过；主 JS chunk 约 898 KB，仍有性能 warning |
+| `npm test` | 16 files / 51 tests passed |
+| `npm run build` | 通过；主 JS chunk 约 906 KB，仍有性能 warning |
 | `cargo fmt --check` | 通过 |
 | `cargo check --offline` | 通过 |
 | `cargo test --offline` | 全部通过：lib 10、adapter 4、data lifecycle 10、db prompts 3、db store 5、official 6、ops errors 5、ops home 1、ops real CLI 1、redact 1、updater 16 |
@@ -64,8 +64,8 @@ unsigned Preview 不生成 updater `.sig` 或 `latest.json`。仓库内 fixture 
 - Windows x64 已有 GitHub-hosted Windows runner 原生 NSIS 候选包；正式通道仍缺 Authenticode 以及 Windows 实体机安装、启动、升级和卸载验收。
 - 生产 updater 密钥对、私有 release 仓库和 GitHub Secrets；本轮没有生成、配置或发布它们。
 - updater 生产 endpoint、生产公钥和 release artifact 的最终绑定。
-- 前端主 JS chunk 约 898 KB，正式发布前可做代码分包优化。
+- 前端主 JS chunk 约 906 KB，正式发布前可做代码分包优化。
 
 ## 明确未做
 
-未创建或更新 PR、公开 release 仓库或 GitHub Secrets；未发布正式签名版本，也没有修改 `work/source-audit-20260819/`。
+未创建公开 updater release 仓库或 GitHub Secrets；未发布正式签名版本，也没有修改 `work/source-audit-20260819/`。PR #1、签名 tag `v0.1.1` 与私有 unsigned Pre-release 已完成。
