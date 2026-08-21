@@ -4,39 +4,41 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 3.9%;
+    /* Keysmith warm paper light theme */
+    --background: 38 35% 97%;
+    --foreground: 30 8% 18%;
     --card: 0 0% 100%;
-    --card-foreground: 240 10% 3.9%;
-    --muted: 240 4.8% 95.9%;
-    --muted-foreground: 240 3.8% 46.1%;
-    --primary: 174 72% 41%;
-    --primary-foreground: 0 0% 100%;
-    --accent: 240 4.8% 95.9%;
-    --accent-foreground: 240 5.9% 10%;
-    --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
-    --ring: 174 72% 41%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
+    --card-foreground: 30 8% 18%;
+    --muted: 38 20% 92%;
+    --muted-foreground: 30 6% 48%;
+    --primary: 35 65% 52%;
+    --primary-foreground: 30 8% 18%;
+    --accent: 38 20% 92%;
+    --accent-foreground: 30 8% 18%;
+    --border: 38 15% 88%;
+    --input: 38 15% 88%;
+    --ring: 30 68% 38%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
   }
 
   .dark {
-    --background: 240 5% 12%;
-    --foreground: 0 0% 98%;
-    --card: 240 5% 16%;
-    --card-foreground: 0 0% 98%;
-    --muted: 240 5% 18%;
-    --muted-foreground: 240 5% 64.9%;
-    --primary: 174 72% 46%;
-    --primary-foreground: 0 0% 100%;
-    --accent: 240 5% 18%;
-    --accent-foreground: 0 0% 98%;
-    --border: 240 5% 24%;
-    --input: 240 5% 24%;
-    --ring: 174 72% 46%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 0 0% 98%;
+    /* Keysmith charcoal dark theme */
+    --background: 210 8% 14%;
+    --foreground: 0 0% 96%;
+    --card: 210 8% 18%;
+    --card-foreground: 0 0% 96%;
+    --muted: 210 8% 24%;
+    --muted-foreground: 210 6% 64%;
+    --primary: 35 58% 58%;
+    --primary-foreground: 210 8% 14%;
+    --accent: 210 8% 24%;
+    --accent-foreground: 0 0% 96%;
+    --border: 210 8% 28%;
+    --input: 210 8% 28%;
+    --ring: 35 58% 58%;
+    --destructive: 0 62% 48%;
+    --destructive-foreground: 0 0% 96%;
   }
 }
 
@@ -48,12 +50,21 @@ body,
 
 body {
   @apply bg-background text-foreground antialiased;
+  font-family: "Avenir Next", Avenir, "PingFang SC", "Noto Sans CJK SC", sans-serif;
   font-size: 14px;
   color-scheme: light;
+  overflow: hidden;
 }
 
 html.dark {
   color-scheme: dark;
+}
+
+.keysmith-surface {
+  background-color: hsl(var(--background));
+  background-image:
+    radial-gradient(circle at 12% 4%, hsl(var(--primary) / 0.07), transparent 28rem),
+    linear-gradient(180deg, hsl(var(--card) / 0.24), transparent 12rem);
 }
 
 * {
@@ -71,4 +82,15 @@ textarea:disabled,
 select:disabled {
   cursor: not-allowed;
   opacity: 0.5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }

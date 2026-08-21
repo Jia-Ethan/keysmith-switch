@@ -16,6 +16,7 @@ export function ConfirmDialog({
   onClose,
   danger,
   closeLabel = "Close",
+  busy = false,
 }: {
   open: boolean;
   title: string;
@@ -29,6 +30,7 @@ export function ConfirmDialog({
   onClose: () => void;
   danger?: boolean;
   closeLabel?: string;
+  busy?: boolean;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
@@ -41,7 +43,7 @@ export function ConfirmDialog({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        closeRef.current();
+        if (!busy) closeRef.current();
         return;
       }
       if (event.key !== "Tab") return;
@@ -69,7 +71,7 @@ export function ConfirmDialog({
       document.removeEventListener("keydown", onKeyDown);
       previousFocusRef.current?.focus();
     };
-  }, [open]);
+  }, [busy, open]);
 
   if (!open) return null;
 
@@ -80,6 +82,7 @@ export function ConfirmDialog({
         role="dialog"
         aria-modal="true"
         aria-label={title}
+        aria-busy={busy || undefined}
         tabIndex={-1}
         className="flex max-h-[86vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-border bg-card shadow-xl focus:outline-none"
       >
@@ -90,13 +93,13 @@ export function ConfirmDialog({
               <p className="mt-0.5 text-[12px] text-muted-foreground">{description}</p>
             ) : null}
           </div>
-          <IconButton label={closeLabel} onClick={onClose}>
+          <IconButton label={closeLabel} disabled={busy} onClick={onClose}>
             <IconClose />
           </IconButton>
         </div>
         <div className="min-h-0 flex-1 overflow-auto px-4 py-3 text-[12px]">{children}</div>
         <div className="flex shrink-0 justify-end gap-2 border-t border-border px-4 py-3">
-          <Button onClick={onClose}>{cancelLabel}</Button>
+          <Button disabled={busy} onClick={onClose}>{cancelLabel}</Button>
           <Button
             variant={danger ? "danger" : "primary"}
             disabled={confirmDisabled}

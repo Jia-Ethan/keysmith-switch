@@ -1,12 +1,33 @@
 import type { ToolId } from "../types";
+import claudeSvg from "../assets/claude.svg";
+import codexSvg from "../assets/codex.svg";
 
-/** Distinctive compatibility marks. Not official trademark assets. */
+/** Tool brand icons. Using official-sourced SVG for Claude/Codex/Grok, custom for ZCode. */
 export function ToolLogo({ tool, size = 20 }: { tool: ToolId; size?: number }) {
   switch (tool) {
     case "claude":
-      return <ClaudeMark size={size} />;
+      return (
+        <img
+          src={claudeSvg}
+          width={size}
+          height={size}
+          alt=""
+          aria-hidden="true"
+          className="shrink-0"
+          style={{ filter: "none" }}
+        />
+      );
     case "codex":
-      return <CodexMark size={size} />;
+      return (
+        <img
+          src={codexSvg}
+          width={size}
+          height={size}
+          alt=""
+          aria-hidden="true"
+          className="shrink-0 dark:brightness-0 dark:invert"
+        />
+      );
     case "grok":
       return <GrokMark size={size} />;
     case "zcode":
@@ -14,49 +35,35 @@ export function ToolLogo({ tool, size = 20 }: { tool: ToolId; size?: number }) {
   }
 }
 
-function ClaudeMark({ size }: { size: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" className="shrink-0">
-      <path
-        fill="#D97706"
-        d="M12 2.2 13.6 8.4 19.8 10 13.6 11.6 12 17.8 10.4 11.6 4.2 10 10.4 8.4z"
-      />
-      <circle cx="12" cy="10" r="2.1" fill="#F59E0B" />
-    </svg>
-  );
-}
-
-function CodexMark({ size }: { size: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" className="shrink-0">
-      <path
-        fill="#2563EB"
-        d="M12 3c.7 2.4 2.2 4.4 4.4 5.6C14.2 9.8 12.7 11.8 12 14.2 11.3 11.8 9.8 9.8 7.6 8.6 9.8 7.4 11.3 5.4 12 3z"
-      />
-      <path
-        fill="#60A5FA"
-        d="M12 10.2c.5 1.7 1.6 3.1 3.2 4-1.6.9-2.7 2.3-3.2 4-.5-1.7-1.6-3.1-3.2-4 1.6-.9 2.7-2.3 3.2-4z"
-      />
-    </svg>
-  );
-}
-
 function GrokMark({ size }: { size: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" className="shrink-0">
-      <rect x="3" y="3" width="18" height="18" rx="4" fill="#111827" />
-      <path stroke="#F97316" strokeWidth="2.2" strokeLinecap="round" d="M8 8 16 16M16 8 8 16" />
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden="true" className="shrink-0">
+      <path
+        fill="currentColor"
+        fillRule="evenodd"
+        d="M9.27 15.29 17.248 9.393c.391-.29.95-.177 1.137.272.98 2.369.542 5.215-1.41 7.169-1.951 1.954-4.667 2.382-7.149 1.406l-2.711 1.257c3.889 2.661 8.611 2.003 11.562-.953 2.341-2.344 3.066-5.539 2.388-8.42l.006.007c-.983-4.232.242-5.924 2.75-9.383.06-.082.12-.164.179-.248l-3.301 3.305v-.01L9.267 15.292M7.623 16.723c-2.792-2.67-2.31-6.801.071-9.184 1.761-1.763 4.647-2.483 7.166-1.425l2.705-1.25a7.808 7.808 0 0 0-1.829-1A8.975 8.975 0 0 0 5.984 5.83c-2.533 2.536-3.33 6.436-1.962 9.764 1.022 2.487-.653 4.246-2.34 6.022-.599.63-1.199 1.259-1.682 1.925l7.62-6.815"
+      />
     </svg>
   );
 }
 
 function ZcodeMark({ size }: { size: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" className="shrink-0">
-      <rect x="3" y="3" width="18" height="18" rx="4" fill="#6D28D9" />
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+      className="shrink-0"
+    >
+      <rect x="4" y="4" width="16" height="16" rx="3" fill="#6D28D9" className="dark:fill-[#8B5CF6]" />
       <path
-        fill="#F5F3FF"
-        d="M7.5 7.2h9l-9 9.6h9v1.8h-10.8l9-9.6H7.5z"
+        d="M8.8 9.2h6.4l-6.4 5.6h6.4"
+        stroke="#F5F3FF"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
       />
     </svg>
   );

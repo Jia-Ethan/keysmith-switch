@@ -1,6 +1,6 @@
 [package]
 name = "keysmith-switch"
-version = "0.1.0"
+version = "0.1.1"
 description = "Keysmith Switch — local prompt manager for Claude Code, Codex, Grok Build, and ZCode"
 authors = ["Jia-Ethan"]
 license = "MIT"

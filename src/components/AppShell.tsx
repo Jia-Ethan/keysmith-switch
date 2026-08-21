@@ -7,6 +7,7 @@ import { Button, cx } from "./ui";
 import { IconMore, IconSettings } from "./icons";
 import { ToolLogo } from "./ToolLogos";
 import { UpdateBadge } from "./UpdateProvider";
+import keysmithIcon from "../assets/keysmith-icon.png";
 
 export type AppPage =
   | { kind: "tool"; tool: ToolId }
@@ -84,23 +85,18 @@ export function AppShell({
   };
 
   return (
-    <div className="flex h-full flex-col bg-background">
-      <header className="flex h-16 shrink-0 items-center gap-3 border-b border-border bg-card px-4">
-        <div className="flex shrink-0 items-center gap-2">
-          <span className="h-5 w-5 shrink-0 rounded bg-primary" aria-hidden="true" />
-          <div className="leading-tight">
-            <div className="whitespace-nowrap text-sm font-semibold tracking-tight text-foreground">
-              {t("app.name")}
-            </div>
-            <div className="text-[11px] font-medium uppercase tracking-wide text-amber-700 dark:text-amber-400">
-              {t("app.preview")}
-            </div>
+    <div className="keysmith-surface flex h-full flex-col">
+      <header className="flex h-16 shrink-0 items-center gap-3 border-b border-border bg-card px-4 sm:px-5">
+        <div className="flex shrink-0 items-center gap-2.5">
+          <img src={keysmithIcon} alt="" className="h-7 w-7 shrink-0" aria-hidden="true" />
+          <div className="whitespace-nowrap text-[14px] font-semibold tracking-tight text-foreground">
+            {t("app.name")}
           </div>
         </div>
 
         <div ref={navSlotRef} className="flex min-w-0 flex-1 items-center justify-center">
           <nav
-            className="flex items-center gap-1 rounded-xl bg-muted p-1"
+            className="flex items-center gap-1 rounded-md bg-muted p-1"
             aria-label={t("nav.toolsLabel")}
           >
             {visible.map((tool) => {
@@ -114,14 +110,14 @@ export function AppShell({
                   title={t(`nav.${tool}`)}
                   onClick={() => selectTool(tool)}
                   className={cx(
-                    "group inline-flex h-9 items-center gap-2 rounded-md px-3 text-sm font-medium transition-colors",
+                    "group inline-flex h-9 items-center gap-2 rounded-md px-2.5 text-[13px] font-medium transition-colors",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                     active
                       ? "bg-background text-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground hover:bg-background/50",
                   )}
                 >
-                  <ToolLogo tool={tool} size={20} />
+                  <ToolLogo tool={tool} size={18} />
                   <span className="hidden truncate xl:inline">{t(`nav.${tool}`)}</span>
                 </button>
               );
@@ -137,19 +133,19 @@ export function AppShell({
                   aria-label={t("nav.more")}
                   onClick={() => setMoreOpen((value) => !value)}
                   className={cx(
-                    "inline-flex h-9 items-center justify-center rounded-md px-3 transition-colors",
+                    "inline-flex h-9 items-center justify-center rounded-md px-2.5 transition-colors",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                     moreOpen
                       ? "bg-background text-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground",
                   )}
                 >
-                  <IconMore size={16} />
+                  <IconMore size={14} />
                 </button>
                 {moreOpen ? (
                   <div
                     role="menu"
-                    className="absolute right-0 top-11 z-30 w-52 overflow-hidden rounded-md border border-border bg-card py-1 shadow-lg"
+                    className="absolute right-0 top-11 z-30 w-44 overflow-hidden rounded-md border border-border bg-card py-1 shadow-lg"
                   >
                     {overflow.map((tool) => (
                       <button
@@ -158,9 +154,9 @@ export function AppShell({
                         role="menuitem"
                         data-testid={`nav-overflow-${tool}`}
                         onClick={() => selectTool(tool)}
-                        className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-muted"
+                        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[13px] text-foreground transition-colors hover:bg-muted"
                       >
-                        <ToolLogo tool={tool} size={20} />
+                        <ToolLogo tool={tool} size={18} />
                         <span className="truncate">{t(`nav.${tool}`)}</span>
                       </button>
                     ))}
@@ -192,7 +188,7 @@ export function AppShell({
             className="h-9 w-9"
             onClick={() => onNavigate({ kind: "settings" })}
           >
-            <IconSettings size={16} />
+            <IconSettings size={15} />
           </Button>
         </div>
       </header>

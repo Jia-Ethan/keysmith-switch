@@ -124,7 +124,6 @@ export function App() {
         {visiblePage.kind === "settings" ? (
           <SettingsPage
             settings={settingsState.settings}
-            loadError={settingsState.error}
             onSave={settingsState.save}
             onDataChanged={async () => {
               await settingsState.reload();

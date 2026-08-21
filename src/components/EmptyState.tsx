@@ -14,7 +14,8 @@ export function EmptyState({
   return (
     <div
       data-testid={testId}
-      className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-muted/30 px-4 py-10 text-center"
+      className="flex min-h-[160px] flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/25 px-5 py-10 text-center"
+      role="status"
     >
       <p className="text-[13px] font-medium text-foreground">{title}</p>
       {hint ? (
