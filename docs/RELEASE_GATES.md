@@ -61,11 +61,11 @@ identifier：`com.jia-ethan.keysmith-switch`
 默认 endpoint：
 
 - stable：`https://github.com/Jia-Ethan/keysmith-switch-releases/releases/latest/download/latest.json`
-- beta：`https://github.com/Jia-Ethan/keysmith-switch-releases/releases/download/beta-latest/latest.json`
+- beta：`https://raw.githubusercontent.com/Jia-Ethan/keysmith-switch-releases/beta/latest.json`
 
-`Jia-Ethan/keysmith-switch-releases` 是公开 updater 仓库，只保存 `latest.json`、签名 updater artifacts 和校验和。stable 使用不可变版本 tag 与 GitHub Latest；beta 使用经过审计的可变 `beta-latest` 指针，但每次发布都拒绝覆盖已有不可变版本 tag。
+`Jia-Ethan/keysmith-switch-releases` 是公开 updater 仓库，只保存 `latest.json`、签名 updater artifacts 和校验和。stable 与 beta 版本产物都使用不可变版本 Release；beta 的可变指针仅为受保护 `beta` 分支上的 `latest.json`，不覆盖版本 Release 资产。
 
-私有产品仓库的 `release` workflow 只构建和验证候选产物。公开仓库的 `publish-updater-release` workflow 必须人工指定成功的源 run ID、源 commit、channel 和不可变 tag，重新核对来源后才能发布。Apple/Windows 签名材料缺失时，源 workflow 会在发布之前失败。
+私有产品仓库的 `release` workflow 仍负责未来的 Apple/Windows 正式候选包。公开仓库的 `publish-updater-release` workflow 使用只读 deploy key 检出人工指定的不可变源 commit，在独立 runner 上运行完整门禁并生成 updater 签名产物；Apple/Windows 证书接入前，只发布 updater 流水线验证所需的非正式 Linux bundle，不会把它列为用户可安装平台。正式 macOS/Windows updater 发布仍受平台签名门槛约束。
 
 ## 客户端更新策略
 

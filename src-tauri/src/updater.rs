@@ -26,7 +26,8 @@ pub const APP_VERSION: &str = "0.1.1";
 pub const RELEASE_PAGE: &str = "https://github.com/Jia-Ethan/keysmith-switch-releases/releases";
 pub const STABLE_ENDPOINT: &str =
     "https://github.com/Jia-Ethan/keysmith-switch-releases/releases/latest/download/latest.json";
-pub const BETA_ENDPOINT: &str = "https://github.com/Jia-Ethan/keysmith-switch-releases/releases/download/beta-latest/latest.json";
+pub const BETA_ENDPOINT: &str =
+    "https://raw.githubusercontent.com/Jia-Ethan/keysmith-switch-releases/beta/latest.json";
 pub const RELEASES_BASE: &str = "https://github.com/Jia-Ethan/keysmith-switch-releases";
 
 /// TEST ONLY fixture public key (base64 of the minisign `.pub` file).
@@ -83,15 +84,11 @@ impl UpdateChannel {
         }
     }
 
-    pub fn latest_path(self) -> &'static str {
-        match self {
-            Self::Stable => "/releases/latest/download/latest.json",
-            Self::Beta => "/releases/download/beta-latest/latest.json",
-        }
-    }
-
     pub fn default_endpoint(self) -> String {
-        format!("{}{}", RELEASES_BASE, self.latest_path())
+        match self {
+            Self::Stable => STABLE_ENDPOINT.to_string(),
+            Self::Beta => BETA_ENDPOINT.to_string(),
+        }
     }
 }
 
@@ -258,7 +255,11 @@ pub fn resolve_update_endpoint(
         return ep.to_string();
     }
     if let Some(base) = nonempty(endpoint_base) {
-        return format!("{}{}", trim_slash(base), channel.latest_path());
+        let suffix = match channel {
+            UpdateChannel::Stable => "/releases/latest/download/latest.json",
+            UpdateChannel::Beta => "/beta/latest.json",
+        };
+        return format!("{}{suffix}", trim_slash(base));
     }
     channel.default_endpoint()
 }

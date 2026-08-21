@@ -42,6 +42,7 @@ def main() -> None:
     parser.add_argument("--base-url", required=True)
     parser.add_argument("--darwin-aarch64", type=Path)
     parser.add_argument("--windows-x86_64", type=Path)
+    parser.add_argument("--linux-x86_64", type=Path)
     parser.add_argument("--out", type=Path, default=Path("latest.json"))
     args = parser.parse_args()
 
@@ -58,6 +59,7 @@ def main() -> None:
     for key, path in (
         ("darwin-aarch64", args.darwin_aarch64),
         ("windows-x86_64", args.windows_x86_64),
+        ("linux-x86_64", args.linux_x86_64),
     ):
         if path is not None:
             platforms[key] = artifact_entry(path, args.base_url)

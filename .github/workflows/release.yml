@@ -57,8 +57,11 @@ jobs:
           cargo fmt --check --manifest-path src-tauri/Cargo.toml
           cargo test --manifest-path src-tauri/Cargo.toml
           tmp="$(mktemp -d)"
+          chmod 700 "$tmp"
+          trap 'rm -rf "$tmp"' EXIT
           printf 'Keysmith Switch release updater key check\n' > "$tmp/artifact.bin"
           printf '%s' "$TAURI_SIGNING_PRIVATE_KEY" > "$tmp/updater.key"
+          chmod 600 "$tmp/updater.key"
           npx tauri signer sign --private-key-path "$tmp/updater.key" "$tmp/artifact.bin" >/dev/null
           printf '%s' "$TAURI_UPDATER_PUBLIC_KEY" > "$tmp/updater.pub"
           cargo run --quiet --manifest-path src-tauri/Cargo.toml --example verify_updater -- \
@@ -310,7 +313,7 @@ jobs:
           if [[ "$CHANNEL" == stable ]]; then
             base_url="https://github.com/Jia-Ethan/keysmith-switch-releases/releases/download/$tag"
           else
-            base_url="https://github.com/Jia-Ethan/keysmith-switch-releases/releases/download/beta-latest"
+            base_url="https://github.com/Jia-Ethan/keysmith-switch-releases/releases/download/$tag"
           fi
           python3 scripts/generate-latest-json.py \
             --version "$version" \

@@ -103,7 +103,7 @@
 ## Updater
 
 - 默认 stable endpoint：`https://github.com/Jia-Ethan/keysmith-switch-releases/releases/latest/download/latest.json`
-- beta endpoint：`https://github.com/Jia-Ethan/keysmith-switch-releases/releases/download/beta-latest/latest.json`
+- beta endpoint：`https://raw.githubusercontent.com/Jia-Ethan/keysmith-switch-releases/beta/latest.json`
 - 环境覆盖：`KEYSMITH_SWITCH_UPDATER_ENDPOINT`、`KEYSMITH_SWITCH_UPDATER_PUBKEY`
 - 禁止静默安装；`install_app_update` 必须 `confirmed: true`
 - 签名失败、离线、损坏 metadata、降级、下载中断：保持当前版本

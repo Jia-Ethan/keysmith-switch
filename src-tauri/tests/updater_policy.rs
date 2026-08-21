@@ -89,7 +89,7 @@ fn resolve_update_endpoint_selects_stable_and_beta() {
     );
     assert_eq!(
         resolve_update_endpoint(UpdateChannel::Beta, None, Some("http://example.invalid")),
-        "http://example.invalid/releases/download/beta-latest/latest.json"
+        "http://example.invalid/beta/latest.json"
     );
 }
 
@@ -117,7 +117,7 @@ fn check_update_selects_stable_endpoint_by_default() {
     let stable = serve_json(&server, "/releases/latest/download/latest.json", &body);
     let beta = serve_json(
         &server,
-        "/releases/download/beta-latest/latest.json",
+        "/beta/latest.json",
         &fixture_manifest(
             "0.2.0-beta.1",
             &server.url("/artifact-0.2.0-beta.1.bin"),
@@ -145,7 +145,7 @@ fn check_update_selects_beta_channel() {
         &server.url("/artifact-0.2.0-beta.1.bin"),
         &sig,
     );
-    let beta = serve_json(&server, "/releases/download/beta-latest/latest.json", &body);
+    let beta = serve_json(&server, "/beta/latest.json", &body);
     let stable = serve_json(
         &server,
         "/releases/latest/download/latest.json",
@@ -174,7 +174,7 @@ fn check_update_env_channel_selects_beta() {
         &server.url("/artifact-0.2.0-beta.1.bin"),
         &load_text("artifact-0.2.0-beta.1.bin.sig"),
     );
-    let beta = serve_json(&server, "/releases/download/beta-latest/latest.json", &body);
+    let beta = serve_json(&server, "/beta/latest.json", &body);
     std::env::set_var("KEYSMITH_SWITCH_UPDATE_CHANNEL", "beta");
     let check = check_update(&base_req(&server));
     std::env::remove_var("KEYSMITH_SWITCH_UPDATE_CHANNEL");

@@ -23,7 +23,7 @@ Default stable endpoint (runtime, not this fixture):
 
 Beta:
 
-`https://github.com/Jia-Ethan/keysmith-switch-releases/releases/download/beta-latest/latest.json`
+`https://raw.githubusercontent.com/Jia-Ethan/keysmith-switch-releases/beta/latest.json`
 
 ## Environment overrides
 
