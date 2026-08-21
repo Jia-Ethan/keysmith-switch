@@ -39,6 +39,7 @@ jobs:
       - name: Require an annotated release tag
         shell: bash
         env:
+          GH_TOKEN: ${{ github.token }}
           SOURCE_TAG: ${{ inputs.source_tag }}
           CHANNEL: ${{ inputs.channel }}
         run: |
@@ -46,6 +47,8 @@ jobs:
           [[ "$SOURCE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "source_tag must be a complete semantic-version tag." >&2; exit 1; }
           [[ "$(git cat-file -t "$SOURCE_TAG")" == tag ]] || { echo "source_tag must be annotated." >&2; exit 1; }
           [[ "$(git rev-parse HEAD)" == "$(git rev-parse "$SOURCE_TAG^{commit}")" ]] || { echo "checked-out commit does not match source_tag." >&2; exit 1; }
+          tag_object="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/$SOURCE_TAG" --jq .object.sha)"
+          [[ "$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/$tag_object" --jq .verification.verified)" == true ]] || { echo "source_tag must have a GitHub-verified signature." >&2; exit 1; }
           version="$(node -p 'require("./package.json").version')"
           [[ "v$version" == "$SOURCE_TAG" ]] || { echo "source tag and package version differ." >&2; exit 1; }
           if [[ "$CHANNEL" == beta && "$SOURCE_TAG" != *-* ]]; then echo "Beta releases require a prerelease tag." >&2; exit 1; fi
@@ -348,8 +351,15 @@ jobs:
             --darwin-aarch64 "$mac" \
             --windows-x86_64 "$win" \
             --out candidate/latest.json
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg source_tag "${{ inputs.source_tag }}" \
+            --arg source_commit "$(git rev-parse HEAD)" \
+            --arg workflow_run_id "$GITHUB_RUN_ID" \
+            '{repository: $repository, source_tag: $source_tag, source_commit: $source_commit, workflow_run_id: $workflow_run_id}' \
+            > candidate/provenance.json
           jq -e '(.platforms | keys | sort) == ["darwin-aarch64", "windows-x86_64"] and all(.platforms[]; (.signature | type == "string" and length > 0) and (.sha256 | test("^[0-9a-f]{64}$")))' candidate/latest.json >/dev/null
-          (cd candidate && sha256sum latest.json ./*.app.tar.gz ./*.app.tar.gz.sig ./*.exe ./*.exe.sig > SHA256SUMS.txt)
+          (cd candidate && sha256sum latest.json provenance.json ./*.app.tar.gz ./*.app.tar.gz.sig ./*.exe ./*.exe.sig > SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         with:
           name: keysmith-switch-release-${{ inputs.channel }}
