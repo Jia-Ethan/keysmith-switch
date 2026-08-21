@@ -62,10 +62,10 @@ unsigned Preview 不生成 updater `.sig` 或 `latest.json`。仓库内 fixture 
 
 - macOS Developer ID Application、notarization、stapling 和真实 Gatekeeper 验收。
 - Windows x64 已有 GitHub-hosted Windows runner 原生 NSIS 候选包；正式通道仍缺 Authenticode 以及 Windows 实体机安装、启动、升级和卸载验收。
-- 生产 updater 密钥对、私有 release 仓库和 GitHub Secrets；本轮没有生成、配置或发布它们。
-- updater 生产 endpoint、生产公钥和 release artifact 的最终绑定。
+- Apple/Windows 平台签名材料仍未配置，因此正式 updater 候选 workflow 会 fail closed。
+- 生产 updater 密钥、公开 release 仓库、最小权限跨仓库访问、Secrets、endpoint 和发布流水线已配置；尚未发布任何正式 updater Release。
 - 前端主 JS chunk 约 906 KB，正式发布前可做代码分包优化。
 
 ## 明确未做
 
-未创建公开 updater release 仓库或 GitHub Secrets；未发布正式签名版本，也没有修改 `work/source-audit-20260819/`。PR #1、签名 tag `v0.1.1` 与私有 unsigned Pre-release 已完成。
+未发布正式签名 updater 版本，也没有修改 `work/source-audit-20260819/`。PR #1、签名 tag `v0.1.1` 与私有 unsigned Pre-release 已完成；公开 updater 仓库当前无 Release。

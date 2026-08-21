@@ -65,7 +65,7 @@ identifier：`com.jia-ethan.keysmith-switch`
 
 `Jia-Ethan/keysmith-switch-releases` 是公开 updater 仓库，只保存 `latest.json`、签名 updater artifacts 和校验和。stable 与 beta 版本产物都使用不可变版本 Release；beta 的可变指针仅为受保护 `beta` 分支上的 `latest.json`，不覆盖版本 Release 资产。
 
-私有产品仓库的 `release` workflow 仍负责未来的 Apple/Windows 正式候选包。公开仓库的 `publish-updater-release` workflow 使用只读 deploy key 检出人工指定的不可变源 commit，在独立 runner 上运行完整门禁并生成 updater 签名产物；Apple/Windows 证书接入前，只发布 updater 流水线验证所需的非正式 Linux bundle，不会把它列为用户可安装平台。正式 macOS/Windows updater 发布仍受平台签名门槛约束。
+私有产品仓库的 `release` workflow 只接受与应用版本一致的已签名 tag，并负责构建、平台签名、公证、updater 签名和完整门禁。公开仓库只接收该成功 workflow 的不可变 macOS/Windows 候选包，使用生产公钥再次验证后通过受保护 `production` environment 发布。Apple/Windows 证书接入前，流水线会 fail closed；Linux 验证产物不会创建 Release，也不会进入 stable 或 beta feed。
 
 ## 客户端更新策略
 
