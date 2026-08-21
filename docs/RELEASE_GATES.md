@@ -1,6 +1,6 @@
 # Keysmith Switch 发布门槛
 
-本文件只记录发布前必须满足的证据，不创建公开 release 仓库，不配置 GitHub Secrets，不提交任何生产私钥。
+本文件记录发布前必须满足的证据。公开 release 仓库与 updater Secrets 已配置；生产私钥不得进入仓库或 Release。
 
 应用版本：`0.1.1`
 
@@ -52,7 +52,7 @@ identifier：`com.jia-ethan.keysmith-switch`
 ### updater
 
 - 客户端默认 fixture 公钥仅供测试；生产构建通过 `KEYSMITH_SWITCH_UPDATER_PUBKEY` 和 Tauri config 注入生产公钥。
-- `TAURI_SIGNING_PRIVATE_KEY` 只能来自 GitHub Secrets，不得进入仓库。
+- `TAURI_SIGNING_PRIVATE_KEY` 与非空 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` 只能来自 GitHub Secrets，不得进入仓库。
 - 构建后必须用同一生产公钥验证每个 `.app.tar.gz.sig` / `.exe.sig`；公钥不匹配时 workflow 必须失败。
 - `latest.json` 只允许 HTTPS、非空签名、正确 SHA-256，并且每个平台恰好一个候选 artifact。
 
@@ -63,7 +63,9 @@ identifier：`com.jia-ethan.keysmith-switch`
 - stable：`https://github.com/Jia-Ethan/keysmith-switch-releases/releases/latest/download/latest.json`
 - beta：`https://github.com/Jia-Ethan/keysmith-switch-releases/releases/download/beta-latest/latest.json`
 
-`Jia-Ethan/keysmith-switch-releases` 尚未创建；本轮只在私有产品仓库发布 unsigned Preview，没有创建或写入正式 updater 仓库。
+`Jia-Ethan/keysmith-switch-releases` 是公开 updater 仓库，只保存 `latest.json`、签名 updater artifacts 和校验和。stable 使用不可变版本 tag 与 GitHub Latest；beta 使用经过审计的可变 `beta-latest` 指针，但每次发布都拒绝覆盖已有不可变版本 tag。
+
+私有产品仓库的 `release` workflow 只构建和验证候选产物。公开仓库的 `publish-updater-release` workflow 必须人工指定成功的源 run ID、源 commit、channel 和不可变 tag，重新核对来源后才能发布。Apple/Windows 签名材料缺失时，源 workflow 会在发布之前失败。
 
 ## 客户端更新策略
 

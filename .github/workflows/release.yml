@@ -1,4 +1,4 @@
-# Signed candidate packaging only. This uploads Actions artifacts but does not publish.
+# Signed candidate packaging only. Publishing is delegated to the public release repository.
 name: release
 
 on:
@@ -10,8 +10,62 @@ on:
         type: choice
         options: [stable, beta]
 
+permissions:
+  contents: read
+
 jobs:
+  source-gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: npm ci
+      - name: Require the default branch
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "Release candidates must be built from main." >&2
+          exit 1
+      - name: Require updater signing material
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+          for name in TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD TAURI_UPDATER_PUBLIC_KEY; do
+            [[ -n "${!name:-}" ]] || { echo "$name is required." >&2; exit 1; }
+          done
+      - name: Validate source and production updater key
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+          version="$(python3 -c 'import json; print(json.load(open("src-tauri/tauri.conf.json"))["version"])')"
+          python3 scripts/check-version.py --expected "$version"
+          npm test
+          npm run build
+          cargo fmt --check --manifest-path src-tauri/Cargo.toml
+          cargo test --manifest-path src-tauri/Cargo.toml
+          tmp="$(mktemp -d)"
+          printf 'Keysmith Switch release updater key check\n' > "$tmp/artifact.bin"
+          printf '%s' "$TAURI_SIGNING_PRIVATE_KEY" > "$tmp/updater.key"
+          npx tauri signer sign --private-key-path "$tmp/updater.key" "$tmp/artifact.bin" >/dev/null
+          printf '%s' "$TAURI_UPDATER_PUBLIC_KEY" > "$tmp/updater.pub"
+          cargo run --quiet --manifest-path src-tauri/Cargo.toml --example verify_updater -- \
+            "$tmp/updater.pub" "$tmp/artifact.bin" "$tmp/artifact.bin.sig"
+
   macos:
+    needs: source-gates
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -29,6 +83,7 @@ jobs:
         shell: bash
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           TAURI_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -38,7 +93,7 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
-          for name in TAURI_SIGNING_PRIVATE_KEY TAURI_UPDATER_PUBLIC_KEY APPLE_CERTIFICATE \
+          for name in TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD TAURI_UPDATER_PUBLIC_KEY APPLE_CERTIFICATE \
             APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
             if [[ -z "${!name:-}" ]]; then
               echo "$name is required for a signed and notarized macOS candidate." >&2
@@ -89,7 +144,7 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: npx tauri build --target aarch64-apple-darwin --config "$TAURI_RELEASE_CONFIG"
+        run: npx tauri build --target aarch64-apple-darwin --config src-tauri/tauri.macos.conf.json --config "$TAURI_RELEASE_CONFIG"
       - name: Verify macOS candidate
         shell: bash
         env:
@@ -128,6 +183,7 @@ jobs:
           rm -f "$RUNNER_TEMP/keysmith-switch.p12" "$RUNNER_TEMP/updater.pub" "$RUNNER_TEMP/keysmith-release-macos.json"
 
   windows:
+    needs: source-gates
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -145,11 +201,12 @@ jobs:
         shell: pwsh
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           TAURI_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
           WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         run: |
-          foreach ($name in @("TAURI_SIGNING_PRIVATE_KEY", "TAURI_UPDATER_PUBLIC_KEY", "WINDOWS_CERTIFICATE", "WINDOWS_CERTIFICATE_PASSWORD")) {
+          foreach ($name in @("TAURI_SIGNING_PRIVATE_KEY", "TAURI_SIGNING_PRIVATE_KEY_PASSWORD", "TAURI_UPDATER_PUBLIC_KEY", "WINDOWS_CERTIFICATE", "WINDOWS_CERTIFICATE_PASSWORD")) {
             if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
               throw "$name is required for a signed Windows candidate."
             }
@@ -182,7 +239,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           KEYSMITH_SWITCH_UPDATER_PUBKEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
-        run: npx tauri build --target x86_64-pc-windows-msvc --config $env:TAURI_RELEASE_CONFIG
+        run: npx tauri build --target x86_64-pc-windows-msvc --config src-tauri/tauri.windows.conf.json --config $env:TAURI_RELEASE_CONFIG
       - name: Verify Windows candidate
         shell: pwsh
         env:
@@ -241,8 +298,17 @@ jobs:
           [[ ${#wins[@]} -eq 1 ]] || { echo "Expected one Windows updater, found ${#wins[@]}" >&2; exit 1; }
           mac="${macs[0]}"
           win="${wins[0]}"
-          if [[ "$CHANNEL" == "stable" ]]; then
-            base_url="https://github.com/Jia-Ethan/keysmith-switch-releases/releases/latest/download"
+          tag="v$version"
+          if [[ "$CHANNEL" == beta && "$version" != *-* ]]; then
+            echo "Beta releases require a prerelease source version." >&2
+            exit 1
+          fi
+          if [[ "$CHANNEL" == stable && "$version" == *-* ]]; then
+            echo "Stable releases require a non-prerelease source version." >&2
+            exit 1
+          fi
+          if [[ "$CHANNEL" == stable ]]; then
+            base_url="https://github.com/Jia-Ethan/keysmith-switch-releases/releases/download/$tag"
           else
             base_url="https://github.com/Jia-Ethan/keysmith-switch-releases/releases/download/beta-latest"
           fi
@@ -256,4 +322,5 @@ jobs:
         with:
           name: keysmith-switch-release-${{ inputs.channel }}
           if-no-files-found: error
+          retention-days: 14
           path: candidate/

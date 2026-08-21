@@ -7,7 +7,7 @@
 //! The default pubkey is the **TEST ONLY** fixture key in
 //! `fixtures/updater/TEST_ONLY.minisign.key.pub`. Production must replace it
 //! via `KEYSMITH_SWITCH_UPDATER_PUBKEY` or a rebuilt `tauri.conf.json`.
-//! The matching private key must never be used for GitHub Releases.
+//! The matching private key must never be committed or uploaded to GitHub Releases.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
