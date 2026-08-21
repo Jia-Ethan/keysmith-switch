@@ -73,6 +73,7 @@ jobs:
           python3 scripts/check-version.py --expected "$version"
           npm test
           npm run build
+          python3 scripts/build-sidecars.py
           cargo fmt --check --manifest-path src-tauri/Cargo.toml
           cargo test --manifest-path src-tauri/Cargo.toml
           tmp="$(mktemp -d)"
