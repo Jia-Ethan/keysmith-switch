@@ -2,7 +2,7 @@
 
 本文件只记录发布前必须满足的证据，不创建公开 release 仓库，不配置 GitHub Secrets，不提交任何生产私钥。
 
-应用版本：`0.1.0`
+应用版本：`0.1.1`
 
 identifier：`com.jia-ethan.keysmith-switch`
 
@@ -16,10 +16,10 @@ identifier：`com.jia-ethan.keysmith-switch`
 
 ## unsigned Preview 通道
 
-- 私有产品仓库已发布 [`v0.1.0` Pre-release](https://github.com/Jia-Ethan/keysmith-switch/releases/tag/v0.1.0)，包含签名 Git tag、DMG、NSIS EXE 和 `SHA256SUMS.txt`。该 Pre-release 不是正式签名发布或 updater 发布通道。
-- GitHub Actions [run 32323351213](https://github.com/Jia-Ethan/keysmith-switch/actions/runs/32323351213) 已通过 `source-gates`、`macos` 和 `windows`，上传 macOS Apple Silicon DMG 与 Windows x64 NSIS Actions artifacts。
-- CI DMG SHA-256 为 `9b429800d3ce55f3d71ac37e84258a5ded2677910232033f19cb147d50f79786`；CI NSIS SHA-256 为 `692d6796891c795116feb54f6f6c3d09372322efa93e58f7102275026bb33e6f`。
-- macOS Actions artifact 已下载并在本机重新挂载验证；Windows artifact 仅有 Windows runner 构建、无有效 Authenticode 断言和校验和，不等同于实体机验收。
+- 私有产品仓库已发布 [`v0.1.1` Pre-release](https://github.com/Jia-Ethan/keysmith-switch/releases/tag/v0.1.1)，包含签名 Git tag、DMG、NSIS EXE 和 `SHA256SUMS.txt`。该 Pre-release 不是正式签名发布或 updater 发布通道。
+- GitHub Actions [run 32433727011](https://github.com/Jia-Ethan/keysmith-switch/actions/runs/32433727011) 已通过 `source-gates`、`macos` 和 `windows`，上传 macOS Apple Silicon DMG 与 Windows x64 NSIS Actions artifacts。
+- CI DMG SHA-256 为 `a911d2dd601d127fe0f5d478695bcbf7882b520bc9c913555509cd96ed89a96e`；CI NSIS SHA-256 为 `f37f9926266f596290e183d3248056d168af24c943732919b4a4c93020c5b461`。
+- 两个平台的 Release assets 已从 GitHub 重新下载并通过 `SHA256SUMS.txt` 复核。macOS DMG 已在本机重新挂载并通过 bundle、sidecar、版本和 canonical 图标哈希验证；Windows artifact 仍不等同于实体机安装验收。
 
 - `.github/workflows/preview-release.yml` 只允许从 `main` 手动构建。
 - 版本必须与 `package.json`、`package-lock.json`、Cargo、Tauri 和 Rust 常量一致。
@@ -63,7 +63,7 @@ identifier：`com.jia-ethan.keysmith-switch`
 - stable：`https://github.com/Jia-Ethan/keysmith-switch-releases/releases/latest/download/latest.json`
 - beta：`https://github.com/Jia-Ethan/keysmith-switch-releases/releases/download/beta-latest/latest.json`
 
-`Jia-Ethan/keysmith-switch-releases` 尚未创建。本轮不创建、不 push、不发 Release。
+`Jia-Ethan/keysmith-switch-releases` 尚未创建；本轮只在私有产品仓库发布 unsigned Preview，没有创建或写入正式 updater 仓库。
 
 ## 客户端更新策略
 
