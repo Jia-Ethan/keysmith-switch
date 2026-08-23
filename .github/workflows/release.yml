@@ -171,7 +171,9 @@ jobs:
           printf '%s' "$TAURI_UPDATER_PUBLIC_KEY" > "$RUNNER_TEMP/updater.pub"
           cargo run --quiet --manifest-path src-tauri/Cargo.toml --example verify_updater -- \
             "$RUNNER_TEMP/updater.pub" "$updater" "$updater.sig"
-          if ! grep -aFq "$TAURI_UPDATER_PUBLIC_KEY" "$app/Contents/MacOS/keysmith-switch"; then
+          compiled_pubkey="$(python3 -c 'import os; print(os.environ["TAURI_UPDATER_PUBLIC_KEY"].strip(), end="")')"
+          [[ -n "$compiled_pubkey" ]] || { echo "Production updater public key is empty." >&2; exit 1; }
+          if ! grep -aFq "$compiled_pubkey" "$app/Contents/MacOS/keysmith-switch"; then
             echo "macOS binary does not contain the production updater public key." >&2
             exit 1
           fi
