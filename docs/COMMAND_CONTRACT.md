@@ -1,6 +1,6 @@
 # Keysmith Switch command contract
 
-前后端与测试共用。版本 `0.1.0`。envelope schema 固定为 `keysmith-switch/adapter-v1`。
+前后端与测试共用。契约版本 `0.1.0`。envelope schema 固定为 `keysmith-switch/adapter-v1`。
 
 ## Tools
 

@@ -21,7 +21,7 @@
 | CC Switch 源码 | Keysmith Switch | 复用方式 |
 | --- | --- | --- |
 | `src/App.tsx` 顶栏、HEADER_HEIGHT、右侧设置/更新 | `src/components/AppShell.tsx` | 布局思路；不复制供应商/MCP/用量 |
-| `src/components/AppSwitcher.tsx` 图标切换、溢出「更多」、选中态 | `src/components/AppShell.tsx` + `src/components/ToolLogos.tsx` | 交互模式；上一轮已按此改导航 |
+| `src/components/AppSwitcher.tsx` 图标切换、溢出「更多」、选中态 | `src/components/AppShell.tsx` + `src/components/ToolLogos.tsx` | 图标切换、溢出与选中态交互映射 |
 | `src/components/providers/ProviderList.tsx` 搜索 + 当前/其余分组 | `src/components/PromptList.tsx` | 栏目结构，业务换成提示词 |
 | `src/components/providers/ProviderCard.tsx` 卡片选中/状态 | `src/components/PromptList.tsx` 卡片 | 视觉密度与选中态，不含供应商字段 |
 | `src/components/prompts/PromptFormPanel.tsx` | `src/components/PromptFormPanel.tsx` | 结构复用：全屏面板 + 标题 + Markdown |
@@ -37,7 +37,7 @@
 | `src-tauri/src/lib.rs` CloseRequested / 单实例 / 窗口状态 | `src-tauri/src/lib.rs` + `desktop.rs` | 关窗进托盘、单实例聚焦、位置恢复 |
 | `src-tauri/src/tray.rs` | `src-tauri/src/desktop.rs` | 精简菜单：显示主窗口 / 检查更新 / 退出 |
 | `src-tauri/src/auto_launch.rs` | `src-tauri/src/auto_launch.rs` | **MIT 改编**：应用名改为 Keysmith Switch |
-| `.github/workflows/ci.yml` `release.yml` | `.github/workflows/` | 本地模板，不触发远程、不配置 Secrets |
+| `.github/workflows/ci.yml` `preview-release.yml` `release.yml` | `.github/workflows/` | CI 自动验证；开发候选与正式发布按职责分离，发布 Secrets 只由 Actions 读取 |
 | DMG 背景、Applications 拖放、NSIS currentUser、WebView2、多尺寸 ICO | `src-tauri/tauri.*.conf.json` + `scripts/` | 发布结构与跨平台安装体验 |
 
 ## MIT 改编文件（保留版权声明）

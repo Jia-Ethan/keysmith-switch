@@ -16,6 +16,10 @@
 
 详见 [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md) 与 [`docs/RELEASE_GATES.md`](docs/RELEASE_GATES.md)。
 
+## 复制给智能体安装
+
+> 请先阅读本仓库 README 与发布边界，再从公开 Releases 安装当前稳定版。操作前检查系统架构、现有版本和数据目录，列出准确的下载、安装与备份路径；覆盖现有应用或写入托管配置前等待确认。安装后最小验证安装包 SHA-256、应用启动、既有提示词数据和“检查更新”。除非明确要求，不要从源码构建。
+
 ## 下载
 
 当前稳定版：[`v0.1.3`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.1.3)

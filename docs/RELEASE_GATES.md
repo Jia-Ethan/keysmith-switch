@@ -24,7 +24,7 @@ identifier：`com.jia-ethan.keysmith-switch`
 
 ## updater 签名门槛
 
-- `TAURI_SIGNING_PRIVATE_KEY`、`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`、`TAURI_UPDATER_PUBLIC_KEY` 只来自私有源仓库 GitHub Secrets。
+- `TAURI_SIGNING_PRIVATE_KEY`、`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`、`TAURI_UPDATER_PUBLIC_KEY` 只来自源仓库 GitHub Secrets。
 - source gate 先用生产私钥签临时文件，再使用生产公钥验证，证明密钥配对正确。
 - macOS `.app.tar.gz` 和 Windows NSIS `.exe` 必须由 Tauri 生成非空 `.sig`。
 - 每个平台 payload 必须用同一生产公钥通过独立 `verify_updater` 验证。
@@ -44,7 +44,7 @@ identifier：`com.jia-ethan.keysmith-switch`
 - 构建必须生成唯一 NSIS `.exe` 和对应 `.exe.sig`。
 - `Get-AuthenticodeSignature` 必须返回 `NotSigned`；如果意外出现其他状态，workflow 失败。
 - updater 公钥必须能验证 NSIS payload；Tauri plugin 和 Rust 自定义检查逻辑必须使用同一生产公钥，最终主程序必须包含该公钥。
-- 首次公开发布前仍需在 Windows x64 实体机验证手动安装、启动和卸载。
+- `v0.1.3` 发布后仍需在 Windows x64 实体机验证手动安装、启动和卸载。
 - 在承诺 `v0.1.3 → v0.1.4` 自动更新前，必须验证应用内下载、SmartScreen/系统拦截行为、安装、重启和失败保留现版。
 
 ## 发布仓库与渠道
@@ -53,7 +53,7 @@ identifier：`com.jia-ethan.keysmith-switch`
 - beta：`https://raw.githubusercontent.com/Jia-Ethan/keysmith-switch-releases/beta/latest.json`
 - 不可变版本资产：`https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/vX.Y.Z`
 
-私有源仓库的 `release` workflow 只接受与应用版本一致的 GitHub-verified annotated tag，构建 updater-signed 候选并上传短期 Actions artifact。公开 `Jia-Ethan/keysmith-switch-releases` 仓库重新验证 tag/commit provenance、平台白名单、minisign 和 SHA-256，再经受保护 `production` environment 发布不可变 Release。
+源仓库的 `release` workflow 只接受与应用版本一致的 GitHub-verified annotated tag，构建 updater-signed 候选并上传短期 Actions artifact。公开 `Jia-Ethan/keysmith-switch-releases` 仓库重新验证 tag/commit provenance、平台白名单、minisign 和 SHA-256，再经受保护 `production` environment 发布不可变 Release。
 
 公开仓库不得保存生产 updater 私钥、源代码、Linux 产物或不受支持平台资产。公开 workflow 应绑定源 run 的仓库、workflow path、成功状态、tag、commit 和 artifact provenance。
 

@@ -4,8 +4,6 @@
 
 阶段：**`v0.1.3` updater bootstrap 已发布。`v0.1.2` 的已删除 immutable Release 占用了 Tag 名，因此未作为可用版本发布。**
 
-工作区：`/Users/ethan/Documents/Codex/2026-08-19/ccswitch-keysmithswith-jia-github`
-
 ## 产品状态
 
 - 四工具独立提示词库、Markdown 可重建索引、SQLite 元数据、历史、标签、激活状态和跨工具复制已实现。

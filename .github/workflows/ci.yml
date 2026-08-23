@@ -1,4 +1,4 @@
-# Local-only CI template. Do not trigger remotely in this pass.
+# Validate frontend, Rust core, and bundled sidecars on pull requests and main.
 name: ci
 
 on:
