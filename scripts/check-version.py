@@ -35,6 +35,10 @@ def main() -> None:
         "src-tauri/Cargo.toml": match_version(
             "src-tauri/Cargo.toml", r'^version\s*=\s*"([^"]+)"'
         ),
+        "src-tauri/Cargo.lock": match_version(
+            "src-tauri/Cargo.lock",
+            r'^\[\[package\]\]\nname = "keysmith-switch"\nversion = "([^"]+)"',
+        ),
         "src-tauri/src/models.rs": match_version(
             "src-tauri/src/models.rs", r'^pub const APP_VERSION: &str = "([^"]+)";'
         ),

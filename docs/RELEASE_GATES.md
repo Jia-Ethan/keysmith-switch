@@ -1,94 +1,77 @@
 # Keysmith Switch 发布门槛
 
-本文件记录发布前必须满足的证据。公开 release 仓库与 updater Secrets 已配置；生产私钥不得进入仓库或 Release。
+本文件记录 `v0.1.2` 及后续版本的发布边界。应用安装包不使用 Apple Developer ID、公证或 Windows Authenticode；应用内更新仍使用独立生产密钥签名并在客户端安装前验证。
 
-应用版本：`0.1.1`
+应用版本：`0.1.2`
 
 identifier：`com.jia-ethan.keysmith-switch`
 
 ## 当前平台状态
 
-| 平台 | 目标 | 当前状态 |
+| 平台 | 目标 | 发布要求 |
 | --- | --- | --- |
-| macOS Apple Silicon | `.app` + `.dmg` | unsigned Preview 已重建并通过 app/DMG 内 sidecar 运行时 smoke；adhoc、关闭 hardened runtime；无 Developer ID、公证或 updater artifact |
-| Windows x64 | unsigned Preview NSIS `currentUser` `.exe` | GitHub-hosted Windows runner 原生候选包已构建并校验 SHA-256；无有效 Authenticode，尚无 Windows 实体机安装、启动、升级和卸载验收 |
-| Linux | 非首发目标 | 客户端显示 unsupported，不安装 |
+| macOS Apple Silicon | `.app`、`.dmg`、`.app.tar.gz` | ad-hoc 签名，关闭 hardened runtime；app、DMG 和 updater archive 内 app 的四个 sidecar 均通过运行时 smoke |
+| Windows x64 | NSIS `currentUser` `.exe` | 无 Authenticode；构建 runner 验证状态为 `NotSigned`，并产出 updater `.sig` |
+| Linux、Intel Mac、Windows ARM64 | 不发布 | 客户端显示 unsupported，不执行安装 |
 
-## unsigned Preview 通道
+## v0.1.2 bootstrap 边界
 
-- 私有产品仓库已发布 [`v0.1.1` Pre-release](https://github.com/Jia-Ethan/keysmith-switch/releases/tag/v0.1.1)，包含签名 Git tag、DMG、NSIS EXE 和 `SHA256SUMS.txt`。该 Pre-release 不是正式签名发布或 updater 发布通道。
-- GitHub Actions [run 32433727011](https://github.com/Jia-Ethan/keysmith-switch/actions/runs/32433727011) 已通过 `source-gates`、`macos` 和 `windows`，上传 macOS Apple Silicon DMG 与 Windows x64 NSIS Actions artifacts。
-- CI DMG SHA-256 为 `a911d2dd601d127fe0f5d478695bcbf7882b520bc9c913555509cd96ed89a96e`；CI NSIS SHA-256 为 `f37f9926266f596290e183d3248056d168af24c943732919b4a4c93020c5b461`。
-- 两个平台的 Release assets 已从 GitHub 重新下载并通过 `SHA256SUMS.txt` 复核。macOS DMG 已在本机重新挂载并通过 bundle、sidecar、版本和 canonical 图标哈希验证；Windows artifact 仍不等同于实体机安装验收。
+- 已公开的 `v0.1.1` 安装包内置 TEST ONLY updater 公钥，不能验证生产 updater 私钥签出的 `v0.1.2`。
+- `v0.1.2` 必须手动下载安装，不能宣称可从 `v0.1.1` 直接应用内升级。
+- `v0.1.2` 构建必须同时把 `TAURI_UPDATER_PUBLIC_KEY` 写入 Tauri updater config，并通过 `KEYSMITH_SWITCH_UPDATER_PUBKEY` 编译进 Rust 自定义检查逻辑。
+- 构建前必须验证生成的 Tauri release config 使用生产 updater 公钥，构建后扫描 macOS/Windows 主程序确认生产公钥已进入最终二进制；不得使用仓库 fixture 私钥签生产产物。
+- 可靠的应用内更新承诺从 `v0.1.2 → v0.1.3` 开始。
 
-- `.github/workflows/preview-release.yml` 只允许从 `main` 手动构建。
-- 版本必须与 `package.json`、`package-lock.json`、Cargo、Tauri 和 Rust 常量一致。
-- macOS 使用 adhoc app 签名且关闭 hardened runtime，避免 PyInstaller sidecar 被 library validation 阻断；Windows 不要求 Authenticode，产物名称明确包含 `unsigned-preview`。
-- macOS 最终 app 内四个 sidecar 都必须通过 `--version` 运行时 smoke，不能只验证文件架构和签名完整性。
-- Preview 不生成 updater artifact、`.sig` 或 `latest.json`，只保存 DMG/NSIS 和 SHA-256 Actions artifacts。
-- `preview-release` workflow 本身不自动创建 GitHub Release；手动发布的 unsigned Pre-release 不等同于正式发布，也不启用关于页的生产应用内更新。
+## updater 签名门槛
 
-## 签名门槛
+- `TAURI_SIGNING_PRIVATE_KEY`、`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`、`TAURI_UPDATER_PUBLIC_KEY` 只来自私有源仓库 GitHub Secrets。
+- source gate 先用生产私钥签临时文件，再使用生产公钥验证，证明密钥配对正确。
+- macOS `.app.tar.gz` 和 Windows NSIS `.exe` 必须由 Tauri 生成非空 `.sig`。
+- 每个平台 payload 必须用同一生产公钥通过独立 `verify_updater` 验证。
+- `latest.json` 只允许 HTTPS、非空签名、正确 SHA-256，并且仅包含 `darwin-aarch64` 与 `windows-x86_64`。
+- 签名失败、离线、损坏 metadata、版本降级、确认后 metadata 变化或下载中断时，客户端保留当前版本。
 
-### macOS
+## macOS 门槛
 
-正式构建必须同时具备：
+- `src-tauri/tauri.macos.conf.json` 使用 `signingIdentity: "-"` 和 `hardenedRuntime: false`。
+- 最终 `.app` 必须通过 `codesign --verify --deep --strict`，且为 `Signature=adhoc`、`TeamIdentifier=not set`、无 Authority。
+- 最终 `.app` 和 updater `.app.tar.gz` 解包后的 app 都运行 `scripts/verify-bundle.sh`。
+- 四个 sidecar 都必须通过架构、`--version` 和隔离 HOME 预览 smoke，不能只验证文件存在。
+- DMG 必须通过 `hdiutil verify`。
 
-- Apple Developer ID Application 证书和 `APPLE_SIGNING_IDENTITY`
-- `APPLE_CERTIFICATE`、密码、`APPLE_ID`、`APPLE_PASSWORD`、`APPLE_TEAM_ID`
-- notarization 与 stapler 验证通过
-- `scripts/verify-bundle.sh --require-developer-id` 通过
+## Windows 门槛
 
-本地 `src-tauri/tauri.macos.conf.json` 的 `signingIdentity: "-"` 只用于 Preview adhoc 包，不得作为正式签名证据。
-
-### Windows
-
-正式构建必须同时具备：
-
-- Authenticode 证书、私钥可用的合规签名服务或硬件/云 HSM，以及时间戳服务
-- NSIS Setup.exe 的 `Get-AuthenticodeSignature` 状态为 `Valid`
-- Windows 原生安装、启动、更新、卸载验收
-
-当前 workflow 的 `WINDOWS_CERTIFICATE` / `WINDOWS_CERTIFICATE_PASSWORD` PFX 接口只是尚未接入证书时的占位实现。现代公共 OV/EV 代码签名私钥通常不可导出；实际采购后应按 CA 能力改用 Tauri `signCommand`、云签名客户端，或连接 USB Token 的自托管 runner，不得为了适配现有 YAML 要求导出私钥。
-
-### updater
-
-- 客户端默认 fixture 公钥仅供测试；生产构建通过 `KEYSMITH_SWITCH_UPDATER_PUBKEY` 和 Tauri config 注入生产公钥。
-- `TAURI_SIGNING_PRIVATE_KEY` 与非空 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` 只能来自 GitHub Secrets，不得进入仓库。
-- 构建后必须用同一生产公钥验证每个 `.app.tar.gz.sig` / `.exe.sig`；公钥不匹配时 workflow 必须失败。
-- `latest.json` 只允许 HTTPS、非空签名、正确 SHA-256，并且每个平台恰好一个候选 artifact。
+- 构建必须生成唯一 NSIS `.exe` 和对应 `.exe.sig`。
+- `Get-AuthenticodeSignature` 必须返回 `NotSigned`；如果意外出现其他状态，workflow 失败。
+- updater 公钥必须能验证 NSIS payload；Tauri plugin 和 Rust 自定义检查逻辑必须使用同一生产公钥，最终主程序必须包含该公钥。
+- 首次公开发布前仍需在 Windows x64 实体机验证手动安装、启动和卸载。
+- 在承诺 `v0.1.2 → v0.1.3` 自动更新前，必须验证应用内下载、SmartScreen/系统拦截行为、安装、重启和失败保留现版。
 
 ## 发布仓库与渠道
 
-默认 endpoint：
-
 - stable：`https://github.com/Jia-Ethan/keysmith-switch-releases/releases/latest/download/latest.json`
 - beta：`https://raw.githubusercontent.com/Jia-Ethan/keysmith-switch-releases/beta/latest.json`
+- 不可变版本资产：`https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/vX.Y.Z`
 
-`Jia-Ethan/keysmith-switch-releases` 是公开 updater 仓库，只保存 `latest.json`、签名 updater artifacts 和校验和。stable 与 beta 版本产物都使用不可变版本 Release；beta 的可变指针仅为受保护 `beta` 分支上的 `latest.json`，不覆盖版本 Release 资产。
+私有源仓库的 `release` workflow 只接受与应用版本一致的 GitHub-verified annotated tag，构建 updater-signed 候选并上传短期 Actions artifact。公开 `Jia-Ethan/keysmith-switch-releases` 仓库重新验证 tag/commit provenance、平台白名单、minisign 和 SHA-256，再经受保护 `production` environment 发布不可变 Release。
 
-私有产品仓库的 `release` workflow 只接受与应用版本一致的已签名 tag，并负责构建、平台签名、公证、updater 签名和完整门禁。公开仓库只接收该成功 workflow 的不可变 macOS/Windows 候选包，使用生产公钥再次验证后通过受保护 `production` environment 发布。Apple/Windows 证书接入前，流水线会 fail closed；Linux 验证产物不会创建 Release，也不会进入 stable 或 beta feed。
+公开仓库不得保存生产 updater 私钥、源代码、Linux 产物或不受支持平台资产。公开 workflow 应绑定源 run 的仓库、workflow path、成功状态、tag、commit 和 artifact provenance。
 
 ## 客户端更新策略
 
 - 检查和安装使用同一 channel、endpoint、生产公钥和 platform key。
 - 安装必须经过用户确认；不能静默安装。
-- 签名失败、离线、损坏 metadata、版本降级、确认后 metadata 版本变化或下载中断时，保留当前版本。
-- Linux 和未支持平台只显示不可用，不执行安装。
+- 用户界面不展示 Preview、平台签名、Developer ID、公证或 Authenticode 说明。
+- 发布文档必须准确说明 bootstrap 和系统警告边界，不得把 updater minisign 描述成平台代码签名。
 
-## 官方工具门槛
+## 发布顺序
 
-- Claude Code：npm `@anthropic-ai/claude-code`
-- Codex：npm `@openai/codex`
-- Grok Build：只做本机检测，不伪造 latest feed，不自动安装
-- ZCode：macOS `/Applications/ZCode.app`；Windows `available/argv` 为空并显示不可用
-- 所有安装/更新先显示 argv 计划，只有确认后执行；不使用 shell 拼接。
+1. 版本、发布说明和 workflow 进入 `main`，CI 全部通过。
+2. 创建 GitHub-verified annotated tag `v0.1.2`。
+3. 手动触发私有源仓库 `release` workflow，参数为 `source_tag=v0.1.2`、`channel=stable`。
+4. 独立下载并验证 source candidate artifact、provenance、payload、签名和 SHA-256。
+5. 手动触发公开仓库 publish workflow，经 `production` 审批后发布。
+6. 从公开 Release 重新下载全部资产，复核 SHA-256、`latest.json` 和可公开访问性。
+7. 手动安装 `v0.1.2` 完成 bootstrap 验收；不从 `v0.1.1` 测试自动更新。
 
-## 正式构建命令
-
-```bash
-npx tauri build --target aarch64-apple-darwin --config src-tauri/tauri.macos.conf.json
-npx tauri build --target x86_64-pc-windows-msvc --config src-tauri/tauri.windows.conf.json
-```
-
-缺少 Apple/Windows 证书、生产 updater 私钥、公钥匹配证据或原生平台验收时，不得把产物标为正式发布包。
+创建 tag、触发 workflow、批准 production 或创建公开 Release 均属于外部发布动作，需要当次明确确认。

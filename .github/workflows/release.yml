@@ -1,4 +1,4 @@
-# Signed candidate packaging only. Publishing is delegated to the public release repository.
+# Updater-signed candidate packaging only. Publishing is delegated to the public release repository.
 name: release
 
 on:
@@ -108,71 +108,42 @@ jobs:
           python-version: "3.12"
       - run: npm ci
       - run: python3 scripts/build-sidecars.py
-      - name: Require release signing material
+      - name: Require updater signing material
         shell: bash
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           TAURI_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
-          for name in TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD TAURI_UPDATER_PUBLIC_KEY APPLE_CERTIFICATE \
-            APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID; do
+          for name in TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD TAURI_UPDATER_PUBLIC_KEY; do
             if [[ -z "${!name:-}" ]]; then
-              echo "$name is required for a signed and notarized macOS candidate." >&2
+              echo "$name is required for an updater-signed macOS candidate." >&2
               exit 1
             fi
           done
-      - name: Install Apple certificate and create release config
+      - name: Create release config
         shell: bash
         env:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           TAURI_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
         run: |
           set -euo pipefail
-          cert="$RUNNER_TEMP/keysmith-switch.p12"
-          keychain="$RUNNER_TEMP/keysmith-switch.keychain-db"
-          keychain_password="$(uuidgen)"
-          python3 - <<'PY'
-          import base64, os, pathlib
-          pathlib.Path(os.environ["RUNNER_TEMP"], "keysmith-switch.p12").write_bytes(
-              base64.b64decode(os.environ["APPLE_CERTIFICATE"], validate=True)
-          )
-          PY
-          security create-keychain -p "$keychain_password" "$keychain"
-          security set-keychain-settings -lut 21600 "$keychain"
-          security unlock-keychain -p "$keychain_password" "$keychain"
-          security import "$cert" -k "$keychain" -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$keychain_password" "$keychain"
-          security list-keychains -d user -s "$keychain"
           python3 - <<'PY'
           import json, os, pathlib
           config = {
-              "bundle": {"macOS": {"signingIdentity": os.environ["APPLE_SIGNING_IDENTITY"]}},
               "plugins": {"updater": {"pubkey": os.environ["TAURI_UPDATER_PUBLIC_KEY"].strip()}},
           }
           path = pathlib.Path(os.environ["RUNNER_TEMP"], "keysmith-release-macos.json")
           path.write_text(json.dumps(config), encoding="utf-8")
+          assert json.loads(path.read_text(encoding="utf-8"))["plugins"]["updater"]["pubkey"] == os.environ["TAURI_UPDATER_PUBLIC_KEY"].strip()
           with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as handle:
               handle.write(f"TAURI_RELEASE_CONFIG={path}\n")
-              handle.write(f"APPLE_KEYCHAIN_PATH={keychain}\n")
           PY
       - name: Build macOS candidate
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           KEYSMITH_SWITCH_UPDATER_PUBKEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: npx tauri build --target aarch64-apple-darwin --config src-tauri/tauri.macos.conf.json --config "$TAURI_RELEASE_CONFIG"
       - name: Verify macOS candidate
         shell: bash
@@ -181,7 +152,14 @@ jobs:
         run: |
           set -euo pipefail
           app="src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Keysmith Switch.app"
-          bash scripts/verify-bundle.sh --require-developer-id "$app"
+          dmg_mount="$RUNNER_TEMP/keysmith-dmg-mount"
+          cleanup_mount() {
+            if mount | grep -Fq "on $dmg_mount "; then
+              hdiutil detach "$dmg_mount" >/dev/null 2>&1 || true
+            fi
+          }
+          trap cleanup_mount EXIT
+          bash scripts/verify-bundle.sh "$app"
           shopt -s nullglob
           dmgs=(src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg)
           updaters=(src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz)
@@ -193,8 +171,23 @@ jobs:
           printf '%s' "$TAURI_UPDATER_PUBLIC_KEY" > "$RUNNER_TEMP/updater.pub"
           cargo run --quiet --manifest-path src-tauri/Cargo.toml --example verify_updater -- \
             "$RUNNER_TEMP/updater.pub" "$updater" "$updater.sig"
-          xcrun stapler validate "$app"
-          xcrun stapler validate "$dmg"
+          if ! grep -aFq "$TAURI_UPDATER_PUBLIC_KEY" "$app/Contents/MacOS/keysmith-switch"; then
+            echo "macOS binary does not contain the production updater public key." >&2
+            exit 1
+          fi
+          archive_dir="$RUNNER_TEMP/keysmith-updater-archive"
+          mkdir -p "$archive_dir"
+          tar -xzf "$updater" -C "$archive_dir"
+          archive_apps=("$archive_dir"/*.app "$archive_dir"/*/*.app)
+          [[ ${#archive_apps[@]} -eq 1 ]] || { echo "Expected one app in updater archive, found ${#archive_apps[@]}" >&2; exit 1; }
+          bash scripts/verify-bundle.sh "${archive_apps[0]}"
+          hdiutil verify "$dmg"
+          mkdir -p "$dmg_mount"
+          hdiutil attach "$dmg" -mountpoint "$dmg_mount" -nobrowse -readonly >/dev/null
+          dmg_apps=("$dmg_mount"/*.app)
+          [[ ${#dmg_apps[@]} -eq 1 ]] || { echo "Expected one app in DMG, found ${#dmg_apps[@]}" >&2; exit 1; }
+          bash scripts/verify-bundle.sh "${dmg_apps[0]}"
+          hdiutil detach "$dmg_mount"
           shasum -a 256 "$dmg" "$updater"
       - uses: actions/upload-artifact@v4
         with:
@@ -204,12 +197,16 @@ jobs:
             src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
             src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz
             src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
-      - name: Remove temporary Apple signing material
+      - name: Remove temporary updater material
         if: always()
         shell: bash
         run: |
-          security delete-keychain "${APPLE_KEYCHAIN_PATH:-$RUNNER_TEMP/keysmith-switch.keychain-db}" 2>/dev/null || true
-          rm -f "$RUNNER_TEMP/keysmith-switch.p12" "$RUNNER_TEMP/updater.pub" "$RUNNER_TEMP/keysmith-release-macos.json"
+          if mount | grep -Fq "on $RUNNER_TEMP/keysmith-dmg-mount "; then
+            hdiutil detach "$RUNNER_TEMP/keysmith-dmg-mount" >/dev/null 2>&1 || true
+          fi
+          rm -rf "$RUNNER_TEMP/keysmith-dmg-mount"
+          rm -rf "$RUNNER_TEMP/keysmith-updater-archive"
+          rm -f "$RUNNER_TEMP/updater.pub" "$RUNNER_TEMP/keysmith-release-macos.json"
 
   windows:
     needs: source-gates
@@ -228,43 +225,32 @@ jobs:
           python-version: "3.12"
       - run: npm ci
       - run: python scripts/build-sidecars.py
-      - name: Require release signing material
+      - name: Require updater signing material
         shell: pwsh
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           TAURI_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
-          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         run: |
-          foreach ($name in @("TAURI_SIGNING_PRIVATE_KEY", "TAURI_SIGNING_PRIVATE_KEY_PASSWORD", "TAURI_UPDATER_PUBLIC_KEY", "WINDOWS_CERTIFICATE", "WINDOWS_CERTIFICATE_PASSWORD")) {
+          foreach ($name in @("TAURI_SIGNING_PRIVATE_KEY", "TAURI_SIGNING_PRIVATE_KEY_PASSWORD", "TAURI_UPDATER_PUBLIC_KEY")) {
             if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
-              throw "$name is required for a signed Windows candidate."
+              throw "$name is required for an updater-signed Windows candidate."
             }
           }
-      - name: Install Windows certificate and create release config
+      - name: Create release config
         shell: pwsh
         env:
           TAURI_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
-          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         run: |
-          $certPath = Join-Path $env:RUNNER_TEMP "keysmith-switch.pfx"
-          [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
-          $password = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
-          $cert = Import-PfxCertificate -FilePath $certPath -CertStoreLocation Cert:\CurrentUser\My -Password $password
-          if (-not $cert.Thumbprint) { throw "Imported certificate has no thumbprint." }
           $configPath = Join-Path $env:RUNNER_TEMP "keysmith-release-windows.json"
           @{
-            bundle = @{ windows = @{
-              certificateThumbprint = $cert.Thumbprint
-              digestAlgorithm = "sha256"
-              timestampUrl = "http://timestamp.digicert.com"
-            }}
             plugins = @{ updater = @{ pubkey = $env:TAURI_UPDATER_PUBLIC_KEY.Trim() }}
           } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $configPath -Encoding utf8
+          $config = Get-Content -Raw -LiteralPath $configPath | ConvertFrom-Json
+          if ($config.plugins.updater.pubkey -ne $env:TAURI_UPDATER_PUBLIC_KEY.Trim()) {
+            throw "Generated Windows release config does not contain the production updater public key."
+          }
           "TAURI_RELEASE_CONFIG=$configPath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          "WINDOWS_CERT_THUMBPRINT=$($cert.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - name: Build Windows candidate
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -279,7 +265,7 @@ jobs:
           $setups = @(Get-ChildItem "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe")
           if ($setups.Count -ne 1) { throw "Expected exactly one NSIS Setup.exe, found $($setups.Count)" }
           $authenticode = Get-AuthenticodeSignature -LiteralPath $setups[0].FullName
-          if ($authenticode.Status -ne "Valid") { throw "Authenticode validation failed: $($authenticode.StatusMessage)" }
+          if ($authenticode.Status -ne "NotSigned") { throw "Expected an unsigned NSIS installer, got $($authenticode.Status): $($authenticode.StatusMessage)" }
           $signature = "$($setups[0].FullName).sig"
           if (-not (Test-Path -LiteralPath $signature -PathType Leaf) -or (Get-Item $signature).Length -eq 0) {
             throw "Updater signature missing or empty: $signature"
@@ -288,6 +274,12 @@ jobs:
           Set-Content -LiteralPath $pubkey -Value $env:TAURI_UPDATER_PUBLIC_KEY -NoNewline
           cargo run --quiet --manifest-path src-tauri/Cargo.toml --example verify_updater -- $pubkey $setups[0].FullName $signature
           if ($LASTEXITCODE -ne 0) { throw "Updater public key does not verify the Windows artifact." }
+          $binary = "src-tauri/target/x86_64-pc-windows-msvc/release/keysmith-switch.exe"
+          if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) { throw "Windows app binary is missing: $binary" }
+          $binaryText = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes($binary))
+          if (-not $binaryText.Contains($env:TAURI_UPDATER_PUBLIC_KEY.Trim())) {
+            throw "Windows binary does not contain the production updater public key."
+          }
           Get-FileHash $setups[0].FullName -Algorithm SHA256
       - uses: actions/upload-artifact@v4
         with:
@@ -296,14 +288,10 @@ jobs:
           path: |
             src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
             src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe.sig
-      - name: Remove temporary Windows signing material
+      - name: Remove temporary updater material
         if: always()
         shell: pwsh
         run: |
-          if ($env:WINDOWS_CERT_THUMBPRINT) {
-            Remove-Item -LiteralPath "Cert:\CurrentUser\My\$env:WINDOWS_CERT_THUMBPRINT" -Force -ErrorAction SilentlyContinue
-          }
-          Remove-Item -LiteralPath (Join-Path $env:RUNNER_TEMP "keysmith-switch.pfx") -Force -ErrorAction SilentlyContinue
           Remove-Item -LiteralPath (Join-Path $env:RUNNER_TEMP "updater.pub") -Force -ErrorAction SilentlyContinue
           Remove-Item -LiteralPath (Join-Path $env:RUNNER_TEMP "keysmith-release-windows.json") -Force -ErrorAction SilentlyContinue
 
@@ -316,7 +304,7 @@ jobs:
           ref: ${{ inputs.source_tag }}
       - uses: actions/download-artifact@v4
         with:
-          path: candidate
+          path: downloads
           merge-multiple: true
       - name: Generate updater metadata
         shell: bash
@@ -325,12 +313,20 @@ jobs:
         run: |
           set -euo pipefail
           version=$(python3 -c 'import json; print(json.load(open("src-tauri/tauri.conf.json"))["version"])')
-          mapfile -t macs < <(find candidate -type f -name '*.app.tar.gz' -print)
-          mapfile -t wins < <(find candidate -type f -name '*.exe' -print)
+          mapfile -t macs < <(find downloads -type f -name '*.app.tar.gz' -print)
+          mapfile -t dmgs < <(find downloads -type f -name '*.dmg' -print)
+          mapfile -t wins < <(find downloads -type f -name '*.exe' -print)
           [[ ${#macs[@]} -eq 1 ]] || { echo "Expected one macOS updater, found ${#macs[@]}" >&2; exit 1; }
+          [[ ${#dmgs[@]} -eq 1 ]] || { echo "Expected one macOS DMG, found ${#dmgs[@]}" >&2; exit 1; }
           [[ ${#wins[@]} -eq 1 ]] || { echo "Expected one Windows updater, found ${#wins[@]}" >&2; exit 1; }
-          mac="${macs[0]}"
-          win="${wins[0]}"
+          test -s "${macs[0]}.sig"
+          test -s "${wins[0]}.sig"
+          mapfile -t downloaded_files < <(find downloads -type f -print)
+          [[ ${#downloaded_files[@]} -eq 5 ]] || { echo "Expected five platform candidate files, found ${#downloaded_files[@]}" >&2; exit 1; }
+          mkdir candidate
+          cp "${dmgs[0]}" "${macs[0]}" "${macs[0]}.sig" "${wins[0]}" "${wins[0]}.sig" candidate/
+          mac="candidate/$(basename "${macs[0]}")"
+          win="candidate/$(basename "${wins[0]}")"
           tag="v$version"
           if [[ "$CHANNEL" == beta && "$version" != *-* ]]; then
             echo "Beta releases require a prerelease source version." >&2
@@ -347,6 +343,7 @@ jobs:
           fi
           python3 scripts/generate-latest-json.py \
             --version "$version" \
+            --notes "$(cat scripts/updater-notes.md)" \
             --base-url "$base_url" \
             --darwin-aarch64 "$mac" \
             --windows-x86_64 "$win" \
@@ -359,7 +356,7 @@ jobs:
             '{repository: $repository, source_tag: $source_tag, source_commit: $source_commit, workflow_run_id: $workflow_run_id}' \
             > candidate/provenance.json
           jq -e '(.platforms | keys | sort) == ["darwin-aarch64", "windows-x86_64"] and all(.platforms[]; (.signature | type == "string" and length > 0) and (.sha256 | test("^[0-9a-f]{64}$")))' candidate/latest.json >/dev/null
-          (cd candidate && sha256sum latest.json provenance.json ./*.app.tar.gz ./*.app.tar.gz.sig ./*.exe ./*.exe.sig > SHA256SUMS.txt)
+          (cd candidate && sha256sum latest.json provenance.json ./*.dmg ./*.app.tar.gz ./*.app.tar.gz.sig ./*.exe ./*.exe.sig > SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         with:
           name: keysmith-switch-release-${{ inputs.channel }}

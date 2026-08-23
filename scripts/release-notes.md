@@ -1,33 +1,23 @@
-# 0.1.1 unsigned Preview 发布笔记
+# Keysmith Switch v0.1.2
 
-Keysmith Switch v0.1.1 unsigned Preview：完成暖纸张、炭黑与香槟金视觉重构，同时保留 Claude Code、Codex、Grok Build 和 ZCode 的提示词管理、预览、确认、恢复与安全门禁。
+`v0.1.2` 是应用内更新通道的 bootstrap 版本。本版本恢复“检查更新”和“更新并重启”，并将生产 updater 公钥编译进 macOS 与 Windows 客户端。
 
-私有仓库 Pre-release：`https://github.com/Jia-Ethan/keysmith-switch/releases/tag/v0.1.1`
+## 主要变化
 
-构建证据：`https://github.com/Jia-Ethan/keysmith-switch/actions/runs/32433727011`
+- 重新提供手动检查、更新确认、下载进度和更新失败重试。
+- 前端不再展示 Preview、未签名、Developer ID、公证或 Authenticode 说明。
+- 改进提示词详情与编辑流程、设置页空态、错误态和并发操作保护。
+- 保留 Claude Code、Codex、Grok Build 和 ZCode 的提示词管理、安全确认与恢复流程。
 
-## 产物意图
+## 安装与更新
 
-- macOS Apple Silicon：adhoc `.app` + unsigned `.dmg`
-- Windows x64：unsigned NSIS per-user `.exe`
-- Linux：非首发
+- 现有 `v0.1.1` 内置的是测试 updater 公钥，不能验证本版本的生产 updater 签名，因此必须手动下载安装 `v0.1.2`。
+- 安装 `v0.1.2` 后，后续版本可通过应用内“检查更新”完成更新。
+- macOS 与 Windows 安装包不使用平台发行签名；系统仍可能显示安全警告或阻止自动启动安装程序。
+- updater payload 使用独立生产密钥签名，客户端会在安装前验证签名；签名失败时保留当前版本。
 
-两个平台都附带 `SHA256SUMS.txt`，不得改称正式签名包。
+## 支持平台
 
-- macOS DMG SHA-256：`a911d2dd601d127fe0f5d478695bcbf7882b520bc9c913555509cd96ed89a96e`
-- Windows EXE SHA-256：`f37f9926266f596290e183d3248056d168af24c943732919b4a4c93020c5b461`
-
-## 更新通道
-
-- Preview 不生成 updater artifact 或 `latest.json`
-- 应用内更新暂不用于 Preview 分发
-- 生产 updater 密钥、公钥、独立公开发布仓库、Secrets 与发布流水线已配置
-- 正式更新通道仍需 Apple Developer ID/notarization、Windows Authenticode 与原生平台验收
-
-## 明确未做
-
-- 未发布正式 updater Release、tag 或 beta `latest.json`
-- 未完成 Developer ID / 公证 / Authenticode
-- 未完成 Windows 实机安装、更新和卸载验收
-
-门槛清单见 `docs/RELEASE_GATES.md`。
+- macOS 12+，Apple Silicon
+- Windows x64
+- Linux、Intel Mac 和 Windows ARM64 暂不提供安装包

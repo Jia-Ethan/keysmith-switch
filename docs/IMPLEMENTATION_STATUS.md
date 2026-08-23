@@ -1,73 +1,76 @@
 # Keysmith Switch 实现状态
 
-更新日期：2026-08-21（Asia/Shanghai）
+更新日期：2026-08-23（Asia/Shanghai）
 
-阶段：**前端重构已通过 PR #1 合并；`v0.1.1` unsigned Preview 已构建、复核并发布到私有仓库。**
+阶段：**`v0.1.2` updater bootstrap 发布准备中；尚未创建 tag、构建发布候选或公开 Release。**
 
 工作区：`/Users/ethan/Documents/Codex/2026-08-19/ccswitch-keysmithswith-jia-github`
 
-## 已完成
+## 产品状态
 
-- 四工具独立提示词库、Markdown 可重建索引、SQLite 元数据、历史、标签、激活状态和跨工具复制。
-- Claude 支持 user/project/local；Codex、Grok Build、ZCode 不伪造项目隔离。
-- 激活、停用、恢复和官方 CLI 操作均先生成预览，再由用户确认；漂移和冲突不会强制覆盖。
-- 真实配置写入只通过现有 Keysmith CLI，命令参数使用 argv；GUI 不直接写 `CLAUDE.md`、`~/.codex`、`~/.grok` 或 `~/.zcode-keysmith`。
-- 完整 ZIP 备份包含 SQLite 一致性快照、Markdown、manifest、schema、大小和 SHA-256；恢复前校验，失败回滚，重复恢复不追加重复数据。
-- 旧版 ZIP 会先识别为追加导入，并在界面显示不同的确认语义。
-- 清除全部数据需要计划、短语和二次确认；目录与数据库先暂存，暂存失败回滚，成功后保留空目录结构。
-- 首次启动检查四个 sidecar；无候选文件时仍可完成首次检查。
-- 关于页三层结构：应用更新、适配器状态、官方工具；更新必须用户确认，不静默安装。签名失败、离线、损坏 metadata、降级和版本漂移均保留现版。
-- 官方 CLI 安装有超时、输出脱敏、运行时间反馈和用户取消；取消会终止正在运行的安装命令。
-- macOS 旧 Preview 包只完成架构和签名检查，后续发现 hardened runtime 会阻断 PyInstaller sidecar；旧 DMG 已作废，新包已关闭 hardened runtime 并通过 sidecar 运行时 smoke。
-- Release workflow 已加入 updater 公钥与私钥匹配校验、macOS Developer ID/公证门槛、Windows Authenticode 门槛，以及每个平台单一产物断言。
-- 生产 updater 密钥已轮换并保存在本机受限目录，独立公开 release 仓库、最小权限跨仓库访问、Secrets、受保护 `production` environment 与 stable/beta 发布流水线已配置；公开仓库不持有生产 updater 私钥。
-- 独立 unsigned Preview workflow 已准备：固定从 `main` 构建，不生成 updater artifacts，只保存明确标注未签名的 DMG/NSIS 与 SHA-256；macOS 验证包含四个 sidecar 的实际执行。
+- 四工具独立提示词库、Markdown 可重建索引、SQLite 元数据、历史、标签、激活状态和跨工具复制已实现。
+- 激活、停用、恢复、清除数据和官方 CLI 操作保留计划、确认、执行、失败保留与恢复门禁。
+- 提示词详情与编辑使用独立页面，保留脏状态保护、键盘与无障碍行为。
+- 设置页区分 loading、empty、retryable error 和 busy 状态。
+- 关于页保留“检查更新”和“更新并重启”，不展示 Preview、平台签名、Developer ID、公证或 Authenticode 说明。
+- 更新安装必须显式确认；安装期间阻止关闭和重复提交，并显示下载/安装进度。
+- 四个 Keysmith sidecar 仍随应用原子交付，GUI 不直接改写托管配置。
 
-## 本地证据
+## v0.1.2 bootstrap
 
-主机：macOS arm64。GitHub Actions unsigned Preview [run 32433727011](https://github.com/Jia-Ethan/keysmith-switch/actions/runs/32433727011) 的 `source-gates`、`macos` 和 `windows` 均通过。已下载并独立复核 Actions artifacts，发布资产不包含 updater artifact，也未使用 updater 私钥：
+已发布的 `v0.1.1` DMG 和本机 `/Applications/Keysmith Switch.app` 都确认内嵌 TEST ONLY updater 公钥。它们无法验证生产 updater 私钥签出的 `v0.1.2`，因此：
 
-| 平台 | 文件 | 大小 | SHA-256 |
-| --- | --- | --- | --- |
-| macOS Apple Silicon | `Keysmith.Switch_0.1.1_aarch64.dmg` | 42,041,349 bytes | `a911d2dd601d127fe0f5d478695bcbf7882b520bc9c913555509cd96ed89a96e` |
-| Windows x64 | `Keysmith.Switch_0.1.1_x64-setup.exe` | 40,189,945 bytes | `f37f9926266f596290e183d3248056d168af24c943732919b4a4c93020c5b461` |
+- `v0.1.2` 必须手动下载安装。
+- `v0.1.2` 构建同时通过 Tauri config 和 Rust 编译环境注入生产 updater 公钥。
+- 构建 workflow 扫描 macOS/Windows 主程序，防止再次产出 fixture-key 客户端。
+- 从 `v0.1.2 → v0.1.3` 开始，才能对应用内更新作真实承诺。
+- fixture 私钥只用于测试，禁止用于生产 Release。
 
-CI DMG 通过 `hdiutil verify`；从 DMG 挂载的 app 再次通过 `scripts/verify-bundle.sh`，bundle 版本为 `0.1.1`，四个 sidecar 均通过架构、版本和隔离 HOME smoke。bundle 引用的 `icon.icns` SHA-256 与仓库 canonical 资产一致。Windows 产物由 `windows-latest` 原生 runner 构建为 NSIS GUI installer，CI 确认它没有有效 Authenticode 签名；没有 Windows 实体机安装、启动、升级和卸载证据，因此仍只能标记为 Windows 候选包。
+## 发布架构
 
-Git 签名标签 `v0.1.1` 指向 PR #1 的 merge commit `026acb500fb099906d6fc8264427247947702c18`。私有仓库 [Pre-release](https://github.com/Jia-Ethan/keysmith-switch/releases/tag/v0.1.1) 已上传上述 DMG、EXE 和 `SHA256SUMS.txt`；从 Release 重新下载后的文件大小与 SHA-256 均与 Actions 候选包一致。
+- 安装包不使用 Apple Developer ID、公证或 Windows Authenticode。
+- updater payload 仍使用生产 minisign 密钥签名；客户端和公开发布仓库均独立验证。
+- macOS 使用 ad-hoc app、关闭 hardened runtime，避免 PyInstaller sidecar 被 library validation 阻断。
+- Windows 产出无 Authenticode 的 NSIS per-user installer；系统 SmartScreen 行为仍需实体机验收。
+- 私有源仓库从 GitHub-verified annotated tag 构建候选和 provenance。
+- 公开 `Jia-Ethan/keysmith-switch-releases` 仓库只接收受支持平台的 updater payload、签名、`latest.json`、provenance 和校验和，并经 `production` 审批发布。
 
-旧 `Keysmith Switch.app` 曾通过 `codesign --verify --deep --strict`，但该证据没有执行 sidecar。2026-08-20 复核确认旧包内四个 PyInstaller sidecar 因 `adhoc,runtime` library validation 返回 255，旧 DMG 和 updater archive 已作废。
+## 当前验证
 
-当前 unsigned Preview 已关闭 hardened runtime 并重新构建。新 app 及从 DMG 挂载后的 app 均通过 `scripts/verify-bundle.sh`：主程序和四 sidecar 为 thin arm64，四 sidecar 的 `--version` 与隔离 HOME 预览动作实际通过，未写入托管配置；app 为 adhoc、无 TeamIdentifier/Authority。主程序在清空环境和隔离 HOME 下保持运行 6 秒并只创建自己的数据库与日志。DMG 通过 `hdiutil verify` 并包含 app、Applications 链接和品牌背景。该证据不等于 Developer ID、公证或 Gatekeeper 接受。
+`cdad6b69e9e4d697e9b6b49c921809421cf41e7e` 已推送至 `main`，CI run [32629636009](https://github.com/Jia-Ethan/keysmith-switch/actions/runs/32629636009) 的 frontend、rust、sidecar-macos 和 sidecar-windows 均通过。
 
-unsigned Preview 不生成 updater `.sig` 或 `latest.json`。仓库内 fixture key 只用于 updater 策略测试；正式构建通过 `KEYSMITH_SWITCH_UPDATER_PUBKEY` 注入与生产私钥匹配的公钥，workflow 会拒绝缺失或不匹配的签名材料。
-
-## 测试证据
+`v0.1.2` 发布准备的本地验证：
 
 | 命令 | 结果 |
 | --- | --- |
-| `npm test` | 16 files / 51 tests passed |
-| `npm run build` | 通过；主 JS chunk 约 906 KB，仍有性能 warning |
+| `npm test` | 19 files / 81 tests passed |
+| `npm run build` | 通过；主 JS chunk 约 907 KB，保留既存性能 warning |
 | `cargo fmt --check` | 通过 |
-| `cargo check --offline` | 通过 |
-| `cargo test --offline` | 全部通过：lib 10、adapter 4、data lifecycle 10、db prompts 3、db store 5、official 6、ops errors 5、ops home 1、ops real CLI 1、redact 1、updater 16 |
-| `actionlint` | CI/release workflow 通过 |
-| `python3 -m py_compile` | 脚本通过 |
+| `cargo check` | 通过 |
+| `cargo test` | 全部通过：lib 10、adapter 4、data lifecycle 10、db prompts 3、db store 5、official 6、ops errors 5、ops home 1、ops real CLI 1、redact 1、updater 16 |
+| `python3 scripts/check-version.py --expected 0.1.2` | 七处版本一致 |
+| `python3 -m py_compile scripts/*.py` | 通过 |
 | `bash -n scripts/verify-bundle.sh` | 通过 |
-| 上游 claude-keysmith | 135 passed |
-| 上游 codex-keysmith | 1008 passed, 25 skipped |
-| 上游 grok-keysmith | 134 passed |
-| 上游 zcode-keysmith | 11 passed, 1 failed；本机 ZCode 0.16.3 在 wrapper `--help` 时被调用，判定为本机环境干扰，未修改上游仓库 |
+| `actionlint .github/workflows/*.yml` | 通过 |
+| `git diff --check` | 通过 |
 
-## 正式发布仍阻塞
+公开 updater 仓库的 `publish.yml` 同时通过 `actionlint`、YAML 解析和 `git diff --check`。这些结果覆盖源码与 workflow 静态门槛；平台候选构建和 updater 签名仍需在创建 `v0.1.2` tag 后由 release workflow 验证。
 
-- macOS Developer ID Application、notarization、stapling 和真实 Gatekeeper 验收。
-- Windows x64 已有 GitHub-hosted Windows runner 原生 NSIS 候选包；正式通道仍缺 Authenticode 以及 Windows 实体机安装、启动、升级和卸载验收。
-- Apple/Windows 平台签名材料仍未配置，因此正式 updater 候选 workflow 会 fail closed。
-- 生产 updater 密钥、公开 release 仓库、最小权限跨仓库访问、Secrets、endpoint 和发布流水线已配置；尚未发布任何正式 updater Release。
-- 生产密钥已有加密恢复副本；密码保存在 macOS 登录钥匙串，凭证明文不进入仓库、文档或公开 runner。
-- 前端主 JS chunk 约 906 KB，正式发布前可做代码分包优化。
+## 发布前剩余门槛
+
+- `v0.1.2` 源码和 workflow 变更进入 `main`，远端 CI 全绿。
+- 创建 GitHub-verified annotated tag `v0.1.2`。
+- 私有 `release` workflow 成功生成唯一 macOS/Windows updater 候选、签名、metadata 和 provenance。
+- macOS app、DMG 与 updater archive 内 app 通过 sidecar runtime smoke 和 ad-hoc 验证。
+- Windows runner 验证 NSIS 为 `NotSigned`、updater minisign 有效、生产公钥已编译进主程序。
+- Windows x64 实体机完成 `v0.1.2` 手动安装、启动和卸载验收。
+- 公开 publish workflow 经 `production` 审批发布，外部重新下载并复核所有 SHA-256 与 manifest。
+- 发布后手动安装 `v0.1.2` 验证 bootstrap；应用内升级验收留到 `v0.1.3` 候选。
 
 ## 明确未做
 
-未发布正式签名 updater 版本，也没有修改 `work/source-audit-20260819/`。PR #1、签名 tag `v0.1.1` 与私有 unsigned Pre-release 已完成；公开 updater 仓库当前无 Release。
+- 尚未创建或推送 `v0.1.2` tag。
+- 尚未触发私有 release workflow 或公开 publish workflow。
+- 尚未批准 production environment 或创建公开 updater Release。
+- 尚未替换 `/Applications/Keysmith Switch.app`。
+- 尚未完成 Windows 实体机验收。

@@ -2,7 +2,7 @@
 
 本地提示词管理桌面工具，面向 Claude Code、Codex、Grok Build 与 ZCode。
 
-**当前发行形态：unsigned Preview。** 安装时 macOS / Windows 系统安全警告是预期行为，产物不得称为已签名正式版。由于 Preview 不发布 updater artifacts，关于页的应用内更新仅在未来生产签名通道启用后可用。
+应用提供手动检查和“更新并重启”。安装包不使用 Apple Developer ID、公证或 Windows Authenticode；更新 payload 使用独立生产密钥签名，并在安装前由客户端验证。
 
 所有真实配置写入都经过四个随应用交付的 Keysmith sidecar（frozen，不需要用户安装 Python）。GUI 不直接改写 `CLAUDE.md`、`~/.codex`、`~/.grok` 或 `~/.zcode-keysmith`。
 
@@ -10,20 +10,20 @@
 
 ## 状态
 
-当前版本 `0.1.1` 已发布为私有仓库 [unsigned Pre-release](https://github.com/Jia-Ethan/keysmith-switch/releases/tag/v0.1.1)。生产 updater 密钥、公开仓库 [`Jia-Ethan/keysmith-switch-releases`](https://github.com/Jia-Ethan/keysmith-switch-releases)、Secrets 与发布流水线已经配置，但尚未发布正式 updater Release；Apple/Windows 平台签名材料缺失时流水线会 fail closed。
+下一版本 `0.1.2` 正在准备发布。它是生产 updater 公钥的 bootstrap 版本：现有 `0.1.1` 用户需要手动安装一次 `0.1.2`，后续版本才能通过应用内更新。
 
-macOS Apple Silicon DMG 已完成挂载、sidecar 与隔离 HOME 启动验证。Windows NSIS EXE 已由 GitHub-hosted Windows runner 原生构建，但仍需 Windows 实体机安装、启动、升级和卸载验收。
+公开 updater 仓库 [`Jia-Ethan/keysmith-switch-releases`](https://github.com/Jia-Ethan/keysmith-switch-releases)、生产 updater Secrets、来源验证与受保护发布环境已经配置。公开 feed 在 `v0.1.2` 正式发布前仍返回 404。
 
 详见 [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md) 与 [`docs/RELEASE_GATES.md`](docs/RELEASE_GATES.md)。
 
 ## 下载
 
-从 [`v0.1.1` Pre-release](https://github.com/Jia-Ethan/keysmith-switch/releases/tag/v0.1.1) 下载对应平台产物，并使用随附的 `SHA256SUMS.txt` 校验：
+当前公开可下载版本仍为 [`v0.1.1` Pre-release](https://github.com/Jia-Ethan/keysmith-switch/releases/tag/v0.1.1)：
 
 - macOS Apple Silicon：`Keysmith.Switch_0.1.1_aarch64.dmg`
 - Windows x64：`Keysmith.Switch_0.1.1_x64-setup.exe`
 
-两个安装包均未使用平台生产签名，系统安全警告属于当前 Preview 的已知边界。
+`v0.1.2` 发布后需要手动下载安装以完成 updater bootstrap。macOS 和 Windows 安装包不使用平台发行签名，系统可能显示安全警告。
 
 ## 开发
 
@@ -42,13 +42,13 @@ cd src-tauri && cargo fmt --check && cargo check && cargo test
 npx tauri dev
 ```
 
-macOS Apple Silicon 打包（未签名 Preview，不生成 updater artifact）：
+macOS Apple Silicon 本地无平台签名构建（不生成 updater artifact）：
 
 ```bash
 npx tauri build --target aarch64-apple-darwin --config src-tauri/tauri.preview.macos.conf.json
 ```
 
-GitHub Actions 的 `preview-release` 工作流只构建并保存 unsigned DMG/NSIS 与 SHA-256，不自动创建 GitHub Release；`v0.1.1` Pre-release 由已验证的 Actions 产物手动发布。正式签名候选继续使用独立的 `release` 工作流。
+GitHub Actions 的 `preview-release` 工作流只用于本地候选验证，不生成 updater artifacts。`release` workflow 从 GitHub-verified tag 构建 macOS/Windows updater payload，使用 minisign 签名并交给公开仓库复核发布；它不执行 Apple 或 Windows 平台代码签名。
 
 ## 数据位置
 

@@ -1,7 +1,7 @@
 {
   "name": "keysmith-switch",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Keysmith Switch — local prompt manager for Claude Code, Codex, Grok Build, and ZCode",
   "type": "module",
   "scripts": {
