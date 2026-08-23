@@ -22,7 +22,7 @@
 
 - `v0.1.2` 必须手动下载安装。
 - `v0.1.2` 构建同时通过 Tauri config 和 Rust 编译环境注入生产 updater 公钥。
-- 构建 workflow 扫描 macOS/Windows 主程序，防止再次产出 fixture-key 客户端。
+- 构建 workflow 扫描 Windows 主程序；macOS 通过编译注入、生产公钥验签 updater payload 和三份 bundle smoke 防止再次产出 fixture-key 客户端。
 - 从 `v0.1.2 → v0.1.3` 开始，才能对应用内更新作真实承诺。
 - fixture 私钥只用于测试，禁止用于生产 Release。
 

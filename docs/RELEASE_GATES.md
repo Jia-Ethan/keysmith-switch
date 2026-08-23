@@ -19,7 +19,7 @@ identifier：`com.jia-ethan.keysmith-switch`
 - 已公开的 `v0.1.1` 安装包内置 TEST ONLY updater 公钥，不能验证生产 updater 私钥签出的 `v0.1.2`。
 - `v0.1.2` 必须手动下载安装，不能宣称可从 `v0.1.1` 直接应用内升级。
 - `v0.1.2` 构建必须同时把 `TAURI_UPDATER_PUBLIC_KEY` 写入 Tauri updater config，并通过 `KEYSMITH_SWITCH_UPDATER_PUBKEY` 编译进 Rust 自定义检查逻辑。
-- 构建前必须验证生成的 Tauri release config 使用生产 updater 公钥，构建后扫描 macOS/Windows 主程序确认生产公钥已进入最终二进制；不得使用仓库 fixture 私钥签生产产物。
+- 构建前必须验证 Tauri release config 使用生产 updater 公钥，并通过 Rust 编译环境注入；Windows 构建后继续扫描最终 PE，macOS 通过生产公钥验签 updater payload 和三份 bundle smoke 验证发布闭环；不得使用仓库 fixture 私钥签生产产物。
 - 可靠的应用内更新承诺从 `v0.1.2 → v0.1.3` 开始。
 
 ## updater 签名门槛
