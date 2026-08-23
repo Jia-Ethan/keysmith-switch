@@ -1,9 +1,7 @@
 {
   "app": {
     "name": "Keysmith Switch",
-    "workflow": "Local prompt workflow",
-    "preview": "Preview · unsigned",
-    "unsignedNotice": "This is an unsigned Preview build. macOS and Windows may show a system security warning. This is not Developer ID / notarized / Authenticode."
+    "workflow": "Local prompt workflow"
   },
   "nav": {
     "claude": "Claude Code",
@@ -149,7 +147,8 @@
     "empty": "No versions",
     "version": "Version",
     "diff": "Diff",
-    "noDiff": "Pick two versions to diff"
+    "noDiff": "Pick two versions to diff",
+    "loadFailed": "Could not load version history."
   },
   "operations": {
     "title": "Operations",
@@ -261,6 +260,9 @@
   },
   "about": {
     "title": "About",
+    "version": "Version",
+    "repository": "Repository",
+    "license": "License",
     "appUpdate": "App update",
     "currentVersion": "Current",
     "latestVersion": "Latest",
@@ -295,6 +297,7 @@
     "confirmOfficial": "Confirm running the command above",
     "officialBlocked": "This product cannot be run here",
     "cancelOfficial": "Cancel",
+    "cancelOfficialUnavailable": "No official CLI action is currently running.",
     "officialRunning": "Running for {{seconds}} seconds",
     "zcodeMacOnly": "Official ZCode is macOS-only.",
     "layerApp": "App",

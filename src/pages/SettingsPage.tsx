@@ -1,42 +1,48 @@
-import { useEffect, useState } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useCallback, useEffect, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import * as api from "../api";
-import { AboutPage } from "./AboutPage";
 import { ErrorBanner } from "../components/ErrorBanner";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { IconMonitor, IconMoon, IconSun, IconTrash } from "../components/icons";
+import { IconAlert, IconExternal, IconMonitor, IconMoon, IconSun, IconTrash } from "../components/icons";
 import { ToolLogo } from "../components/ToolLogos";
 import {
   Button,
   Checkbox,
+  Disclosure,
   Input,
   Mono,
   Segmented,
   Select,
   SettingRow,
+  SectionLabel,
   cx,
 } from "../components/ui";
 import { useTheme, type ThemeMode } from "../hooks/useTheme";
 import type { ToastApi } from "../hooks/useToasts";
-import { openExternal, pickFiles, pickSavePath } from "../lib/runtime";
+import { formatArgv } from "../lib/format";
+import { toastSafeMessage } from "../lib/redact";
+import { isTauriRuntime, openExternal, pickFiles, pickSavePath } from "../lib/runtime";
 import type {
+  AboutInfo,
   BackupEntry,
   ClearPlan,
   DataDirs,
   Language,
+  OfficialAction,
+  OfficialPlan,
+  OfficialProduct,
+  OfficialProductId,
   ScopeId,
   Settings,
   SettingsPatch,
   ToolId,
-  ToolInfo,
-  UpdateChannel,
 } from "../types";
 import { TOOL_IDS } from "../types";
 
-type TabId = "general" | "tools" | "data" | "updates" | "advanced" | "about";
+type TabId = "general" | "tools" | "data" | "about";
 
-const TABS: TabId[] = ["general", "tools", "data", "updates", "advanced", "about"];
+const TABS: TabId[] = ["general", "tools", "data", "about"];
 
 export function SettingsPage({
   settings,
@@ -51,13 +57,21 @@ export function SettingsPage({
   toast: ToastApi;
   initialTab?: string;
 }) {
+  const PROJECT_REPO = "https://github.com/Jia-Ethan/keysmith-switch";
+  const LICENSE_URL = "https://github.com/Jia-Ethan/keysmith-switch/blob/main/LICENSE";
+
   const { t } = useTranslation();
   const { theme, setTheme } = useTheme();
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<TabId>("general");
-  const [tools, setTools] = useState<ToolInfo[]>([]);
+  const [about, setAbout] = useState<AboutInfo | null>(null);
   const [toolsLoading, setToolsLoading] = useState(true);
-  const [toolsError, setToolsError] = useState(false);
+  const [toolsError, setToolsError] = useState<string | null>(null);
+  const [officialPlan, setOfficialPlan] = useState<OfficialPlan | null>(null);
+  const [officialConfirmed, setOfficialConfirmed] = useState(false);
+  const [officialBusy, setOfficialBusy] = useState(false);
+  const [cancelPending, setCancelPending] = useState(false);
+  const [officialElapsed, setOfficialElapsed] = useState(0);
   const [dirs, setDirs] = useState<DataDirs | null>(null);
   const [backups, setBackups] = useState<BackupEntry[]>([]);
   const [backupsLoading, setBackupsLoading] = useState(true);
@@ -76,19 +90,18 @@ export function SettingsPage({
     if (TABS.includes(initialTab as TabId)) setTab(initialTab as TabId);
   }, [initialTab]);
 
-  const loadTools = async () => {
+  const loadTools = useCallback(async () => {
     setToolsLoading(true);
-    setToolsError(false);
+    setToolsError(null);
     try {
-      const result = await api.listTools();
-      setTools(result.tools ?? []);
-    } catch {
-      setTools([]);
-      setToolsError(true);
+      setAbout(await api.getAbout());
+    } catch (err) {
+      setAbout(null);
+      setToolsError(toastSafeMessage(err) || t("settings.toolsLoadFailed"));
     } finally {
       setToolsLoading(false);
     }
-  };
+  }, [t]);
 
   const loadBackups = async () => {
     setBackupsLoading(true);
@@ -108,7 +121,74 @@ export function SettingsPage({
     void loadTools();
     void api.getDataDirs().then(setDirs).catch(() => setDirs(null));
     void loadBackups();
+  }, [loadTools]);
+
+  useEffect(() => {
+    if (!isTauriRuntime()) return;
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    void import("@tauri-apps/api/event").then(({ listen }) => {
+      if (cancelled) return;
+      void listen<{ elapsedSeconds?: number }>("official-action-progress", (event) => {
+        setOfficialElapsed(Math.max(0, event.payload.elapsedSeconds ?? 0));
+      }).then((next) => {
+        if (cancelled) next();
+        else unlisten = next;
+      });
+    }).catch(() => undefined);
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
   }, []);
+
+  const previewOfficial = async (product: OfficialProductId, action: OfficialAction) => {
+    setOfficialBusy(true);
+    setOfficialConfirmed(false);
+    try {
+      setOfficialPlan(await api.planOfficialAction(product, action));
+    } catch (err) {
+      toast.err(err);
+      setOfficialPlan(null);
+    } finally {
+      setOfficialBusy(false);
+    }
+  };
+
+  const runOfficial = async () => {
+    if (!officialPlan || !officialConfirmed) return;
+    setOfficialBusy(true);
+    setOfficialElapsed(0);
+    try {
+      const result = await api.confirmOfficialAction(officialPlan.planId);
+      if (!result.ok) {
+        toast.err(result.error || t("about.officialBlocked"));
+        return;
+      }
+      toast.ok(t("common.success"));
+      setOfficialPlan(null);
+      setOfficialConfirmed(false);
+      await loadTools();
+    } catch (err) {
+      toast.err(err);
+    } finally {
+      setOfficialBusy(false);
+      setOfficialElapsed(0);
+    }
+  };
+
+  const cancelOfficial = async () => {
+    if (cancelPending) return;
+    setCancelPending(true);
+    try {
+      const result = await api.cancelOfficialAction();
+      if (!result.cancelled) toast.info(t("about.cancelOfficialUnavailable"));
+    } catch (err) {
+      toast.err(err);
+    } finally {
+      setCancelPending(false);
+    }
+  };
 
   const patch = async (next: SettingsPatch) => {
     setBusy(true);
@@ -288,29 +368,135 @@ export function SettingsPage({
           ) : toolsError ? (
             <div className="p-4">
               <ErrorBanner
-                message={t("settings.toolsLoadFailed")}
+                message={toolsError}
                 onRetry={() => void loadTools()}
                 retryLabel={t("common.retry")}
               />
             </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2">
-              {TOOL_IDS.map((id) => {
-                const info = tools.find((item) => item.id === id);
-                return (
-                  <div key={id} className="flex items-center gap-3 rounded-xl border border-border bg-background/45 px-4 py-3">
-                    <ToolLogo tool={id} size={22} />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium">{info?.name ?? id}</p>
-                      <p className="mt-0.5 break-words text-xs text-muted-foreground">
-                        {info?.available ? t("about.installed") : info?.unavailableReason || t("status.unavailable")}
-                      </p>
-                    </div>
+          ) : about ? (
+            <div className="flex flex-col gap-5 p-4 sm:p-5">
+              <section aria-label={t("about.adapters")}>
+                <SectionLabel>{t("about.adapters")}</SectionLabel>
+                <div className="mt-2 overflow-hidden rounded-xl border border-border">
+                  {about.adapters.length > 0 ? (
+                    about.adapters.map((item) => (
+                      <div
+                        key={item.tool}
+                        className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border bg-background/35 px-3 py-2.5 last:border-b-0"
+                      >
+                        <ToolLogo tool={item.tool} size={20} />
+                        <span className="min-w-[72px] text-sm font-medium capitalize text-foreground">
+                          {item.tool}
+                        </span>
+                        <Mono className="text-foreground">{item.version}</Mono>
+                        {item.path ? (
+                          <Mono className="ml-auto max-w-full truncate">
+                            <span title={item.path}>{item.path}</span>
+                          </Mono>
+                        ) : null}
+                      </div>
+                    ))
+                  ) : (
+                    <p className="px-3 py-4 text-center text-sm text-muted-foreground" data-testid="settings-adapters-empty">
+                      {t("common.none")}
+                    </p>
+                  )}
+                </div>
+              </section>
+
+              <section aria-label={t("about.official")}>
+                <SectionLabel>{t("about.official")}</SectionLabel>
+                <div className="mt-2 flex flex-col gap-2">
+                  {about.official.length > 0 ? (
+                    about.official.map((product) => (
+                      <OfficialToolRow
+                        key={product.product}
+                        product={product}
+                        busy={officialBusy}
+                        onPlan={previewOfficial}
+                      />
+                    ))
+                  ) : (
+                    <p className="rounded-xl border border-border px-3 py-4 text-center text-sm text-muted-foreground" data-testid="settings-official-empty">
+                      {t("common.none")}
+                    </p>
+                  )}
+                </div>
+
+                {officialPlan ? (
+                  <div className="mt-3 rounded-xl border border-border bg-background/45 p-3 text-[13px]" data-testid="official-plan">
+                    <p className="font-medium capitalize text-foreground">
+                      {officialPlan.product} / {officialPlan.action}
+                    </p>
+                    <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5">
+                      <DetailRow label={t("about.command")}><Mono>{formatArgv(officialPlan.argv)}</Mono></DetailRow>
+                      <DetailRow label={t("about.dest")}><Mono>{officialPlan.dest || "—"}</Mono></DetailRow>
+                      <DetailRow label={t("about.source")}>{officialPlan.source || "—"}</DetailRow>
+                    </dl>
+                    {officialPlan.blockers.length > 0 ? (
+                      <div className="mt-2 flex items-start gap-2 rounded border border-destructive/40 bg-destructive/10 px-2 py-1.5 text-destructive">
+                        <IconAlert size={14} className="mt-px shrink-0" />
+                        <ul className="min-w-0 list-inside list-disc">
+                          {officialPlan.blockers.map((item, index) => <li key={index}>{item}</li>)}
+                        </ul>
+                      </div>
+                    ) : (
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <Checkbox
+                          checked={officialConfirmed}
+                          data-testid="confirm-official"
+                          label={t("about.confirmOfficial")}
+                          disabled={officialBusy}
+                          onChange={(event) => setOfficialConfirmed(event.target.checked)}
+                        />
+                        {officialBusy ? (
+                          <Button
+                            size="sm"
+                            className="ml-auto"
+                            data-testid="cancel-official"
+                            disabled={cancelPending}
+                            onClick={() => void cancelOfficial()}
+                          >
+                            {cancelPending ? t("common.busy") : t("about.cancelOfficial")}
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="primary"
+                            className="ml-auto"
+                            data-testid="run-official"
+                            disabled={!officialConfirmed}
+                            onClick={() => void runOfficial()}
+                          >
+                            {t("about.runOfficial")}
+                          </Button>
+                        )}
+                        {officialBusy ? (
+                          <span className="text-muted-foreground">
+                            {t("about.officialRunning", { seconds: officialElapsed })}
+                          </span>
+                        ) : null}
+                      </div>
+                    )}
                   </div>
-                );
-              })}
+                ) : null}
+              </section>
+
+              <div className="border-t border-border pt-4">
+                <SettingRow
+                  label={t("settings.advancedTools")}
+                  control={
+                    <Checkbox
+                      aria-label={t("settings.advancedTools")}
+                      checked={settings.advancedToolsEnabled}
+                      disabled={busy}
+                      onChange={(event) => void patch({ advancedToolsEnabled: event.target.checked })}
+                    />
+                  }
+                />
+              </div>
             </div>
-          )
+          ) : null
         ) : null}
 
         {tab === "data" ? (
@@ -466,51 +652,40 @@ export function SettingsPage({
           </div>
         ) : null}
 
-        {tab === "updates" ? (
-          <div>
-            <SettingRow
-              label={t("settings.updateChannel")}
-              control={
-                <Select
-                  aria-label={t("settings.updateChannel")}
-                  value={settings.updateChannel}
-                  disabled={busy}
-                  onChange={(event) => void patch({ updateChannel: event.target.value as UpdateChannel })}
+        {tab === "about" ? (
+          <div className="p-4">
+            <div className="space-y-3">
+              <div>
+                <SectionLabel>{t("about.version")}</SectionLabel>
+                <Mono className="mt-1 text-sm">{about?.app.version ?? "—"}</Mono>
+              </div>
+              <div>
+                <SectionLabel>{t("about.repository")}</SectionLabel>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="mt-1"
+                  onClick={() => void openExternal(PROJECT_REPO)}
                 >
-                  <option value="stable">{t("settings.channelStable")}</option>
-                  <option value="beta">{t("settings.channelBeta")}</option>
-                </Select>
-              }
-            />
-            <SettingRow
-              label={t("settings.autoCheck")}
-              control={
-                <Checkbox
-                  aria-label={t("settings.autoCheck")}
-                  checked={settings.autoCheckUpdates}
-                  disabled={busy}
-                  onChange={(event) => void patch({ autoCheckUpdates: event.target.checked })}
-                />
-              }
-            />
+                  <IconExternal />
+                  GitHub
+                </Button>
+              </div>
+              <div>
+                <SectionLabel>{t("about.license")}</SectionLabel>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="mt-1"
+                  onClick={() => void openExternal(LICENSE_URL)}
+                >
+                  <IconExternal />
+                  MIT License
+                </Button>
+              </div>
+            </div>
           </div>
         ) : null}
-
-        {tab === "advanced" ? (
-          <SettingRow
-            label={t("settings.advancedTools")}
-            control={
-              <Checkbox
-                aria-label={t("settings.advancedTools")}
-                checked={settings.advancedToolsEnabled}
-                disabled={busy}
-                onChange={(event) => void patch({ advancedToolsEnabled: event.target.checked })}
-              />
-            }
-          />
-        ) : null}
-
-        {tab === "about" ? <AboutPage channel={settings.updateChannel} toast={toast} /> : null}
       </div>
 
       <ConfirmDialog
@@ -604,5 +779,78 @@ export function SettingsPage({
         ) : null}
       </ConfirmDialog>
     </div>
+  );
+}
+
+function DetailRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <>
+      <dt className="whitespace-nowrap text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 break-words text-foreground">{children}</dd>
+    </>
+  );
+}
+
+function OfficialToolRow({
+  product,
+  busy,
+  onPlan,
+}: {
+  product: OfficialProduct;
+  busy: boolean;
+  onPlan: (product: OfficialProductId, action: OfficialAction) => void;
+}) {
+  const { t } = useTranslation();
+  const action: OfficialAction = product.installed ? "update" : "install";
+  const blocked = !product.available;
+
+  return (
+    <article className="rounded-xl border border-border bg-background/35 px-3 py-2.5">
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+        <ToolLogo tool={product.product} size={20} />
+        <h3 className="text-sm font-medium capitalize text-foreground">{product.product}</h3>
+        <span
+          className={cx(
+            "inline-flex items-center rounded border px-1.5 py-0.5 text-[11px] font-medium",
+            product.installed
+              ? "border-primary/30 bg-primary/10 text-primary"
+              : "border-border bg-muted text-muted-foreground",
+          )}
+        >
+          {product.installed ? t("about.installed") : t("about.notInstalled")}
+        </span>
+        <Mono className="text-foreground">
+          {product.currentVersion ?? "—"} → {product.latestVersion ?? "—"}
+        </Mono>
+        {!blocked ? (
+          <Button
+            size="sm"
+            className="ml-auto"
+            disabled={busy}
+            data-testid={`official-plan-${product.product}`}
+            onClick={() => onPlan(product.product, action)}
+          >
+            {t("about.planAction")}
+          </Button>
+        ) : null}
+      </div>
+      {blocked ? (
+        <p className="mt-1.5 flex items-start gap-1.5 text-[12px] text-amber-600 dark:text-amber-500">
+          <IconAlert size={12} className="mt-px shrink-0" />
+          <span className="min-w-0">
+            {product.product === "zcode" ? t("about.zcodeMacOnly") : t("about.officialBlocked")}
+            {product.unavailableReason ? ` · ${product.unavailableReason}` : ""}
+          </span>
+        </p>
+      ) : null}
+      <Disclosure title={t("common.details")} testId={`official-details-${product.product}`}>
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[12px]">
+          <DetailRow label={t("about.executable")}><Mono>{product.executablePath ?? "—"}</Mono></DetailRow>
+          <DetailRow label={t("about.source")}>{product.source || "—"}</DetailRow>
+          <DetailRow label={t("about.command")}><Mono>{formatArgv(product.argv)}</Mono></DetailRow>
+          <DetailRow label={t("about.dest")}><Mono>{product.dest || "—"}</Mono></DetailRow>
+        </dl>
+      </Disclosure>
+    </article>
   );
 }

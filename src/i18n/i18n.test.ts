@@ -32,10 +32,23 @@ describe("i18n locales", () => {
       "nav.about",
       "nav.advanced",
       "prompts.empty",
-      "about.installAndRestart",
+      "about.adapters",
+      "about.official",
       "tool.zcodeNoInstall",
     ]) {
       expect(zhKeys).toContain(key);
+    }
+  });
+
+  it("does not expose build-signing or Preview labels in UI copy", () => {
+    for (const locale of [zhCN, zhTW, en]) {
+      const copy = JSON.stringify(locale).toLowerCase();
+      expect(copy).not.toContain("unsigned preview");
+      expect(copy).not.toContain("preview ·");
+      expect(copy).not.toContain("developer id");
+      expect(copy).not.toContain("authenticode");
+      expect(copy).not.toContain("未签名");
+      expect(copy).not.toContain("未簽名");
     }
   });
 });

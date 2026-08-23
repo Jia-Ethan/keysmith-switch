@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { forwardRef, useId, useState } from "react";
 import type {
   ButtonHTMLAttributes,
   InputHTMLAttributes,
@@ -16,34 +16,35 @@ const FOCUS_RING =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background";
 
 const BUTTON_VARIANTS = {
-  primary: "bg-primary text-primary-foreground hover:brightness-[1.07] disabled:hover:brightness-100",
+  primary: "bg-primary text-primary-foreground hover:brightness-[1.08] disabled:hover:brightness-100 shadow-sm",
   outline:
-    "border border-border bg-card text-foreground hover:bg-muted disabled:hover:bg-card",
-  ghost: "text-muted-foreground hover:bg-muted hover:text-foreground disabled:hover:bg-transparent",
+    "border border-border bg-background text-foreground hover:border-ring/60 hover:bg-accent disabled:hover:bg-background disabled:hover:border-border",
+  ghost: "text-muted-foreground hover:bg-accent hover:text-foreground disabled:hover:bg-transparent",
   danger:
-    "border border-destructive/40 bg-transparent text-destructive hover:bg-destructive/10 disabled:hover:bg-transparent",
+    "border border-destructive/50 bg-transparent text-destructive hover:bg-destructive/12 disabled:hover:bg-transparent",
 } as const;
 
 const BUTTON_SIZES = {
   sm: "h-8 gap-1 px-2.5 text-[13px]",
-  md: "h-9 gap-1.5 px-3 text-sm",
+  md: "h-9 gap-1.5 px-3.5 text-sm",
   icon: "h-9 w-9 justify-center p-0",
 } as const;
 
 export type ButtonVariant = keyof typeof BUTTON_VARIANTS;
 export type ButtonSize = keyof typeof BUTTON_SIZES;
 
-export function Button({
+export const Button = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+}>(function Button({
   variant = "outline",
   size = "md",
   className,
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: ButtonVariant;
-  size?: ButtonSize;
-}) {
+}, ref) {
   return (
     <button
+      ref={ref}
       type={props.type ?? "button"}
       className={cx(
         "inline-flex shrink-0 items-center rounded-md font-medium transition-colors",
@@ -55,7 +56,7 @@ export function Button({
       {...props}
     />
   );
-}
+});
 
 export function IconButton({
   label,
@@ -89,17 +90,17 @@ export function Field({
   className?: string;
 }) {
   return (
-    <label className={cx("flex min-w-0 flex-col gap-1", className)}>
-      <span className="text-[11px] font-medium text-muted-foreground">{label}</span>
+    <label className={cx("flex min-w-0 flex-col gap-1.5", className)}>
+      <span className="text-[12px] font-medium text-muted-foreground">{label}</span>
       {children}
-      {hint ? <span className="text-[11px] text-muted-foreground">{hint}</span> : null}
+      {hint ? <span className="text-[12px] text-muted-foreground">{hint}</span> : null}
     </label>
   );
 }
 
 const CONTROL_BASE = cx(
   "w-full rounded-md border border-input bg-background text-foreground transition-colors",
-  "placeholder:text-muted-foreground hover:border-ring/50",
+  "placeholder:text-muted-foreground hover:border-ring/60",
   FOCUS_RING,
 );
 
@@ -165,7 +166,7 @@ export function Panel({
   className?: string;
 }) {
   return (
-    <section className={cx("rounded-lg border border-border bg-card", className)}>
+    <section className={cx("rounded-xl border border-border bg-card shadow-[0_2px_8px_hsl(var(--shadow)/0.04)]", className)}>
       {children}
     </section>
   );
@@ -206,13 +207,13 @@ export function SettingRow({
   htmlFor?: string;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-b border-border px-3 py-2.5 last:border-b-0">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-b border-border px-4 py-3 last:border-b-0">
       <div className="min-w-[160px] flex-1">
         <label htmlFor={htmlFor} className="block text-sm font-medium text-foreground">
           {label}
         </label>
         {description ? (
-          <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{description}</p>
+          <p className="mt-0.5 text-[13px] leading-snug text-muted-foreground">{description}</p>
         ) : null}
       </div>
       <div className="flex shrink-0 items-center gap-1.5">{control}</div>
@@ -247,7 +248,7 @@ export function Segmented<T extends string>({
     <div
       role="radiogroup"
       aria-label={ariaLabel}
-      className={cx("inline-flex gap-1 rounded-md border border-border bg-muted p-0.5", className)}
+      className={cx("inline-flex gap-0.5 rounded-lg border border-border bg-muted p-1", className)}
     >
       {options.map((option) => {
         const active = option.value === value;
@@ -261,7 +262,7 @@ export function Segmented<T extends string>({
             disabled={disabled}
             onClick={() => onChange(option.value)}
             className={cx(
-              "inline-flex h-7 items-center gap-1.5 rounded px-2 text-[12px] font-medium transition-colors",
+              "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium transition-colors",
               FOCUS_RING,
               active
                 ? "bg-background text-foreground shadow-sm"
@@ -324,7 +325,7 @@ export function Mono({ children, className }: { children: ReactNode; className?:
 
 export function Tag({ children }: { children: ReactNode }) {
   return (
-    <span className="inline-flex max-w-[120px] items-center truncate rounded border border-border bg-muted px-1 py-px text-[10px] text-muted-foreground">
+    <span className="inline-flex max-w-[120px] items-center truncate rounded border border-border bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
       {children}
     </span>
   );

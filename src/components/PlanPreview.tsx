@@ -15,7 +15,7 @@ export function PlanPreview({ envelope }: { envelope: Envelope }) {
     envelope.recoveryRequired;
 
   return (
-    <div className="space-y-3 text-[12px]" data-testid="plan-preview">
+    <div className="space-y-3 text-[13px]" data-testid="plan-preview">
       {drifted ? (
         <div className="flex items-start gap-2 rounded-lg border border-amber-600/40 bg-amber-500/10 px-3 py-2 text-amber-700 dark:text-amber-400">
           <IconAlert size={14} className="mt-px shrink-0" />

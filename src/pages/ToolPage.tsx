@@ -1,12 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import * as api from "../api";
+import type { AppPage } from "../components/AppShell";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { EmptyState } from "../components/EmptyState";
 import { ErrorBanner } from "../components/ErrorBanner";
 import { PlanPreview } from "../components/PlanPreview";
-import { PromptEditor, type PromptDraft } from "../components/PromptEditor";
-import { PromptFormPanel } from "../components/PromptFormPanel";
 import { PromptList } from "../components/PromptList";
 import { ScopeBar } from "../components/ScopeBar";
 import { ToolStatusBar } from "../components/ToolStatusBar";
@@ -33,17 +32,13 @@ import type {
   Envelope,
   Operation,
   PlanResult,
-  PromptDetail,
   PromptSort,
   PromptSummary,
-  PromptVersion,
   ScopeId,
   Settings,
   ToolId,
   ToolInfo,
 } from "../types";
-
-const EMPTY_DRAFT: PromptDraft = { title: "", content: "", tags: "" };
 
 /**
  * The backend orders by updated / created / title. `lastUsedAt` only exists on
@@ -64,6 +59,7 @@ export function ToolPage({
   tool,
   settings,
   toast,
+  onNavigate,
   onRememberProject,
   onDirtyChange,
   libraryEpoch = 0,
@@ -71,6 +67,7 @@ export function ToolPage({
   tool: ToolId;
   settings: Settings;
   toast: ToastApi;
+  onNavigate: (page: AppPage) => void;
   onRememberProject: (dir: string) => void;
   onDirtyChange?: (dirty: boolean) => void;
   libraryEpoch?: number;
@@ -84,30 +81,19 @@ export function ToolPage({
   const [error, setError] = useState<string | null>(null);
   const [prompts, setPrompts] = useState<PromptSummary[]>([]);
   const [promptsLoading, setPromptsLoading] = useState(true);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [detail, setDetail] = useState<PromptDetail | null>(null);
   const [query, setQuery] = useState("");
   const [tag, setTag] = useState("");
   const [sort, setSort] = useState<PromptSort>("lastUsed");
   const [scope, setScope] = useState<ScopeId>("user");
   const [projectDir, setProjectDir] = useState("");
   const [busy, setBusy] = useState(false);
-  const [editing, setEditing] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [draft, setDraft] = useState<PromptDraft>(EMPTY_DRAFT);
   const [plan, setPlan] = useState<{ kind: "activate" | "deactivate" | "recover"; result: PlanResult } | null>(
     null,
   );
   const [planError, setPlanError] = useState<string | null>(null);
-  const [versions, setVersions] = useState<PromptVersion[]>([]);
-  const [diff, setDiff] = useState("");
   const [operations, setOperations] = useState<Operation[]>([]);
-  // null = activation table could not be read. Never collapse this to [], or every
-  // activated prompt silently renders as inactive and invites a duplicate activate.
   const [activations, setActivations] = useState<Activation[] | null>(null);
-  const [formOpen, setFormOpen] = useState(false);
   const promptListSeq = useRef(0);
-  const promptDetailSeq = useRef(0);
   const statusSeq = useRef(0);
   const toolRef = useRef(tool);
   toolRef.current = tool;
@@ -120,7 +106,6 @@ export function ToolPage({
 
   const unavailable = isZcodeUnavailable(toolInfo) || status?.available === false;
   const requireProject = scopeNeedsProjectDir(scope);
-  const projectReady = !requireProject || Boolean(projectDir.trim());
 
   const activeIds = useMemo(
     () => (activations ? activeIdsFor(activations, tool, scope, projectDir) : null),
@@ -211,19 +196,11 @@ export function ToolPage({
 
   useEffect(() => {
     promptListSeq.current += 1;
-    promptDetailSeq.current += 1;
     statusSeq.current += 1;
-    setSelectedId(null);
-    setDetail(null);
-    setCreating(false);
-    setEditing(false);
-    setFormOpen(false);
     setPlan(null);
     setPlanError(null);
     setQuery("");
     setTag("");
-    setVersions([]);
-    setDiff("");
     setPrompts([]);
     setPromptsLoading(true);
     const nextScope = defaultScopeFor(tool, scopesForTool(tool), settings.defaultClaudeScope);
@@ -247,214 +224,19 @@ export function ToolPage({
     return () => window.clearTimeout(handle);
   }, [loadPrompts, query, tag, libraryEpoch]);
 
-  const selectPrompt = async (id: string) => {
-    const seq = ++promptDetailSeq.current;
-    setSelectedId(id);
-    setDetail(null);
-    setVersions([]);
-    setDiff("");
-    setCreating(false);
-    setEditing(false);
-    setFormOpen(false);
-    try {
-      const next = await api.getPrompt(id);
-      if (seq !== promptDetailSeq.current) return;
-      setDetail(next);
-      setDraft({ title: next.title, content: next.content, tags: next.tags.join(", ") });
-    } catch (err) {
-      if (seq === promptDetailSeq.current) setSelectedId(null);
-      toast.err(err);
-      return;
-    }
-    try {
-      const history = await api.promptHistory(id);
-      if (seq !== promptDetailSeq.current) return;
-      setVersions(history.versions ?? []);
-    } catch (err) {
-      toast.err(err);
-    }
-  };
-
-  const tagsOf = (value: string) =>
-    value
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean);
-
-  const isDirty = creating
-    ? Boolean(draft.title || draft.content || draft.tags)
-    : Boolean(
-        detail &&
-          (draft.title !== detail.title ||
-            draft.content !== detail.content ||
-            draft.tags !== detail.tags.join(", ")),
-      );
-
-  const confirmLeave = () => {
-    if (!isDirty) return true;
-    return window.confirm(t("unsaved.leave"));
+  const selectPrompt = (id: string) => {
+    onNavigate({ kind: "prompt-view", tool, promptId: id, scope, projectDir });
   };
 
   useEffect(() => {
-    onDirtyChange?.(isDirty);
-  }, [isDirty, onDirtyChange]);
+    onDirtyChange?.(false);
+  }, [onDirtyChange]);
 
   const startCreate = () => {
-    if (!confirmLeave()) return;
-    setCreating(true);
-    setEditing(true);
-    setFormOpen(true);
-    setSelectedId(null);
-    setDetail(null);
-    setDraft(EMPTY_DRAFT);
-    setVersions([]);
-    setDiff("");
+    onNavigate({ kind: "prompt-edit", tool, creating: true, scope, projectDir });
   };
 
-  const cancelEdit = () => {
-    if (creating) {
-      setCreating(false);
-      setEditing(false);
-      setDraft(EMPTY_DRAFT);
-      return;
-    }
-    setEditing(false);
-    if (detail) {
-      setDraft({ title: detail.title, content: detail.content, tags: detail.tags.join(", ") });
-    }
-  };
 
-  const saveDraft = async () => {
-    if (!draft.title.trim()) {
-      toast.err(t("errors.validation"));
-      return;
-    }
-    setBusy(true);
-    try {
-      if (creating) {
-        const created = await api.createPrompt({
-          tool,
-          title: draft.title.trim(),
-          content: draft.content,
-          tags: tagsOf(draft.tags),
-        });
-        toast.ok(t("prompts.created"));
-        setCreating(false);
-        setEditing(false);
-        setFormOpen(false);
-        await loadPrompts();
-        await selectPrompt(created.id);
-      } else if (detail) {
-        const updated = await api.updatePrompt({
-          id: detail.id,
-          title: draft.title.trim(),
-          content: draft.content,
-          tags: tagsOf(draft.tags),
-        });
-        toast.ok(t("prompts.updatedOk"));
-        setDetail(updated);
-        setEditing(false);
-        setFormOpen(false);
-        await loadPrompts();
-      }
-    } catch (err) {
-      toast.err(err);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const duplicateSameTool = async () => {
-    if (!detail) return;
-    setBusy(true);
-    try {
-      const created = await api.createPrompt({
-        tool,
-        title: `${detail.title} copy`,
-        content: detail.content,
-        tags: detail.tags,
-      });
-      toast.ok(t("prompts.created"));
-      await loadPrompts();
-      await selectPrompt(created.id);
-    } catch (err) {
-      toast.err(err);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const copyTo = async (targetTool: ToolId) => {
-    if (!detail) return;
-    setBusy(true);
-    try {
-      await api.copyPrompt(detail.id, targetTool);
-      toast.ok(t("prompts.copied"));
-    } catch (err) {
-      toast.err(err);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const removePrompt = async () => {
-    if (!detail) return;
-    if (!window.confirm(t("prompts.deleteConfirm"))) return;
-    setBusy(true);
-    try {
-      await api.deletePrompt(detail.id);
-      toast.ok(t("prompts.deleted"));
-      setDetail(null);
-      setSelectedId(null);
-      setVersions([]);
-      setDiff("");
-      await loadPrompts();
-    } catch (err) {
-      toast.err(err);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const openPlan = async (kind: "activate" | "deactivate") => {
-    if (unavailable) return;
-    if (activeIds === null) {
-      toast.err(t("prompts.activationUnknown"));
-      return;
-    }
-    if (!projectReady) {
-      toast.err(t("scope.needsProjectDir"));
-      return;
-    }
-    if (kind === "activate" && !detail) {
-      toast.err(t("errors.validation"));
-      return;
-    }
-    setBusy(true);
-    setPlanError(null);
-    try {
-      const result =
-        kind === "activate"
-          ? await api.planActivate({
-              promptId: detail!.id,
-              scope,
-              projectDir: requireProject ? projectDir : undefined,
-            })
-          : await api.planDeactivate({
-              promptId: detail?.id,
-              tool,
-              scope,
-              projectDir: requireProject ? projectDir : undefined,
-            });
-      setPlan({ kind, result });
-      if (requireProject && projectDir) onRememberProject(projectDir);
-    } catch (err) {
-      setPlan(null);
-      toast.err(err);
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const confirmPlan = async () => {
     if (
@@ -480,7 +262,6 @@ export function ToolPage({
         setPlan(null);
       }
       await Promise.all([loadStatus(), loadPrompts(), loadOps()]);
-      if (detail) await selectPrompt(detail.id);
     } catch (err) {
       const reason = toastSafeMessage(err);
       setPlanError(reason);
@@ -506,31 +287,7 @@ export function ToolPage({
     }
   };
 
-  const restoreVersion = async (version: number) => {
-    if (!detail) return;
-    setBusy(true);
-    try {
-      const restored = await api.restorePromptVersion(detail.id, version);
-      toast.ok(t("prompts.restored"));
-      setDetail(restored);
-      setDraft({ title: restored.title, content: restored.content, tags: restored.tags.join(", ") });
-      await loadPrompts();
-    } catch (err) {
-      toast.err(err);
-    } finally {
-      setBusy(false);
-    }
-  };
 
-  const showDiff = async (fromVersion: number, toVersion: number) => {
-    if (!detail) return;
-    try {
-      const result = await api.promptDiff(detail.id, fromVersion, toVersion);
-      setDiff(result.unified || result.summary || "");
-    } catch (err) {
-      toast.err(err);
-    }
-  };
 
   const availableTags = useMemo(() => {
     const set = new Set<string>();
@@ -541,7 +298,6 @@ export function ToolPage({
   const recovery = isRecoveryState(status);
   const doctorOk = doctorEnv?.doctor?.ok ?? status?.doctor?.ok;
   const filtered = Boolean(query.trim() || tag);
-  const selectedIsActive = detail && activeIds ? activeIds.includes(detail.id) : null;
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto pr-0.5">
@@ -658,11 +414,11 @@ export function ToolPage({
             ) : (
               <PromptList
                 prompts={prompts}
-                selectedId={selectedId}
+                selectedId={null}
                 activeIds={activeIds}
                 loading={promptsLoading}
                 filtered={filtered}
-                onSelect={(id) => void selectPrompt(id)}
+                onSelect={selectPrompt}
                 emptyAction={
                   <Button size="sm" variant="primary" onClick={startCreate}>
                     <IconPlus />
@@ -674,48 +430,11 @@ export function ToolPage({
           </div>
       </section>
 
-      <section className="flex shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-card">
-          {creating || detail ? (
-            <PromptEditor
-              tool={tool}
-              detail={detail}
-              draft={draft}
-              creating={creating}
-              editing={editing}
-              busy={busy}
-              disabled={Boolean(unavailable) || !projectReady}
-              isActiveHere={selectedIsActive}
-              versions={versions}
-              diff={diff}
-              onDraftChange={setDraft}
-              onStartEdit={() => {
-                setEditing(true);
-                setFormOpen(true);
-              }}
-              onCancelEdit={cancelEdit}
-              onSave={() => void saveDraft()}
-              onDuplicate={() => void duplicateSameTool()}
-              onCopyTo={(target) => void copyTo(target)}
-              onDelete={() => void removePrompt()}
-              onActivate={() => void openPlan("activate")}
-              onDeactivate={() => void openPlan("deactivate")}
-              onRestoreVersion={(version) => void restoreVersion(version)}
-              onShowDiff={(from, to) => void showDiff(from, to)}
-            />
-          ) : (
-            <div className="flex min-h-[220px] items-center justify-center p-4">
-              <EmptyState
-                title={t("prompts.noSelection")}
-                hint={t("prompts.noSelectionHint")}
-                testId="prompt-no-selection"
-              />
-            </div>
-          )}
-      </section>
+
 
       {settings.advancedToolsEnabled && operations.length > 0 ? (
         <Disclosure title={t("operations.title")} testId="tool-operations">
-          <ul className="flex flex-col gap-1 text-[11px]">
+          <ul className="flex flex-col gap-1.5 text-[12px]">
             {operations.slice(0, 12).map((item) => (
               <li key={item.id} className="flex flex-wrap items-center gap-2">
                 <Mono>{item.kind}</Mono>
@@ -740,6 +459,7 @@ export function ToolPage({
 
       <ConfirmDialog
         open={Boolean(plan)}
+        wide
         title={
           plan?.kind === "deactivate"
             ? t("plan.titleDeactivate")
@@ -747,7 +467,7 @@ export function ToolPage({
               ? t("operations.recover")
               : t("plan.titleActivate")
         }
-        description={planTargetLabel(t, tool, scope, projectDir, detail?.title)}
+        description={planTargetLabel(t, tool, scope, projectDir, undefined)}
         confirmLabel={
           plan?.kind === "deactivate"
             ? t("plan.confirmDeactivate")
@@ -782,20 +502,6 @@ export function ToolPage({
           </div>
         ) : null}
       </ConfirmDialog>
-      {formOpen ? (
-        <PromptFormPanel
-          title={creating ? t("prompts.new") : t("prompts.edit")}
-          draft={draft}
-          saving={busy}
-          onChange={setDraft}
-          onSave={() => void saveDraft()}
-          onClose={() => {
-            cancelEdit();
-            setFormOpen(false);
-          }}
-          dirtyGuard={confirmLeave}
-        />
-      ) : null}
     </div>
   );
 }

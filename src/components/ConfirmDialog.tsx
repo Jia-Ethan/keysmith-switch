@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
-import { Button, IconButton } from "./ui";
+import { createPortal } from "react-dom";
+import { Button, IconButton, cx } from "./ui";
 import { IconClose } from "./icons";
 
 export function ConfirmDialog({
@@ -17,6 +18,7 @@ export function ConfirmDialog({
   danger,
   closeLabel = "Close",
   busy = false,
+  wide = false,
 }: {
   open: boolean;
   title: string;
@@ -31,6 +33,7 @@ export function ConfirmDialog({
   danger?: boolean;
   closeLabel?: string;
   busy?: boolean;
+  wide?: boolean;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
@@ -43,10 +46,12 @@ export function ConfirmDialog({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
+        event.stopPropagation();
         if (!busy) closeRef.current();
         return;
       }
       if (event.key !== "Tab") return;
+      event.stopPropagation();
       const focusable = getFocusable(dialogRef.current);
       if (focusable.length === 0) {
         event.preventDefault();
@@ -75,8 +80,8 @@ export function ConfirmDialog({
 
   if (!open) return null;
 
-  return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
+  return createPortal(
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm">
       <div
         ref={dialogRef}
         role="dialog"
@@ -84,21 +89,24 @@ export function ConfirmDialog({
         aria-label={title}
         aria-busy={busy || undefined}
         tabIndex={-1}
-        className="flex max-h-[86vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-border bg-card shadow-xl focus:outline-none"
+        className={cx(
+          "animate-dialog-in flex max-h-[86vh] w-full flex-col overflow-hidden rounded-xl border border-border bg-card shadow-[0_16px_60px_hsl(var(--shadow)/0.18)] focus:outline-none",
+          wide ? "max-w-[560px]" : "max-w-[440px]",
+        )}
       >
-        <div className="flex shrink-0 items-start gap-3 border-b border-border px-4 py-3">
+        <div className="flex shrink-0 items-start gap-3 border-b border-border px-5 py-3.5">
           <div className="min-w-0 flex-1">
-            <h2 className="text-[14px] font-semibold text-foreground">{title}</h2>
+            <h2 className="text-[15px] font-semibold text-foreground">{title}</h2>
             {description ? (
-              <p className="mt-0.5 text-[12px] text-muted-foreground">{description}</p>
+              <p className="mt-1 text-[13px] text-muted-foreground">{description}</p>
             ) : null}
           </div>
           <IconButton label={closeLabel} disabled={busy} onClick={onClose}>
             <IconClose />
           </IconButton>
         </div>
-        <div className="min-h-0 flex-1 overflow-auto px-4 py-3 text-[12px]">{children}</div>
-        <div className="flex shrink-0 justify-end gap-2 border-t border-border px-4 py-3">
+        <div className="min-h-0 flex-1 overflow-auto px-5 py-3.5 text-[13px]">{children}</div>
+        <div className="flex shrink-0 justify-end gap-2 border-t border-border px-5 py-3.5">
           <Button disabled={busy} onClick={onClose}>{cancelLabel}</Button>
           <Button
             variant={danger ? "danger" : "primary"}
@@ -110,7 +118,8 @@ export function ConfirmDialog({
           </Button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

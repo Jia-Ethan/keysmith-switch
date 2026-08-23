@@ -4,6 +4,8 @@ import { AppShell, type AppPage } from "./components/AppShell";
 import { DataRecoveryDialog } from "./components/DataRecoveryDialog";
 import { ErrorBanner } from "./components/ErrorBanner";
 import { FirstRunDialog } from "./components/FirstRunDialog";
+import { PromptDetailPage } from "./components/PromptDetailPage";
+import { PromptEditPage } from "./components/PromptEditPage";
 import { ToastHost } from "./components/ToastHost";
 import { UpdateProvider } from "./components/UpdateProvider";
 import { useSettings } from "./hooks/useSettings";
@@ -14,7 +16,7 @@ import { AdvancedPage } from "./pages/AdvancedPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { ToolPage } from "./pages/ToolPage";
 import * as api from "./api";
-import type { FirstRunReport } from "./types";
+import type { FirstRunReport, PromptDetail } from "./types";
 
 export function App() {
   const { t } = useTranslation();
@@ -116,9 +118,57 @@ export function App() {
             tool={visiblePage.tool}
             settings={settingsState.settings}
             toast={toast}
+            onNavigate={navigate}
             onRememberProject={(dir) => void rememberProject(dir)}
             onDirtyChange={setDirty}
             libraryEpoch={libraryEpoch}
+          />
+        ) : null}
+        {visiblePage.kind === "prompt-view" ? (
+          <PromptDetailPage
+            promptId={visiblePage.promptId}
+            tool={visiblePage.tool}
+            scope={visiblePage.scope}
+            projectDir={visiblePage.projectDir}
+            toast={toast}
+            onClose={() => navigate({ kind: "tool", tool: visiblePage.tool })}
+            onEdit={(detail: PromptDetail) =>
+              navigate({
+                kind: "prompt-edit",
+                tool: visiblePage.tool,
+                promptId: detail.id,
+                creating: false,
+                scope: visiblePage.scope,
+                projectDir: visiblePage.projectDir,
+              })
+            }
+            onChanged={() => {
+              setLibraryEpoch((value) => value + 1);
+            }}
+          />
+        ) : null}
+        {visiblePage.kind === "prompt-edit" ? (
+          <PromptEditPage
+            tool={visiblePage.tool}
+            promptId={visiblePage.promptId}
+            creating={visiblePage.creating}
+            toast={toast}
+            onDirtyChange={setDirty}
+            onClose={() => {
+              setDirty(false);
+              setPage({ kind: "tool", tool: visiblePage.tool });
+            }}
+            onSaved={(id: string) => {
+              setDirty(false);
+              setLibraryEpoch((value) => value + 1);
+              setPage({
+                kind: "prompt-view",
+                tool: visiblePage.tool,
+                promptId: id,
+                scope: visiblePage.scope,
+                projectDir: visiblePage.projectDir,
+              });
+            }}
           />
         ) : null}
         {visiblePage.kind === "settings" ? (

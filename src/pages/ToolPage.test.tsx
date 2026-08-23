@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { DEFAULT_SETTINGS } from "../types";
 
@@ -8,8 +8,6 @@ const toolStatus = vi.fn();
 const doctor = vi.fn();
 const listOperations = vi.fn();
 const listActivations = vi.fn();
-const getPrompt = vi.fn();
-const promptHistory = vi.fn();
 
 vi.mock("../api", () => ({
   listPrompts: (...args: unknown[]) => listPrompts(...args),
@@ -18,8 +16,6 @@ vi.mock("../api", () => ({
   doctor: (...args: unknown[]) => doctor(...args),
   listOperations: (...args: unknown[]) => listOperations(...args),
   listActivations: (...args: unknown[]) => listActivations(...args),
-  getPrompt: (...args: unknown[]) => getPrompt(...args),
-  promptHistory: (...args: unknown[]) => promptHistory(...args),
 }));
 
 describe("ToolPage prompt list loading", () => {
@@ -42,6 +38,7 @@ describe("ToolPage prompt list loading", () => {
         tool="claude"
         settings={DEFAULT_SETTINGS}
         toast={{ ok: vi.fn(), err: vi.fn(), info: vi.fn(), toasts: [], dismiss: vi.fn() }}
+        onNavigate={vi.fn()}
         onRememberProject={vi.fn()}
       />,
     );
@@ -53,7 +50,7 @@ describe("ToolPage prompt list loading", () => {
     expect(screen.queryByTestId("prompt-list-loading")).not.toBeInTheDocument();
   });
 
-  it("does not expose activate or deactivate when scoped activation state is unreadable", async () => {
+  it("routes prompt selection even when scoped activation state is unreadable", async () => {
     listPrompts.mockResolvedValue({
       prompts: [
         {
@@ -79,37 +76,29 @@ describe("ToolPage prompt list loading", () => {
     doctor.mockResolvedValue({ doctor: { ok: true } });
     listOperations.mockResolvedValue({ operations: [] });
     listActivations.mockRejectedValue(new Error("activation table unavailable"));
-    getPrompt.mockResolvedValue({
-      id: "p1",
-      tool: "claude",
-      title: "Alpha",
-      content: "Body",
-      tags: [],
-      active: false,
-      lastUsedAt: null,
-      updatedAt: "2026-08-21T00:00:00Z",
-      createdAt: "2026-08-21T00:00:00Z",
-      excerpt: null,
-    });
-    promptHistory.mockResolvedValue({ versions: [] });
-
+    const onNavigate = vi.fn();
     const { ToolPage } = await import("./ToolPage");
     render(
       <ToolPage
         tool="claude"
         settings={DEFAULT_SETTINGS}
         toast={{ ok: vi.fn(), err: vi.fn(), info: vi.fn(), toasts: [], dismiss: vi.fn() }}
+        onNavigate={onNavigate}
         onRememberProject={vi.fn()}
       />,
     );
 
-    fireEvent.click(await screen.findByTestId("prompt-item-p1"));
-    expect(await screen.findByTestId("prompt-activation-unknown")).toBeInTheDocument();
-    expect(screen.queryByTestId("prompt-activate")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("prompt-deactivate")).not.toBeInTheDocument();
+    (await screen.findByTestId("prompt-item-p1")).click();
+    expect(onNavigate).toHaveBeenCalledWith({
+      kind: "prompt-view",
+      tool: "claude",
+      promptId: "p1",
+      scope: "user",
+      projectDir: "",
+    });
   });
 
-  it("clears selection when prompt detail loading fails", async () => {
+  it("routes prompt selection to a full-screen detail page", async () => {
     listPrompts.mockResolvedValue({
       prompts: [
         {
@@ -135,23 +124,25 @@ describe("ToolPage prompt list loading", () => {
     doctor.mockResolvedValue({ doctor: { ok: true } });
     listOperations.mockResolvedValue({ operations: [] });
     listActivations.mockResolvedValue({ activations: [] });
-    getPrompt.mockRejectedValue(new Error("read failed"));
-
-    const toast = { ok: vi.fn(), err: vi.fn(), info: vi.fn(), toasts: [], dismiss: vi.fn() };
+    const onNavigate = vi.fn();
     const { ToolPage } = await import("./ToolPage");
     render(
       <ToolPage
         tool="claude"
         settings={DEFAULT_SETTINGS}
-        toast={toast}
+        toast={{ ok: vi.fn(), err: vi.fn(), info: vi.fn(), toasts: [], dismiss: vi.fn() }}
+        onNavigate={onNavigate}
         onRememberProject={vi.fn()}
       />,
     );
 
-    const item = await screen.findByTestId("prompt-item-p2");
-    fireEvent.click(item);
-    await waitFor(() => expect(toast.err).toHaveBeenCalled());
-    expect(item).not.toHaveAttribute("aria-current");
-    expect(screen.getByTestId("prompt-no-selection")).toBeInTheDocument();
+    (await screen.findByTestId("prompt-item-p2")).click();
+    expect(onNavigate).toHaveBeenCalledWith({
+      kind: "prompt-view",
+      tool: "claude",
+      promptId: "p2",
+      scope: "user",
+      projectDir: "",
+    });
   });
 });

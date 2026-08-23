@@ -1,9 +1,7 @@
 {
   "app": {
     "name": "Keysmith Switch",
-    "workflow": "本机提示词工作流",
-    "preview": "Preview · 未签名",
-    "unsignedNotice": "这是 Preview 未签名构建。macOS 与 Windows 可能显示系统安全警告。这不是 Developer ID / 公证 / Authenticode 正式版。"
+    "workflow": "本机提示词工作流"
   },
   "nav": {
     "claude": "Claude Code",
@@ -149,7 +147,8 @@
     "empty": "没有历史版本",
     "version": "版本",
     "diff": "差异",
-    "noDiff": "选择两个版本查看差异"
+    "noDiff": "选择两个版本查看差异",
+    "loadFailed": "无法加载版本历史。"
   },
   "operations": {
     "title": "操作记录",
@@ -261,6 +260,9 @@
   },
   "about": {
     "title": "关于",
+    "version": "版本",
+    "repository": "仓库",
+    "license": "许可",
     "appUpdate": "应用更新",
     "currentVersion": "当前版本",
     "latestVersion": "最新版本",
@@ -295,6 +297,7 @@
     "confirmOfficial": "确认执行以上命令",
     "officialBlocked": "该产品当前不可执行",
     "cancelOfficial": "取消",
+    "cancelOfficialUnavailable": "当前没有正在执行的官方 CLI 操作。",
     "officialRunning": "已运行 {{seconds}} 秒",
     "zcodeMacOnly": "ZCode 官方工具仅 macOS 可用。",
     "layerApp": "应用",

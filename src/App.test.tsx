@@ -12,8 +12,11 @@ vi.mock("./api", () => ({
   listActivations: vi.fn().mockRejectedValue(new Error("no backend")),
   getAbout: vi.fn().mockRejectedValue(new Error("no backend")),
   checkAppUpdate: vi.fn().mockRejectedValue(new Error("no backend")),
-  getStartupReport: vi.fn().mockRejectedValue(new Error("no backend")),
+  getStartupReport: vi.fn().mockResolvedValue({ firstRun: false, candidates: [], recovery: null, sidecar: null }),
   logFrontendError: vi.fn(),
+  showMainWindow: vi.fn(),
+  hideToTray: vi.fn(),
+  quitApp: vi.fn(),
 }));
 
 describe("App smoke", () => {

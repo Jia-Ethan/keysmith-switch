@@ -37,10 +37,9 @@ describe("AppShell tool navigation", () => {
     expect(onNavigate).toHaveBeenCalledWith({ kind: "tool", tool: "zcode" });
   });
 
-  it("keeps settings on the right and hides Advanced Tools by default", () => {
+  it("shows settings and hides Advanced Tools by default", () => {
     renderShell({ kind: "tool", tool: "claude" });
     expect(screen.getByTestId("nav-settings")).toBeInTheDocument();
-    expect(screen.queryByTestId("nav-about")).not.toBeInTheDocument();
     expect(screen.queryByTestId("nav-advanced")).not.toBeInTheDocument();
   });
 

@@ -1,16 +1,24 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import type { ToolId } from "../types";
+import type { ScopeId, ToolId } from "../types";
 import { TOOL_IDS } from "../types";
 import { Button, cx } from "./ui";
 import { IconMore, IconSettings } from "./icons";
 import { ToolLogo } from "./ToolLogos";
-import { UpdateBadge } from "./UpdateProvider";
 import keysmithIcon from "../assets/keysmith-icon.png";
 
 export type AppPage =
   | { kind: "tool"; tool: ToolId }
+  | { kind: "prompt-view"; tool: ToolId; promptId: string; scope: ScopeId; projectDir: string }
+  | {
+      kind: "prompt-edit";
+      tool: ToolId;
+      promptId?: string;
+      creating: boolean;
+      scope: ScopeId;
+      projectDir: string;
+    }
   | { kind: "settings"; tab?: string }
   | { kind: "advanced" };
 
@@ -168,7 +176,6 @@ export function AppShell({
         </div>
 
         <div className="flex shrink-0 items-center gap-1">
-          <UpdateBadge onOpen={() => onNavigate({ kind: "settings", tab: "about" })} />
           {advancedEnabled ? (
             <Button
               size="sm"

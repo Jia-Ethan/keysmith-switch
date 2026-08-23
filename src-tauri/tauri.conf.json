@@ -13,10 +13,10 @@
     "windows": [
       {
         "label": "main",
-        "title": "Keysmith Switch Preview",
+        "title": "Keysmith Switch",
         "width": 1180,
         "height": 760,
-        "minWidth": 960,
+        "minWidth": 520,
         "minHeight": 620,
         "visible": false,
         "center": true

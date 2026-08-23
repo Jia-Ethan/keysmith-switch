@@ -16,12 +16,14 @@ export function FullScreenPanel({
   onClose,
   children,
   footer,
+  closeDisabled = false,
 }: {
   isOpen: boolean;
   title: string;
   onClose: () => void;
   children: ReactNode;
   footer?: ReactNode;
+  closeDisabled?: boolean;
 }) {
   const { t } = useTranslation();
   const closeRef = useRef(onClose);
@@ -55,6 +57,7 @@ export function FullScreenPanel({
         return;
       }
       if (event.key !== "Escape") return;
+      if (closeDisabled) return;
       const target = event.target as HTMLElement | null;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) {
         return;
@@ -71,14 +74,14 @@ export function FullScreenPanel({
       window.removeEventListener("keydown", onKey);
       previousFocusRef.current?.focus();
     };
-  }, [isOpen]);
+  }, [closeDisabled, isOpen]);
 
   if (!isOpen || typeof document === "undefined") return null;
 
   return createPortal(
     <div
       ref={panelRef}
-      className="fixed inset-0 z-[60] flex flex-col bg-background"
+      className="animate-panel-in fixed inset-0 z-[60] flex flex-col bg-background"
       role="dialog"
       aria-modal="true"
       aria-label={title}
@@ -92,6 +95,7 @@ export function FullScreenPanel({
           size="icon"
           aria-label={t("common.back")}
           data-testid="fullscreen-back"
+          disabled={closeDisabled}
           onClick={onClose}
           className="h-9 w-9"
         >

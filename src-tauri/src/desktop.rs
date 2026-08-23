@@ -1,6 +1,6 @@
 //! Tray, close-to-tray, and window focus helpers.
 //!
-//! Menu is intentionally small: show main window, check for updates, quit.
+//! Menu is intentionally small: show main window and quit.
 //! Provider/MCP/usage tray items from CC Switch are not carried over.
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
@@ -15,13 +15,10 @@ pub fn create_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let menu = tray_menu(app)?;
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
-        .tooltip("Keysmith Switch Preview")
+        .tooltip("Keysmith Switch")
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "show_main" => show_main(app),
-            "check_update" => {
-                let _ = app.emit("menu-check-update", ());
-            }
             "quit" => request_quit(app),
             _ => {}
         })
@@ -44,12 +41,8 @@ pub fn create_tray<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
 
 fn tray_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let show = MenuItem::with_id(app, "show_main", "显示主窗口", true, None::<&str>)?;
-    let check = MenuItem::with_id(app, "check_update", "检查更新", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "退出 Keysmith Switch", true, None::<&str>)?;
-    Menu::with_items(
-        app,
-        &[&show, &check, &PredefinedMenuItem::separator(app)?, &quit],
-    )
+    Menu::with_items(app, &[&show, &PredefinedMenuItem::separator(app)?, &quit])
 }
 
 pub fn show_main<R: Runtime>(app: &AppHandle<R>) {

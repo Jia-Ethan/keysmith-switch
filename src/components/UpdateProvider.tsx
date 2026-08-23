@@ -34,10 +34,6 @@ export function useUpdate() {
   return value;
 }
 
-export function useUpdateOptional() {
-  return useContext(UpdateContext);
-}
-
 export function UpdateProvider({
   channel,
   autoCheck,
@@ -106,15 +102,9 @@ export function UpdateProvider({
   useEffect(() => {
     if (!isTauriRuntime()) return;
     let cancelled = false;
-    let unlistenMenu: (() => void) | undefined;
     let unlistenProgress: (() => void) | undefined;
     void import("@tauri-apps/api/event").then(({ listen }) => {
       if (cancelled) return;
-      void listen("menu-check-update", () => {
-        void check();
-      }).then((fn) => {
-        unlistenMenu = fn;
-      });
       void listen<{ downloaded?: number; total?: number; phase?: string }>("update-progress", (event) => {
         const { downloaded, total, phase } = event.payload ?? {};
         if (typeof downloaded === "number" && typeof total === "number" && total > 0) {
@@ -128,10 +118,9 @@ export function UpdateProvider({
     });
     return () => {
       cancelled = true;
-      unlistenMenu?.();
       unlistenProgress?.();
     };
-  }, [check]);
+  }, []);
 
   const value = useMemo<UpdateContextValue>(
     () => ({ update, checking, installing, progress, error, check, install }),
@@ -139,19 +128,4 @@ export function UpdateProvider({
   );
 
   return <UpdateContext.Provider value={value}>{children}</UpdateContext.Provider>;
-}
-
-export function UpdateBadge({ onOpen }: { onOpen: () => void }) {
-  const ctx = useUpdateOptional();
-  if (!ctx?.update?.available) return null;
-  return (
-    <button
-      type="button"
-      data-testid="update-badge"
-      onClick={onOpen}
-      className="inline-flex h-7 items-center rounded-full bg-primary px-2.5 text-xs font-medium text-primary-foreground"
-    >
-      {ctx.update.latestVersion ?? "Update"}
-    </button>
-  );
 }

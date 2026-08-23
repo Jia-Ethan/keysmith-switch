@@ -4,41 +4,43 @@
 
 @layer base {
   :root {
-    /* Keysmith warm paper light theme */
-    --background: 38 35% 97%;
-    --foreground: 30 8% 18%;
-    --card: 0 0% 100%;
-    --card-foreground: 30 8% 18%;
-    --muted: 38 20% 92%;
-    --muted-foreground: 30 6% 48%;
-    --primary: 35 65% 52%;
-    --primary-foreground: 30 8% 18%;
-    --accent: 38 20% 92%;
-    --accent-foreground: 30 8% 18%;
-    --border: 38 15% 88%;
-    --input: 38 15% 88%;
-    --ring: 30 68% 38%;
-    --destructive: 0 72% 51%;
+    /* Warm precision theme: warm gray background, graphite text, restrained copper-orange accent */
+    --background: 40 18% 96%;
+    --foreground: 30 6% 22%;
+    --card: 40 22% 98%;
+    --card-foreground: 30 6% 22%;
+    --muted: 40 14% 90%;
+    --muted-foreground: 30 4% 46%;
+    --primary: 28 62% 48%;
+    --primary-foreground: 0 0% 100%;
+    --accent: 40 14% 90%;
+    --accent-foreground: 30 6% 22%;
+    --border: 40 12% 86%;
+    --input: 40 12% 86%;
+    --ring: 28 62% 48%;
+    --destructive: 0 68% 52%;
     --destructive-foreground: 0 0% 100%;
+    --shadow: 30 10% 8%;
   }
 
   .dark {
-    /* Keysmith charcoal dark theme */
-    --background: 210 8% 14%;
-    --foreground: 0 0% 96%;
-    --card: 210 8% 18%;
-    --card-foreground: 0 0% 96%;
-    --muted: 210 8% 24%;
-    --muted-foreground: 210 6% 64%;
-    --primary: 35 58% 58%;
-    --primary-foreground: 210 8% 14%;
-    --accent: 210 8% 24%;
-    --accent-foreground: 0 0% 96%;
-    --border: 210 8% 28%;
-    --input: 210 8% 28%;
-    --ring: 35 58% 58%;
+    /* Charcoal dark theme */
+    --background: 220 8% 14%;
+    --foreground: 30 4% 94%;
+    --card: 220 8% 18%;
+    --card-foreground: 30 4% 94%;
+    --muted: 220 8% 24%;
+    --muted-foreground: 220 4% 62%;
+    --primary: 28 58% 54%;
+    --primary-foreground: 220 8% 14%;
+    --accent: 220 8% 24%;
+    --accent-foreground: 30 4% 94%;
+    --border: 220 8% 28%;
+    --input: 220 8% 28%;
+    --ring: 28 58% 54%;
     --destructive: 0 62% 48%;
-    --destructive-foreground: 0 0% 96%;
+    --destructive-foreground: 30 4% 94%;
+    --shadow: 220 12% 6%;
   }
 }
 
@@ -63,8 +65,8 @@ html.dark {
 .keysmith-surface {
   background-color: hsl(var(--background));
   background-image:
-    radial-gradient(circle at 12% 4%, hsl(var(--primary) / 0.07), transparent 28rem),
-    linear-gradient(180deg, hsl(var(--card) / 0.24), transparent 12rem);
+    radial-gradient(circle at 14% 6%, hsl(var(--primary) / 0.05), transparent 32rem),
+    linear-gradient(180deg, hsl(var(--card) / 0.18), transparent 14rem);
 }
 
 * {
@@ -73,7 +75,7 @@ html.dark {
 }
 
 ::selection {
-  background: hsl(var(--primary) / 0.25);
+  background: hsl(var(--primary) / 0.22);
 }
 
 button:disabled,
@@ -84,6 +86,65 @@ select:disabled {
   opacity: 0.5;
 }
 
+/* Motion system: page transitions, dialogs, panels, disclosures */
+@keyframes page-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dialog-scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes panel-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes disclosure-expand {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 800px;
+  }
+}
+
+.animate-page-in {
+  animation: page-fade-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.animate-dialog-in {
+  animation: dialog-scale-in 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.animate-panel-in {
+  animation: panel-slide-in 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.animate-disclosure {
+  animation: disclosure-expand 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -92,5 +153,12 @@ select:disabled {
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
+  }
+
+  .animate-page-in,
+  .animate-dialog-in,
+  .animate-panel-in,
+  .animate-disclosure {
+    animation: none !important;
   }
 }

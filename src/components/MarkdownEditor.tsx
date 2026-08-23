@@ -20,6 +20,7 @@ export function MarkdownEditor({
   readOnly = false,
   minHeight = "360px",
   className = "",
+  ariaLabel,
 }: {
   value: string;
   onChange?: (value: string) => void;
@@ -28,6 +29,7 @@ export function MarkdownEditor({
   readOnly?: boolean;
   minHeight?: string;
   className?: string;
+  ariaLabel?: string;
 }) {
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -58,6 +60,9 @@ export function MarkdownEditor({
       EditorView.lineWrapping,
       EditorState.readOnly.of(readOnly),
     ];
+    if (ariaLabel) {
+      extensions.push(EditorView.contentAttributes.of({ "aria-label": ariaLabel }));
+    }
     if (!readOnly) {
       extensions.push(
         placeholderExt(placeholder),
@@ -95,7 +100,7 @@ export function MarkdownEditor({
       view.destroy();
       viewRef.current = null;
     };
-  }, [darkMode, readOnly, minHeight, placeholder]);
+  }, [ariaLabel, darkMode, readOnly, minHeight, placeholder]);
 
   useEffect(() => {
     const view = viewRef.current;
