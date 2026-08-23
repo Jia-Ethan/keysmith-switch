@@ -1,4 +1,4 @@
-; Keysmith Switch NSIS hooks (Preview, unsigned).
+; Keysmith Switch NSIS hooks.
 ; Refuse installing an older version over a newer one. User data in
 ; %USERPROFILE%\.keysmith-switch is never deleted on uninstall.
 

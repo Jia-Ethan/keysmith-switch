@@ -38,7 +38,7 @@
 | `src-tauri/src/tray.rs` | `src-tauri/src/desktop.rs` | 精简菜单：显示主窗口 / 检查更新 / 退出 |
 | `src-tauri/src/auto_launch.rs` | `src-tauri/src/auto_launch.rs` | **MIT 改编**：应用名改为 Keysmith Switch |
 | `.github/workflows/ci.yml` `release.yml` | `.github/workflows/` | 本地模板，不触发远程、不配置 Secrets |
-| DMG 背景、Applications 拖放、NSIS currentUser、WebView2、多尺寸 ICO | `src-tauri/tauri.*.conf.json` + `scripts/` | 发布结构；Preview 未签名 |
+| DMG 背景、Applications 拖放、NSIS currentUser、WebView2、多尺寸 ICO | `src-tauri/tauri.*.conf.json` + `scripts/` | 发布结构与跨平台安装体验 |
 
 ## MIT 改编文件（保留版权声明）
 
@@ -58,6 +58,6 @@
 - CC Switch 的一键安装命令表（含 Hermes/Pi/OpenCode 等）
 - 其生产 updater 公钥与发布域名
 
-## Preview 未签名
+## 发布边界
 
-首发允许系统安全警告。界面、文档和产物标注 **Preview / 未签名**，不得写成 Developer ID、公证或 Authenticode。
+用户界面不展示 Preview 或平台签名说明。发布与开发文档只记录实际构建、更新验证和兼容性边界，不把 updater minisign 描述成平台代码签名。

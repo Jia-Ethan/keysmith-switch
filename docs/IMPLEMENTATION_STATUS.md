@@ -2,7 +2,7 @@
 
 更新日期：2026-08-24（Asia/Shanghai）
 
-阶段：**`v0.1.3` updater bootstrap 发布中。`v0.1.2` 的已删除 immutable Release 占用了 Tag 名，因此未作为可用版本发布。**
+阶段：**`v0.1.3` updater bootstrap 已发布。`v0.1.2` 的已删除 immutable Release 占用了 Tag 名，因此未作为可用版本发布。**
 
 工作区：`/Users/ethan/Documents/Codex/2026-08-19/ccswitch-keysmithswith-jia-github`
 
@@ -37,7 +37,7 @@
 
 ## 当前验证
 
-`cdad6b69e9e4d697e9b6b49c921809421cf41e7e` 已推送至 `main`，CI run [32629636009](https://github.com/Jia-Ethan/keysmith-switch/actions/runs/32629636009) 的 frontend、rust、sidecar-macos 和 sidecar-windows 均通过。
+发布源码 commit `0ade54c2f0c36dd21624a808d14392055ec3b03b` 已推送至 `main`。CI run [32650939449](https://github.com/Jia-Ethan/keysmith-switch/actions/runs/32650939449) 的 frontend、rust、sidecar-macos 和 sidecar-windows 均通过。
 
 `v0.1.3` 发布准备的本地验证：
 
@@ -54,23 +54,15 @@
 | `actionlint .github/workflows/*.yml` | 通过 |
 | `git diff --check` | 通过 |
 
-公开 updater 仓库的 `publish.yml` 同时通过 `actionlint`、YAML 解析和 `git diff --check`。这些结果覆盖源码与 workflow 静态门槛；平台候选构建和 updater 签名仍需在创建 `v0.1.3` tag 后由 release workflow 验证。
+GitHub-verified annotated tag `v0.1.3` 指向发布源码 commit。source release run [32651146623](https://github.com/Jia-Ethan/keysmith-switch/actions/runs/32651146623) 和 public publish run [32652433093](https://github.com/Jia-Ethan/keysmith-switch-releases/actions/runs/32652433093) 均成功。公开 Release 为 stable、Latest、immutable；八个资产、SHA-256、provenance、feed 和两个 updater payload URL 已重新下载验证。
 
-## 发布前剩余门槛
+## 发布后剩余验收
 
-- `v0.1.3` 源码和 workflow 变更进入 `main`，远端 CI 全绿。
-- 创建 GitHub-verified annotated tag `v0.1.3`。
-- `release` workflow 成功生成唯一 macOS/Windows updater 候选、签名、metadata 和 provenance。
-- macOS app、DMG 与 updater archive 内 app 通过 sidecar runtime smoke 和 ad-hoc 验证。
-- Windows runner 验证 NSIS 为 `NotSigned`、updater minisign 有效、生产公钥已编译进主程序。
 - Windows x64 实体机完成 `v0.1.3` 手动安装、启动和卸载验收。
-- 公开 publish workflow 经 `production` 审批发布，外部重新下载并复核所有 SHA-256 与 manifest。
 - 发布后手动安装 `v0.1.3` 验证 bootstrap；应用内升级验收留到 `v0.1.4` 候选。
 
 ## 明确未做
 
-- 尚未创建或推送 `v0.1.3` tag。
-- 尚未触发 `v0.1.3` release workflow 或公开 publish workflow。
-- 尚未批准 production environment 或创建公开 updater Release。
 - 尚未替换 `/Applications/Keysmith Switch.app`。
 - 尚未完成 Windows 实体机验收。
+- 尚未验证 `v0.1.3 → v0.1.4` 的真实应用内升级。

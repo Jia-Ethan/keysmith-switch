@@ -10,24 +10,24 @@
 
 ## 状态
 
-下一版本 `0.1.3` 正在准备发布。它是生产 updater 公钥的 bootstrap 版本：现有 `0.1.1` 用户需要手动安装一次 `0.1.3`，后续版本才能通过应用内更新。
+稳定版 `v0.1.3` 已发布。它是生产 updater 公钥的 bootstrap 版本：现有 `v0.1.1` 用户需要手动安装一次 `v0.1.3`，后续版本才能通过应用内更新。
 
-公开 updater 仓库 [`Jia-Ethan/keysmith-switch-releases`](https://github.com/Jia-Ethan/keysmith-switch-releases)、生产 updater Secrets、来源验证与受保护发布环境已经配置。公开 feed 在 `v0.1.3` 正式发布前仍返回 404。
+公开 updater 仓库 [`Jia-Ethan/keysmith-switch-releases`](https://github.com/Jia-Ethan/keysmith-switch-releases)、来源验证、生产 updater 签名与受保护发布环境已经启用。
 
 详见 [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md) 与 [`docs/RELEASE_GATES.md`](docs/RELEASE_GATES.md)。
 
 ## 下载
 
-当前公开可下载版本仍为 [`v0.1.1` Pre-release](https://github.com/Jia-Ethan/keysmith-switch/releases/tag/v0.1.1)：
+当前稳定版：[`v0.1.3`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.1.3)
 
-- macOS Apple Silicon：`Keysmith.Switch_0.1.1_aarch64.dmg`
-- Windows x64：`Keysmith.Switch_0.1.1_x64-setup.exe`
+- macOS Apple Silicon：`Keysmith.Switch_0.1.3_aarch64.dmg`
+- Windows x64：`Keysmith.Switch_0.1.3_x64-setup.exe`
 
-`v0.1.3` 发布后需要手动下载安装以完成 updater bootstrap。macOS 和 Windows 安装包不使用平台发行签名，系统可能显示安全警告。
+`v0.1.1` 用户需要手动下载安装本版本以完成 updater bootstrap。
 
 ## 开发
 
-开发需要 Node 20+、Rust 1.85+。打包 sidecar 需要 Python 3.9+ 与 PyInstaller。用户安装 Preview 包不需要 Python。
+开发需要 Node 20+、Rust 1.85+。打包 sidecar 需要 Python 3.9+ 与 PyInstaller。用户安装应用不需要 Python。
 
 ```bash
 npm install
@@ -42,13 +42,13 @@ cd src-tauri && cargo fmt --check && cargo check && cargo test
 npx tauri dev
 ```
 
-macOS Apple Silicon 本地无平台签名构建（不生成 updater artifact）：
+macOS Apple Silicon 本地开发构建（不生成 updater artifact）：
 
 ```bash
 npx tauri build --target aarch64-apple-darwin --config src-tauri/tauri.preview.macos.conf.json
 ```
 
-GitHub Actions 的 `preview-release` 工作流只用于本地候选验证，不生成 updater artifacts。`release` workflow 从 GitHub-verified tag 构建 macOS/Windows updater payload，使用 minisign 签名并交给公开仓库复核发布；它不执行 Apple 或 Windows 平台代码签名。
+GitHub Actions 的 `development-candidate` 工作流只用于开发候选验证，不生成 updater artifacts。`release` workflow 从 GitHub-verified tag 构建 macOS/Windows updater payload，使用 minisign 签名并交给公开仓库复核发布。
 
 ## 数据位置
 

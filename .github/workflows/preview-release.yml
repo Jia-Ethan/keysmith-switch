@@ -1,12 +1,12 @@
-# Unsigned Preview packaging only. This uploads Actions artifacts but never publishes a Release.
-name: preview-release
+# Development candidate packaging only. This uploads Actions artifacts but never publishes a Release.
+name: development-candidate
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: Preview version; must match the source version
-        default: 0.1.2
+        description: Candidate version; must match the source version
+        default: 0.1.3
         required: true
         type: string
 
@@ -32,7 +32,7 @@ jobs:
       - name: Require the default branch
         if: github.ref != 'refs/heads/main'
         run: |
-          echo "Unsigned Preview candidates must be built from main." >&2
+          echo "Development candidates must be built from main." >&2
           exit 1
       - name: Verify version consistency
         env:
@@ -62,9 +62,9 @@ jobs:
         with:
           python-version: "3.12"
       - run: npm ci
-      - name: Build unsigned macOS Preview
+      - name: Build macOS development candidate
         run: npx tauri build --target aarch64-apple-darwin --config src-tauri/tauri.preview.macos.conf.json
-      - name: Verify macOS Preview and checksums
+      - name: Verify macOS development candidate and checksums
         shell: bash
         run: |
           set -euo pipefail
@@ -76,7 +76,7 @@ jobs:
           shasum -a 256 "${dmgs[0]}" > src-tauri/target/aarch64-apple-darwin/release/bundle/SHA256SUMS-macos-aarch64.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: keysmith-switch-${{ inputs.version }}-unsigned-preview-macos-aarch64
+          name: keysmith-switch-${{ inputs.version }}-development-candidate-macos-aarch64
           if-no-files-found: error
           path: |
             src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
@@ -96,20 +96,20 @@ jobs:
         with:
           python-version: "3.12"
       - run: npm ci
-      - name: Build unsigned Windows Preview
+      - name: Build Windows development candidate
         run: npx tauri build --target x86_64-pc-windows-msvc --config src-tauri/tauri.preview.windows.conf.json
-      - name: Verify Windows Preview and checksums
+      - name: Verify Windows development candidate and checksums
         shell: pwsh
         run: |
           $setups = @(Get-ChildItem "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe")
           if ($setups.Count -ne 1) { throw "Expected exactly one NSIS Setup.exe, found $($setups.Count)" }
           $signature = Get-AuthenticodeSignature -LiteralPath $setups[0].FullName
-          if ($signature.Status -eq "Valid") { throw "Unsigned Preview unexpectedly has a production Authenticode signature." }
+          if ($signature.Status -eq "Valid") { throw "Development candidate unexpectedly has an Authenticode signature." }
           $hash = Get-FileHash $setups[0].FullName -Algorithm SHA256
           "$($hash.Hash.ToLower())  $($setups[0].Name)" | Set-Content "src-tauri/target/x86_64-pc-windows-msvc/release/bundle/SHA256SUMS-windows-x86_64.txt" -Encoding ascii
       - uses: actions/upload-artifact@v4
         with:
-          name: keysmith-switch-${{ inputs.version }}-unsigned-preview-windows-x86_64
+          name: keysmith-switch-${{ inputs.version }}-development-candidate-windows-x86_64
           if-no-files-found: error
           path: |
             src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
