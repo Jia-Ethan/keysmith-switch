@@ -1,8 +1,8 @@
 # Keysmith Switch 发布门槛
 
-本文件记录 `v0.1.2` 及后续版本的发布边界。应用安装包不使用 Apple Developer ID、公证或 Windows Authenticode；应用内更新仍使用独立生产密钥签名并在客户端安装前验证。
+本文件记录 `v0.1.3` 及后续版本的发布边界。应用安装包不使用 Apple Developer ID、公证或 Windows Authenticode；应用内更新仍使用独立生产密钥签名并在客户端安装前验证。
 
-应用版本：`0.1.2`
+应用版本：`0.1.3`
 
 identifier：`com.jia-ethan.keysmith-switch`
 
@@ -14,13 +14,13 @@ identifier：`com.jia-ethan.keysmith-switch`
 | Windows x64 | NSIS `currentUser` `.exe` | 无 Authenticode；构建 runner 验证状态为 `NotSigned`，并产出 updater `.sig` |
 | Linux、Intel Mac、Windows ARM64 | 不发布 | 客户端显示 unsupported，不执行安装 |
 
-## v0.1.2 bootstrap 边界
+## v0.1.3 bootstrap 边界
 
-- 已公开的 `v0.1.1` 安装包内置 TEST ONLY updater 公钥，不能验证生产 updater 私钥签出的 `v0.1.2`。
-- `v0.1.2` 必须手动下载安装，不能宣称可从 `v0.1.1` 直接应用内升级。
-- `v0.1.2` 构建必须同时把 `TAURI_UPDATER_PUBLIC_KEY` 写入 Tauri updater config，并通过 `KEYSMITH_SWITCH_UPDATER_PUBKEY` 编译进 Rust 自定义检查逻辑。
+- 已公开的 `v0.1.1` 安装包内置 TEST ONLY updater 公钥，不能验证生产 updater 私钥签出的 `v0.1.3`。
+- `v0.1.3` 必须手动下载安装，不能宣称可从 `v0.1.1` 直接应用内升级。
+- `v0.1.3` 构建必须同时把 `TAURI_UPDATER_PUBLIC_KEY` 写入 Tauri updater config，并通过 `KEYSMITH_SWITCH_UPDATER_PUBKEY` 编译进 Rust 自定义检查逻辑。
 - 构建前必须验证 Tauri release config 使用生产 updater 公钥，并通过 Rust 编译环境注入；Windows 构建后继续扫描最终 PE，macOS 通过生产公钥验签 updater payload 和三份 bundle smoke 验证发布闭环；不得使用仓库 fixture 私钥签生产产物。
-- 可靠的应用内更新承诺从 `v0.1.2 → v0.1.3` 开始。
+- 可靠的应用内更新承诺从 `v0.1.3 → v0.1.4` 开始。
 
 ## updater 签名门槛
 
@@ -45,7 +45,7 @@ identifier：`com.jia-ethan.keysmith-switch`
 - `Get-AuthenticodeSignature` 必须返回 `NotSigned`；如果意外出现其他状态，workflow 失败。
 - updater 公钥必须能验证 NSIS payload；Tauri plugin 和 Rust 自定义检查逻辑必须使用同一生产公钥，最终主程序必须包含该公钥。
 - 首次公开发布前仍需在 Windows x64 实体机验证手动安装、启动和卸载。
-- 在承诺 `v0.1.2 → v0.1.3` 自动更新前，必须验证应用内下载、SmartScreen/系统拦截行为、安装、重启和失败保留现版。
+- 在承诺 `v0.1.3 → v0.1.4` 自动更新前，必须验证应用内下载、SmartScreen/系统拦截行为、安装、重启和失败保留现版。
 
 ## 发布仓库与渠道
 
@@ -67,11 +67,11 @@ identifier：`com.jia-ethan.keysmith-switch`
 ## 发布顺序
 
 1. 版本、发布说明和 workflow 进入 `main`，CI 全部通过。
-2. 创建 GitHub-verified annotated tag `v0.1.2`。
-3. 手动触发私有源仓库 `release` workflow，参数为 `source_tag=v0.1.2`、`channel=stable`。
+2. 创建 GitHub-verified annotated tag `v0.1.3`。
+3. 手动触发源仓库 `release` workflow，参数为 `source_tag=v0.1.3`、`channel=stable`。
 4. 独立下载并验证 source candidate artifact、provenance、payload、签名和 SHA-256。
 5. 手动触发公开仓库 publish workflow，经 `production` 审批后发布。
 6. 从公开 Release 重新下载全部资产，复核 SHA-256、`latest.json` 和可公开访问性。
-7. 手动安装 `v0.1.2` 完成 bootstrap 验收；不从 `v0.1.1` 测试自动更新。
+7. 手动安装 `v0.1.3` 完成 bootstrap 验收；不从 `v0.1.1` 测试自动更新。
 
 创建 tag、触发 workflow、批准 production 或创建公开 Release 均属于外部发布动作，需要当次明确确认。

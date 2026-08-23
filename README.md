@@ -10,9 +10,9 @@
 
 ## 状态
 
-下一版本 `0.1.2` 正在准备发布。它是生产 updater 公钥的 bootstrap 版本：现有 `0.1.1` 用户需要手动安装一次 `0.1.2`，后续版本才能通过应用内更新。
+下一版本 `0.1.3` 正在准备发布。它是生产 updater 公钥的 bootstrap 版本：现有 `0.1.1` 用户需要手动安装一次 `0.1.3`，后续版本才能通过应用内更新。
 
-公开 updater 仓库 [`Jia-Ethan/keysmith-switch-releases`](https://github.com/Jia-Ethan/keysmith-switch-releases)、生产 updater Secrets、来源验证与受保护发布环境已经配置。公开 feed 在 `v0.1.2` 正式发布前仍返回 404。
+公开 updater 仓库 [`Jia-Ethan/keysmith-switch-releases`](https://github.com/Jia-Ethan/keysmith-switch-releases)、生产 updater Secrets、来源验证与受保护发布环境已经配置。公开 feed 在 `v0.1.3` 正式发布前仍返回 404。
 
 详见 [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md) 与 [`docs/RELEASE_GATES.md`](docs/RELEASE_GATES.md)。
 
@@ -23,7 +23,7 @@
 - macOS Apple Silicon：`Keysmith.Switch_0.1.1_aarch64.dmg`
 - Windows x64：`Keysmith.Switch_0.1.1_x64-setup.exe`
 
-`v0.1.2` 发布后需要手动下载安装以完成 updater bootstrap。macOS 和 Windows 安装包不使用平台发行签名，系统可能显示安全警告。
+`v0.1.3` 发布后需要手动下载安装以完成 updater bootstrap。macOS 和 Windows 安装包不使用平台发行签名，系统可能显示安全警告。
 
 ## 开发
 

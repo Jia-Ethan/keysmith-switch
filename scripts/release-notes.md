@@ -1,4 +1,4 @@
-# Keysmith Switch v0.1.2
+# Keysmith Switch v0.1.3
 
 - 恢复“检查更新”和“更新并重启”。
 - 优化提示词编辑和设置页面。

@@ -22,7 +22,7 @@ mod minisign_verify;
 
 use minisign_verify::{PublicKey, Signature};
 
-pub const APP_VERSION: &str = "0.1.2";
+pub const APP_VERSION: &str = "0.1.3";
 pub const RELEASE_PAGE: &str = "https://github.com/Jia-Ethan/keysmith-switch-releases/releases";
 pub const STABLE_ENDPOINT: &str =
     "https://github.com/Jia-Ethan/keysmith-switch-releases/releases/latest/download/latest.json";

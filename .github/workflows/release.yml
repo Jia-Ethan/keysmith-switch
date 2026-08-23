@@ -320,9 +320,14 @@ jobs:
           mapfile -t downloaded_files < <(find downloads -type f -print)
           [[ ${#downloaded_files[@]} -eq 5 ]] || { echo "Expected five platform candidate files, found ${#downloaded_files[@]}" >&2; exit 1; }
           mkdir candidate
-          cp "${dmgs[0]}" "${macs[0]}" "${macs[0]}.sig" "${wins[0]}" "${wins[0]}.sig" candidate/
-          mac="candidate/$(basename "${macs[0]}")"
-          win="candidate/$(basename "${wins[0]}")"
+          dmg="candidate/Keysmith.Switch_${version}_aarch64.dmg"
+          mac="candidate/Keysmith.Switch.app.tar.gz"
+          win="candidate/Keysmith.Switch_${version}_x64-setup.exe"
+          cp "${dmgs[0]}" "$dmg"
+          cp "${macs[0]}" "$mac"
+          cp "${macs[0]}.sig" "$mac.sig"
+          cp "${wins[0]}" "$win"
+          cp "${wins[0]}.sig" "$win.sig"
           tag="v$version"
           if [[ "$CHANNEL" == beta && "$version" != *-* ]]; then
             echo "Beta releases require a prerelease source version." >&2
