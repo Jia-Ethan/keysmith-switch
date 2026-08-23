@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import * as api from "../api";
 import { ErrorBanner } from "../components/ErrorBanner";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { IconAlert, IconExternal, IconMonitor, IconMoon, IconSun, IconTrash } from "../components/icons";
+import { useUpdateOptional } from "../components/UpdateProvider";
+import { IconAlert, IconDownload, IconExternal, IconMonitor, IconMoon, IconRefresh, IconSun, IconTrash } from "../components/icons";
 import { ToolLogo } from "../components/ToolLogos";
 import {
   Button,
@@ -20,7 +21,7 @@ import {
 } from "../components/ui";
 import { useTheme, type ThemeMode } from "../hooks/useTheme";
 import type { ToastApi } from "../hooks/useToasts";
-import { formatArgv } from "../lib/format";
+import { formatArgv, formatBytes } from "../lib/format";
 import { toastSafeMessage } from "../lib/redact";
 import { isTauriRuntime, openExternal, pickFiles, pickSavePath } from "../lib/runtime";
 import type {
@@ -62,6 +63,7 @@ export function SettingsPage({
 
   const { t } = useTranslation();
   const { theme, setTheme } = useTheme();
+  const updater = useUpdateOptional();
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<TabId>("general");
   const [about, setAbout] = useState<AboutInfo | null>(null);
@@ -72,6 +74,8 @@ export function SettingsPage({
   const [officialBusy, setOfficialBusy] = useState(false);
   const [cancelPending, setCancelPending] = useState(false);
   const [officialElapsed, setOfficialElapsed] = useState(0);
+  const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
+  const updateInstallPending = useRef(false);
   const [dirs, setDirs] = useState<DataDirs | null>(null);
   const [backups, setBackups] = useState<BackupEntry[]>([]);
   const [backupsLoading, setBackupsLoading] = useState(true);
@@ -89,6 +93,10 @@ export function SettingsPage({
   useEffect(() => {
     if (TABS.includes(initialTab as TabId)) setTab(initialTab as TabId);
   }, [initialTab]);
+
+  useEffect(() => {
+    setUpdateDialogOpen(false);
+  }, [updater?.update?.latestVersion]);
 
   const loadTools = useCallback(async () => {
     setToolsLoading(true);
@@ -187,6 +195,22 @@ export function SettingsPage({
       toast.err(err);
     } finally {
       setCancelPending(false);
+    }
+  };
+
+  const installUpdate = async () => {
+    if (!updater?.update?.available || updater.installing || updateInstallPending.current) return;
+    updateInstallPending.current = true;
+    try {
+      const result = await updater.install();
+      if (!result?.ok) {
+        toast.err(result?.error || t("about.updateFailed"));
+        return;
+      }
+      setUpdateDialogOpen(false);
+      toast.ok(t("common.success"));
+    } finally {
+      updateInstallPending.current = false;
     }
   };
 
@@ -653,40 +677,155 @@ export function SettingsPage({
         ) : null}
 
         {tab === "about" ? (
-          <div className="p-4">
-            <div className="space-y-3">
-              <div>
-                <SectionLabel>{t("about.version")}</SectionLabel>
-                <Mono className="mt-1 text-sm">{about?.app.version ?? "—"}</Mono>
-              </div>
-              <div>
-                <SectionLabel>{t("about.repository")}</SectionLabel>
+          <div>
+            <section className="border-b border-border p-4 sm:p-5" data-testid="update-section">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <SectionLabel>{t("about.appUpdate")}</SectionLabel>
+                  <p className="mt-1 text-sm text-foreground">
+                    {updater?.update?.available
+                      ? `${updater.update.currentVersion} → ${updater.update.latestVersion ?? "—"}`
+                      : updater?.update?.currentVersion ?? about?.app.version ?? "—"}
+                  </p>
+                </div>
                 <Button
                   size="sm"
-                  variant="ghost"
-                  className="mt-1"
-                  onClick={() => void openExternal(PROJECT_REPO)}
+                  variant="outline"
+                  data-testid="check-update"
+                  disabled={!updater || updater.checking || updater.installing}
+                  onClick={() => void updater?.check()}
                 >
-                  <IconExternal />
-                  GitHub
+                  <IconRefresh />
+                  {updater?.checking ? t("about.checking") : t("about.checkUpdate")}
                 </Button>
               </div>
-              <div>
-                <SectionLabel>{t("about.license")}</SectionLabel>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="mt-1"
-                  onClick={() => void openExternal(LICENSE_URL)}
-                >
-                  <IconExternal />
-                  MIT License
-                </Button>
+
+              {updater?.error ? (
+                <div className="mt-3">
+                  <ErrorBanner
+                    message={updater.error}
+                    onRetry={() => void updater.check()}
+                    retryLabel={t("common.retry")}
+                  />
+                </div>
+              ) : null}
+
+              {!updater?.error && updater?.update && !updater.update.available ? (
+                <p className="mt-3 text-sm text-primary">
+                  {updater.update.currentVersion} · {t("about.upToDate")}
+                </p>
+              ) : null}
+
+              {!updater?.error && updater?.update?.available ? (
+                <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-border pt-3">
+                  <p className="text-sm font-medium text-primary">
+                    {t("about.updateAvailable")}
+                    {updater.update.size == null ? "" : ` · ${formatBytes(updater.update.size)}`}
+                  </p>
+                  <div className="ml-auto">
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      data-testid="install-update"
+                      disabled={updater.installing}
+                      onClick={() => setUpdateDialogOpen(true)}
+                    >
+                      <IconDownload />
+                      {t("about.installAndRestart")}
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </section>
+
+            <div className="p-4 sm:p-5">
+              <div className="space-y-3">
+                <div>
+                  <SectionLabel>{t("about.version")}</SectionLabel>
+                  <Mono className="mt-1 text-sm">{about?.app.version ?? "—"}</Mono>
+                </div>
+                <div>
+                  <SectionLabel>{t("about.repository")}</SectionLabel>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="mt-1"
+                    onClick={() => void openExternal(PROJECT_REPO)}
+                  >
+                    <IconExternal />
+                    GitHub
+                  </Button>
+                </div>
+                <div>
+                  <SectionLabel>{t("about.license")}</SectionLabel>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="mt-1"
+                    onClick={() => void openExternal(LICENSE_URL)}
+                  >
+                    <IconExternal />
+                    MIT License
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
         ) : null}
       </div>
+
+      <ConfirmDialog
+        open={updateDialogOpen && Boolean(updater?.update?.available)}
+        title={t("about.installAndRestart")}
+        description={updater?.update?.latestVersion
+          ? `${updater.update.currentVersion} → ${updater.update.latestVersion}`
+          : undefined}
+        confirmLabel={updater?.installing ? t("about.installing") : t("about.installAndRestart")}
+        cancelLabel={t("common.cancel")}
+        closeLabel={t("common.close")}
+        busy={Boolean(updater?.installing)}
+        confirmDisabled={!updater?.update?.available || updater.installing}
+        confirmTestId="confirm-install-update"
+        onClose={() => {
+          if (!updater?.installing) setUpdateDialogOpen(false);
+        }}
+        onConfirm={() => void installUpdate()}
+      >
+        <div className="space-y-3">
+          {updater?.update?.size != null ? (
+            <div>
+              <SectionLabel>{t("about.size")}</SectionLabel>
+              <Mono className="mt-1 text-foreground">{formatBytes(updater.update.size)}</Mono>
+            </div>
+          ) : null}
+          {updater?.update?.notes ? (
+            <div>
+              <SectionLabel>{t("about.notes")}</SectionLabel>
+              <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded-md border border-border bg-muted/40 px-3 py-2 text-[12px] leading-relaxed text-foreground">
+                {updater.update.notes}
+              </pre>
+            </div>
+          ) : null}
+          {updater?.installing ? (
+            <div>
+              <div
+                className="h-1.5 overflow-hidden rounded-full bg-muted"
+                role="progressbar"
+                aria-label={t("about.progress")}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.max(0, Math.min(100, updater.progress ?? 0))}
+              >
+                <div
+                  className="h-full bg-primary transition-[width]"
+                  style={{ width: `${Math.max(0, Math.min(100, updater.progress ?? 0))}%` }}
+                />
+              </div>
+            </div>
+          ) : null}
+          {updater?.error ? <ErrorBanner message={updater.error} /> : null}
+        </div>
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={Boolean(clearPlan)}

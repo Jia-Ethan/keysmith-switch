@@ -17,6 +17,28 @@ const getAbout = vi.fn();
 const planOfficialAction = vi.fn();
 const confirmOfficialAction = vi.fn();
 const cancelOfficialAction = vi.fn();
+const checkUpdate = vi.fn();
+const installUpdate = vi.fn();
+let updaterState: {
+  update: {
+    available: boolean;
+    currentVersion: string;
+    latestVersion: string | null;
+    notes: string | null;
+    size: number | null;
+    channel: "stable";
+    restartRequired: boolean;
+    progress: number | null;
+    error: string | null;
+    releasePage: string;
+  } | null;
+  checking: boolean;
+  installing: boolean;
+  progress: number | null;
+  error: string | null;
+  check: typeof checkUpdate;
+  install: typeof installUpdate;
+};
 
 vi.mock("../api", () => ({
   listTools: (...args: unknown[]) => listTools(...args),
@@ -41,6 +63,10 @@ vi.mock("../lib/runtime", () => ({
   pickFiles: vi.fn().mockResolvedValue([]),
   pickSavePath: vi.fn().mockResolvedValue(null),
   isTauriRuntime: vi.fn().mockReturnValue(false),
+}));
+
+vi.mock("../components/UpdateProvider", () => ({
+  useUpdateOptional: () => updaterState,
 }));
 
 describe("SettingsPage data safety", () => {
@@ -90,6 +116,21 @@ describe("SettingsPage data safety", () => {
     });
     clearAllData.mockResolvedValue(undefined);
     cancelOfficialAction.mockResolvedValue({ ok: true, cancelled: true });
+    updaterState = {
+      update: null,
+      checking: false,
+      installing: false,
+      progress: null,
+      error: null,
+      check: checkUpdate,
+      install: installUpdate,
+    };
+    installUpdate.mockResolvedValue({
+      ok: true,
+      restartRequired: true,
+      error: null,
+      releasePage: "https://github.com/Jia-Ethan/keysmith-switch-releases/releases",
+    });
   });
 
   it("requires confirmation before replacing data from a backup", async () => {
@@ -200,6 +241,56 @@ describe("SettingsPage data safety", () => {
 
     fireEvent.keyDown(screen.getByRole("tab", { name: "工具" }), { key: "Home" });
     await waitFor(() => expect(screen.getByRole("tab", { name: "通用" })).toHaveFocus());
+  });
+
+  it("keeps a manual update check available without release-signing copy", async () => {
+    render(
+      <SettingsPage
+        settings={DEFAULT_SETTINGS}
+        onSave={vi.fn()}
+        toast={toast}
+        initialTab="about"
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("check-update"));
+    expect(checkUpdate).toHaveBeenCalledTimes(1);
+    const section = screen.getByTestId("update-section");
+    expect(section).not.toHaveTextContent(/Preview|未签名|Developer ID|Authenticode|公证/i);
+  });
+
+  it("requires dialog confirmation before updating and restarting", async () => {
+    updaterState.update = {
+      available: true,
+      currentVersion: "0.1.1",
+      latestVersion: "0.1.2",
+      notes: "Release notes",
+      size: 1_048_576,
+      channel: "stable",
+      restartRequired: true,
+      progress: null,
+      error: null,
+      releasePage: "https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.1.2",
+    };
+
+    render(
+      <SettingsPage
+        settings={DEFAULT_SETTINGS}
+        onSave={vi.fn()}
+        toast={toast}
+        initialTab="about"
+      />,
+    );
+
+    expect(screen.getByText("0.1.1 → 0.1.2")).toBeInTheDocument();
+    expect(screen.getByText(/发现新版本 · 1\.0 MB/)).toBeInTheDocument();
+    const install = screen.getByTestId("install-update");
+    expect(install).not.toBeDisabled();
+    fireEvent.click(install);
+    expect(installUpdate).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "更新并重启" })).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("confirm-install-update"));
+    await waitFor(() => expect(installUpdate).toHaveBeenCalledTimes(1));
   });
 
   it("shows explicit empty states for adapters and official products", async () => {

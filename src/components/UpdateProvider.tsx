@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -34,6 +35,10 @@ export function useUpdate() {
   return value;
 }
 
+export function useUpdateOptional() {
+  return useContext(UpdateContext);
+}
+
 export function UpdateProvider({
   channel,
   autoCheck,
@@ -48,8 +53,12 @@ export function UpdateProvider({
   const [installing, setInstalling] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const checkingRef = useRef(false);
+  const installingRef = useRef(false);
 
   const check = useCallback(async () => {
+    if (checkingRef.current || installingRef.current) return;
+    checkingRef.current = true;
     setChecking(true);
     setProgress(null);
     setError(null);
@@ -60,12 +69,14 @@ export function UpdateProvider({
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
+      checkingRef.current = false;
       setChecking(false);
     }
   }, [channel]);
 
   const install = useCallback(async () => {
-    if (!update?.available) return null;
+    if (!update?.available || installingRef.current) return null;
+    installingRef.current = true;
     setInstalling(true);
     setProgress(0);
     setError(null);
@@ -87,6 +98,7 @@ export function UpdateProvider({
         releasePage: PUBLIC_RELEASE_PAGE,
       } satisfies UpdateInstall;
     } finally {
+      installingRef.current = false;
       setInstalling(false);
     }
   }, [channel, update]);
