@@ -199,10 +199,19 @@ export function SettingsPage({
   };
 
   const installUpdate = async () => {
-    if (!updater?.update?.available || updater.installing || updateInstallPending.current) return;
+    if (
+      !updater?.update?.available
+      || updater.update.installMode === "manual"
+      || updater.installing
+      || updateInstallPending.current
+    ) return;
     updateInstallPending.current = true;
     try {
       const result = await updater.install();
+      if (result?.installMode === "manual") {
+        setUpdateDialogOpen(false);
+        return;
+      }
       if (!result?.ok) {
         toast.err(result?.error || t("about.updateFailed"));
         return;
@@ -700,7 +709,7 @@ export function SettingsPage({
                 </Button>
               </div>
 
-              {updater?.error ? (
+              {updater?.error && updater.update?.installMode !== "manual" ? (
                 <div className="mt-3">
                   <ErrorBanner
                     message={updater.error}
@@ -710,29 +719,54 @@ export function SettingsPage({
                 </div>
               ) : null}
 
-              {!updater?.error && updater?.update && !updater.update.available ? (
+              {(!updater?.error || updater.update?.installMode === "manual") && updater?.update && !updater.update.available ? (
                 <p className="mt-3 text-sm text-primary">
                   {updater.update.currentVersion} · {t("about.upToDate")}
                 </p>
               ) : null}
 
-              {!updater?.error && updater?.update?.available ? (
+              {(!updater?.error || updater.update?.installMode === "manual") && updater?.update?.available ? (
                 <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-border pt-3">
-                  <p className="text-sm font-medium text-primary">
-                    {t("about.updateAvailable")}
-                    {updater.update.size == null ? "" : ` · ${formatBytes(updater.update.size)}`}
-                  </p>
+                  <div>
+                    <p className="text-sm font-medium text-primary">
+                      {t("about.updateAvailable")}
+                      {typeof updater.update.size === "number" && updater.update.size > 0
+                        ? ` · ${formatBytes(updater.update.size)}`
+                        : ""}
+                    </p>
+                    {updater.update.installMode === "manual" ? (
+                      <p className="mt-1 max-w-2xl text-sm text-muted-foreground" data-testid="manual-update-message">
+                        {t(updater.update.reason === "signatureKeyMismatch"
+                          ? "about.manualSignatureKeyMismatch"
+                          : updater.update.reason === "bootstrapRequired"
+                            ? "about.manualBootstrapRequired"
+                            : "about.manualUpdateRequired")}
+                      </p>
+                    ) : null}
+                  </div>
                   <div className="ml-auto">
-                    <Button
-                      size="sm"
-                      variant="primary"
-                      data-testid="install-update"
-                      disabled={updater.installing}
-                      onClick={() => setUpdateDialogOpen(true)}
-                    >
-                      <IconDownload />
-                      {t("about.installAndRestart")}
-                    </Button>
+                    {updater.update.installMode === "manual" ? (
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        data-testid="open-update-release"
+                        onClick={() => void openExternal(updater.update!.releasePage)}
+                      >
+                        <IconExternal />
+                        {t("about.openReleasePage")}
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="primary"
+                        data-testid="install-update"
+                        disabled={updater.installing}
+                        onClick={() => setUpdateDialogOpen(true)}
+                      >
+                        <IconDownload />
+                        {t("about.installAndRestart")}
+                      </Button>
+                    )}
                   </div>
                 </div>
               ) : null}
@@ -775,7 +809,9 @@ export function SettingsPage({
       </div>
 
       <ConfirmDialog
-        open={updateDialogOpen && Boolean(updater?.update?.available)}
+        open={updateDialogOpen
+          && Boolean(updater?.update?.available)
+          && updater?.update?.installMode !== "manual"}
         title={t("about.installAndRestart")}
         description={updater?.update?.latestVersion
           ? `${updater.update.currentVersion} → ${updater.update.latestVersion}`
@@ -784,7 +820,11 @@ export function SettingsPage({
         cancelLabel={t("common.cancel")}
         closeLabel={t("common.close")}
         busy={Boolean(updater?.installing)}
-        confirmDisabled={!updater?.update?.available || updater.installing}
+        confirmDisabled={
+          !updater?.update?.available
+          || updater.update.installMode === "manual"
+          || updater.installing
+        }
         confirmTestId="confirm-install-update"
         onClose={() => {
           if (!updater?.installing) setUpdateDialogOpen(false);
@@ -792,7 +832,7 @@ export function SettingsPage({
         onConfirm={() => void installUpdate()}
       >
         <div className="space-y-3">
-          {updater?.update?.size != null ? (
+          {typeof updater?.update?.size === "number" && updater.update.size > 0 ? (
             <div>
               <SectionLabel>{t("about.size")}</SectionLabel>
               <Mono className="mt-1 text-foreground">{formatBytes(updater.update.size)}</Mono>

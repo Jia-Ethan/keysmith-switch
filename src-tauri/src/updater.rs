@@ -16,13 +16,15 @@ use std::process::Command;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::redact::redact_text;
+
 #[allow(dead_code)]
 #[path = "../fixtures/updater/minisign_verify/mod.rs"]
 mod minisign_verify;
 
 use minisign_verify::{PublicKey, Signature};
 
-pub const APP_VERSION: &str = "0.1.3";
+pub const APP_VERSION: &str = "0.1.4-rc.1";
 pub const RELEASE_PAGE: &str = "https://github.com/Jia-Ethan/keysmith-switch-releases/releases";
 pub const STABLE_ENDPOINT: &str =
     "https://github.com/Jia-Ethan/keysmith-switch-releases/releases/latest/download/latest.json";
@@ -120,6 +122,21 @@ pub struct InstallRequest {
     pub check: UpdateRequest,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum InstallMode {
+    None,
+    InApp,
+    Manual,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum UpdateReason {
+    BootstrapRequired,
+    SignatureKeyMismatch,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateCheck {
@@ -129,6 +146,8 @@ pub struct UpdateCheck {
     pub notes: Option<String>,
     pub size: Option<u64>,
     pub channel: UpdateChannel,
+    pub install_mode: InstallMode,
+    pub reason: Option<UpdateReason>,
     pub restart_required: bool,
     pub progress: Option<f64>,
     pub error: Option<String>,
@@ -139,6 +158,8 @@ pub struct UpdateCheck {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateInstall {
     pub ok: bool,
+    pub install_mode: InstallMode,
+    pub reason: Option<UpdateReason>,
     pub restart_required: bool,
     pub error: Option<String>,
     pub release_page: String,
@@ -164,6 +185,7 @@ pub struct RuntimeUpdateConfig {
 struct ParsedManifest {
     version: String,
     notes: Option<String>,
+    minimum_updater_version: Option<String>,
     platforms: HashMap<String, PlatformAsset>,
 }
 
@@ -171,6 +193,14 @@ struct ParsedManifest {
 struct PlatformAsset {
     url: String,
     signature: String,
+    size: Option<u64>,
+}
+
+#[derive(Debug)]
+enum InstallPolicyError {
+    BootstrapRequired(String),
+    SignatureKeyMismatch,
+    Message(String),
 }
 
 #[derive(Debug)]
@@ -295,6 +325,8 @@ pub fn install_update(req: &InstallRequest) -> UpdateInstall {
     if !req.confirmed {
         return UpdateInstall {
             ok: false,
+            install_mode: InstallMode::None,
+            reason: None,
             restart_required: false,
             error: Some("confirmation required".to_string()),
             release_page: RELEASE_PAGE.to_string(),
@@ -304,14 +336,28 @@ pub fn install_update(req: &InstallRequest) -> UpdateInstall {
     if let Some(err) = check.error.as_deref() {
         return UpdateInstall {
             ok: false,
+            install_mode: InstallMode::None,
+            reason: None,
             restart_required: false,
             error: Some(err.to_string()),
             release_page: RELEASE_PAGE.to_string(),
         };
     }
+    if check.install_mode == InstallMode::Manual {
+        return UpdateInstall {
+            ok: false,
+            install_mode: InstallMode::Manual,
+            reason: check.reason,
+            restart_required: false,
+            error: None,
+            release_page: check.release_page,
+        };
+    }
     if !check.available {
         return UpdateInstall {
             ok: false,
+            install_mode: InstallMode::None,
+            reason: None,
             restart_required: false,
             error: Some("no update available".to_string()),
             release_page: RELEASE_PAGE.to_string(),
@@ -321,12 +367,23 @@ pub fn install_update(req: &InstallRequest) -> UpdateInstall {
     match download_and_verify(&resolved) {
         Ok(()) => UpdateInstall {
             ok: true,
+            install_mode: InstallMode::InApp,
+            reason: None,
             restart_required: true,
             error: None,
             release_page: RELEASE_PAGE.to_string(),
         },
-        Err(err) => UpdateInstall {
+        Err(InstallPolicyError::SignatureKeyMismatch) => manual_install(
+            UpdateReason::SignatureKeyMismatch,
+            check.latest_version.as_deref(),
+        ),
+        Err(InstallPolicyError::BootstrapRequired(version)) => {
+            manual_install(UpdateReason::BootstrapRequired, Some(&version))
+        }
+        Err(InstallPolicyError::Message(err)) => UpdateInstall {
             ok: false,
+            install_mode: InstallMode::None,
+            reason: None,
             restart_required: false,
             error: Some(err),
             release_page: RELEASE_PAGE.to_string(),
@@ -380,13 +437,42 @@ fn finish_check(
             notes: manifest.notes,
             size: None,
             channel: resolved.channel,
+            install_mode: InstallMode::None,
+            reason: None,
             restart_required: false,
             progress: None,
             error: None,
             release_page: RELEASE_PAGE.to_string(),
         },
         std::cmp::Ordering::Greater => {
-            let size = head_size(&asset.url);
+            let bootstrap_required = match bootstrap_reason(
+                &resolved.current_version,
+                manifest.minimum_updater_version.as_deref(),
+            ) {
+                Ok(Some(UpdateReason::BootstrapRequired)) => true,
+                Ok(None) => false,
+                Ok(Some(_)) => unreachable!("metadata only yields bootstrapRequired"),
+                Err(error) => {
+                    return keep_current(resolved, Some(manifest.version), Some(error));
+                }
+            };
+            if bootstrap_required {
+                return UpdateCheck {
+                    available: true,
+                    current_version: resolved.current_version.clone(),
+                    latest_version: Some(manifest.version.clone()),
+                    notes: manifest.notes,
+                    size: asset.size,
+                    channel: resolved.channel,
+                    install_mode: InstallMode::Manual,
+                    reason: Some(UpdateReason::BootstrapRequired),
+                    restart_required: false,
+                    progress: None,
+                    error: None,
+                    release_page: release_page_for(&manifest.version),
+                };
+            }
+            let size = asset.size.or_else(|| head_size(&asset.url));
             UpdateCheck {
                 available: true,
                 current_version: resolved.current_version.clone(),
@@ -394,6 +480,8 @@ fn finish_check(
                 notes: manifest.notes,
                 size,
                 channel: resolved.channel,
+                install_mode: InstallMode::InApp,
+                reason: None,
                 restart_required: true,
                 progress: None,
                 error: None,
@@ -433,23 +521,67 @@ fn load_manifest(
     Ok((manifest, asset, cmp))
 }
 
-fn download_and_verify(resolved: &ResolvedUpdate) -> Result<(), String> {
-    let (manifest, asset, cmp) = load_manifest(resolved)?;
+fn download_and_verify(resolved: &ResolvedUpdate) -> Result<(), InstallPolicyError> {
+    let (manifest, asset, cmp) = load_manifest(resolved).map_err(|error| {
+        log_updater_error("metadata", "invalid_metadata", &error);
+        InstallPolicyError::Message("invalid update metadata".to_string())
+    })?;
     if cmp != std::cmp::Ordering::Greater {
-        return Err(if cmp == std::cmp::Ordering::Less {
-            format!(
-                "downgrade rejected: {} is not newer than {}",
-                manifest.version, resolved.current_version
-            )
-        } else {
-            "no update available".to_string()
-        });
+        return Err(InstallPolicyError::Message(
+            if cmp == std::cmp::Ordering::Less {
+                format!(
+                    "downgrade rejected: {} is not newer than {}",
+                    manifest.version, resolved.current_version
+                )
+            } else {
+                "no update available".to_string()
+            },
+        ));
     }
-    let artifact = fetch_url(&asset.url).map_err(|e| e.message())?;
+    if bootstrap_reason(
+        &resolved.current_version,
+        manifest.minimum_updater_version.as_deref(),
+    )
+    .map_err(InstallPolicyError::Message)?
+    .is_some()
+    {
+        return Err(InstallPolicyError::BootstrapRequired(manifest.version));
+    }
+    let artifact = fetch_url(&asset.url).map_err(|error| {
+        log_updater_error("artifact", "network", &error.message());
+        InstallPolicyError::Message("update download failed".to_string())
+    })?;
     if !(200..300).contains(&artifact.status) {
-        return Err(format!("download failed: http {}", artifact.status));
+        eprintln!("updater artifact request failed: category=http_status");
+        return Err(InstallPolicyError::Message(
+            "update download failed".to_string(),
+        ));
     }
-    verify_minisign(&resolved.pubkey, &artifact.body, &asset.signature)?;
+    let pk = parse_pubkey(&resolved.pubkey).map_err(|error| {
+        log_updater_error("verification", "invalid_public_key", &error);
+        InstallPolicyError::Message("update verification failed".to_string())
+    })?;
+    let sig = parse_signature(&asset.signature).map_err(|error| {
+        log_updater_error("verification", "invalid_signature_metadata", &error);
+        InstallPolicyError::Message("update verification failed".to_string())
+    })?;
+    match pk.verify(&artifact.body, &sig, false) {
+        Ok(()) => {}
+        Err(minisign_verify::Error::UnexpectedKeyId) => {
+            log_updater_error(
+                "verification",
+                "signature_key_mismatch",
+                "signature key id does not match the configured updater key",
+            );
+            return Err(InstallPolicyError::SignatureKeyMismatch);
+        }
+        Err(error) => {
+            log_updater_error("verification", "signature_invalid", &error.to_string());
+            return Err(InstallPolicyError::Message(
+                "update verification failed".to_string(),
+            ));
+        }
+    }
     let _ = manifest;
     Ok(())
 }
@@ -466,6 +598,8 @@ fn keep_current(
         notes: None,
         size: None,
         channel: resolved.channel,
+        install_mode: InstallMode::None,
+        reason: None,
         restart_required: false,
         progress: None,
         error,
@@ -533,6 +667,21 @@ fn parse_latest_json(text: &str) -> Result<ParsedManifest, String> {
     if parse_semver(&version).is_err() {
         return Err(format!("corrupt metadata: invalid semver {version}"));
     }
+    let minimum_updater_version = match obj.get("minimum_updater_version") {
+        None => None,
+        Some(value) => {
+            let raw = value.as_str().ok_or_else(|| {
+                "corrupt metadata: minimum_updater_version must be a string".to_string()
+            })?;
+            let minimum = strip_v(raw).to_string();
+            if parse_semver(&minimum).is_err() {
+                return Err(format!(
+                    "corrupt metadata: invalid minimum_updater_version {minimum}"
+                ));
+            }
+            Some(minimum)
+        }
+    };
     if let Some(pub_date) = obj.get("pub_date") {
         if !pub_date.is_null() {
             let raw = pub_date
@@ -572,11 +721,23 @@ fn parse_latest_json(text: &str) -> Result<ParsedManifest, String> {
                 "corrupt metadata: platform {key} has empty signature"
             ));
         }
+        let size = match asset_obj.get("size") {
+            None => None,
+            Some(value) => match value.as_u64() {
+                Some(size) if size > 0 => Some(size),
+                _ => {
+                    return Err(format!(
+                        "corrupt metadata: platform {key} size must be a positive integer"
+                    ));
+                }
+            },
+        };
         platforms.insert(
             key.clone(),
             PlatformAsset {
                 url: url.to_string(),
                 signature: signature.to_string(),
+                size,
             },
         );
     }
@@ -587,8 +748,104 @@ fn parse_latest_json(text: &str) -> Result<ParsedManifest, String> {
     Ok(ParsedManifest {
         version,
         notes,
+        minimum_updater_version,
         platforms,
     })
+}
+
+pub fn bootstrap_reason_for_metadata(
+    current_version: &str,
+    metadata: &Value,
+) -> Result<Option<UpdateReason>, String> {
+    let object = metadata
+        .as_object()
+        .ok_or_else(|| "corrupt metadata: root must be an object".to_string())?;
+    let minimum = match object.get("minimum_updater_version") {
+        None => None,
+        Some(value) => Some(value.as_str().ok_or_else(|| {
+            "corrupt metadata: minimum_updater_version must be a string".to_string()
+        })?),
+    };
+    bootstrap_reason(strip_v(current_version), minimum)
+}
+
+fn bootstrap_reason(
+    current_version: &str,
+    minimum_updater_version: Option<&str>,
+) -> Result<Option<UpdateReason>, String> {
+    let Some(minimum) = minimum_updater_version else {
+        return Ok(None);
+    };
+    let minimum = strip_v(minimum);
+    if parse_semver(minimum).is_err() {
+        return Err(format!(
+            "corrupt metadata: invalid minimum_updater_version {minimum}"
+        ));
+    }
+    Ok(
+        (compare_semver(current_version, minimum)? == std::cmp::Ordering::Less)
+            .then_some(UpdateReason::BootstrapRequired),
+    )
+}
+
+pub fn release_page_for(version: &str) -> String {
+    format!("{RELEASE_PAGE}/tag/v{}", strip_v(version))
+}
+
+pub fn manual_install(reason: UpdateReason, version: Option<&str>) -> UpdateInstall {
+    UpdateInstall {
+        ok: false,
+        install_mode: InstallMode::Manual,
+        reason: Some(reason),
+        restart_required: false,
+        error: None,
+        release_page: version
+            .map(release_page_for)
+            .unwrap_or_else(|| RELEASE_PAGE.to_string()),
+    }
+}
+
+pub fn updater_error_install(
+    error: &tauri_plugin_updater::Error,
+    version: Option<&str>,
+) -> UpdateInstall {
+    let detail = error.to_string();
+    match error {
+        tauri_plugin_updater::Error::Minisign(updater_minisign_verify::Error::UnexpectedKeyId) => {
+            log_updater_error("verification", "signature_key_mismatch", &detail);
+            manual_install(UpdateReason::SignatureKeyMismatch, version)
+        }
+        tauri_plugin_updater::Error::Minisign(_) => {
+            log_updater_error("verification", "signature_invalid", &detail);
+            update_failure("update verification failed")
+        }
+        tauri_plugin_updater::Error::Network(_) | tauri_plugin_updater::Error::Reqwest(_) => {
+            log_updater_error("operation", "network", &detail);
+            update_failure("update download failed")
+        }
+        _ => {
+            log_updater_error("operation", "internal", &detail);
+            update_failure("update installation failed")
+        }
+    }
+}
+
+pub fn log_updater_error(stage: &str, category: &str, detail: &str) {
+    eprintln!(
+        "updater {stage} failed: category={category} detail={}",
+        redact_text(detail)
+    );
+}
+
+pub fn update_failure(message: &str) -> UpdateInstall {
+    UpdateInstall {
+        ok: false,
+        install_mode: InstallMode::None,
+        reason: None,
+        restart_required: false,
+        error: Some(message.to_string()),
+        release_page: RELEASE_PAGE.to_string(),
+    }
 }
 
 fn parse_pubkey(input: &str) -> Result<PublicKey, String> {
@@ -753,6 +1010,7 @@ fn head_size(url: &str) -> Option<u64> {
         .args([
             "-sS",
             "-I",
+            "-L",
             "--noproxy",
             "*",
             "--http1.1",
@@ -768,13 +1026,18 @@ fn head_size(url: &str) -> Option<u64> {
         return None;
     }
     let text = String::from_utf8_lossy(&output.stdout);
+    let mut last_positive = None;
     for line in text.lines() {
         let lower = line.to_ascii_lowercase();
         if let Some(v) = lower.strip_prefix("content-length:") {
-            return v.trim().parse().ok();
+            if let Ok(size) = v.trim().parse::<u64>() {
+                if size > 0 {
+                    last_positive = Some(size);
+                }
+            }
         }
     }
-    None
+    last_positive
 }
 
 fn compare_semver(left: &str, right: &str) -> Result<std::cmp::Ordering, String> {
@@ -853,6 +1116,13 @@ fn cmp_pre(a: &[PrePart], b: &[PrePart]) -> std::cmp::Ordering {
 
 fn parse_semver(raw: &str) -> Result<SemVer, String> {
     let raw = strip_v(raw);
+    let complete_semver = regex::Regex::new(
+        r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$",
+    )
+    .map_err(|_| "internal semver validation error".to_string())?;
+    if !complete_semver.is_match(raw) {
+        return Err(format!("invalid semver {raw}"));
+    }
     let (core, pre) = match raw.split_once('-') {
         Some((core, pre)) => (core, Some(pre.split('+').next().unwrap_or(pre))),
         None => (raw.split('+').next().unwrap_or(raw), None),

@@ -2,7 +2,7 @@
 
 更新日期：2026-08-24（Asia/Shanghai）
 
-阶段：**`v0.1.3` updater bootstrap 已发布。`v0.1.2` 的已删除 immutable Release 占用了 Tag 名，因此未作为可用版本发布。**
+阶段：**稳定版仍为 `v0.1.3`；源码已升级为 `v0.1.4-rc.1`，用于验证 updater 长期兼容协议，不发布正式 Release 或公共 feed。**
 
 ## 产品状态
 
@@ -10,7 +10,7 @@
 - 激活、停用、恢复、清除数据和官方 CLI 操作保留计划、确认、执行、失败保留与恢复门禁。
 - 提示词详情与编辑使用独立页面，保留脏状态保护、键盘与无障碍行为。
 - 设置页区分 loading、empty、retryable error 和 busy 状态。
-- 关于页保留“检查更新”和“更新并重启”，不展示 Preview、平台签名、Developer ID、公证或 Authenticode 说明。
+- 关于页在应用内更新可用时显示“更新并重启”；低于 updater 门槛或签名 key ID 不匹配时只显示本地化的官方下载入口。
 - 更新安装必须显式确认；安装期间阻止关闭和重复提交，并显示下载/安装进度。
 - 四个 Keysmith sidecar 仍随应用原子交付，GUI 不直接改写托管配置。
 
@@ -24,6 +24,14 @@
 - 从 `v0.1.3 → v0.1.4` 开始，才能对应用内更新作真实承诺。
 - fixture 私钥只用于测试，禁止用于生产 Release。
 
+## v0.1.4-rc.1 updater 兼容协议
+
+- `latest.json` 新增 `minimum_updater_version: "0.1.3"` 与每个平台的准确 payload `size`。
+- 新客户端用 `installMode` 和 `reason` 区分应用内安装、手动 bootstrap 与签名密钥轮换，不向界面返回底层验签英文。
+- 客户端低于门槛时不会请求 updater payload；安装命令重复执行同一门禁，避免绕过前端。
+- metadata 缺少新字段时保留旧 feed 行为；大小缺失时才使用跟随重定向且忽略零值的 HEAD fallback。
+- 本候选只验证双平台构建、生产密钥兼容、metadata、签名、大小和发布链；真实应用内安装与重启仍是独立验收项。
+
 ## 发布架构
 
 - 安装包不使用 Apple Developer ID、公证或 Windows Authenticode。
@@ -33,7 +41,7 @@
 - 源仓库从 GitHub-verified annotated tag 构建候选和 provenance。
 - 公开 `Jia-Ethan/keysmith-switch-releases` 仓库只接收受支持平台的 updater payload、签名、`latest.json`、provenance 和校验和，并经 `production` 审批发布。
 
-## 当前验证
+## v0.1.3 已完成验证
 
 发布源码 commit `0ade54c2f0c36dd21624a808d14392055ec3b03b` 已推送至 `main`。CI run [32650939449](https://github.com/Jia-Ethan/keysmith-switch/actions/runs/32650939449) 的 frontend、rust、sidecar-macos 和 sidecar-windows 均通过。
 
@@ -57,10 +65,10 @@ GitHub-verified annotated tag `v0.1.3` 指向发布源码 commit。source releas
 ## 发布后剩余验收
 
 - Windows x64 实体机完成 `v0.1.3` 手动安装、启动和卸载验收。
-- 发布后手动安装 `v0.1.3` 验证 bootstrap；应用内升级验收留到 `v0.1.4` 候选。
+- 发布后手动安装 `v0.1.3` 验证 bootstrap；应用内升级验收留到后续独立执行，不由 `v0.1.4-rc.1` 构建链验证代替。
 
 ## 明确未做
 
 - 尚未替换 `/Applications/Keysmith Switch.app`。
 - 尚未完成 Windows 实体机验收。
-- 尚未验证 `v0.1.3 → v0.1.4` 的真实应用内升级。
+- 尚未验证 `v0.1.3 → v0.1.4-rc.1` 的真实应用内升级与重启。

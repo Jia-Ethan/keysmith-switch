@@ -5,8 +5,9 @@ use std::thread;
 
 use httpmock::prelude::*;
 use keysmith_switch_lib::updater::{
-    check_update, fixture_manifest, install_update, resolve_update_endpoint, runtime_update_config,
-    updater_fixture_dir, verify_minisign, InstallRequest, UpdateChannel, UpdateRequest,
+    bootstrap_reason_for_metadata, check_update, fixture_manifest, install_update,
+    resolve_update_endpoint, runtime_update_config, updater_error_install, updater_fixture_dir,
+    verify_minisign, InstallMode, InstallRequest, UpdateChannel, UpdateReason, UpdateRequest,
     APP_VERSION, BETA_ENDPOINT, FIXTURE_PUBKEY, RELEASE_PAGE, STABLE_ENDPOINT,
 };
 
@@ -59,6 +60,29 @@ fn serve_artifact<'a>(server: &'a MockServer, path: &str, name: &str) -> httpmoc
             .header("content-type", "application/octet-stream")
             .body(bytes);
     })
+}
+
+fn manifest_with_policy(
+    version: &str,
+    url: &str,
+    signature: &str,
+    minimum_updater_version: Option<&str>,
+    size: Option<serde_json::Value>,
+) -> String {
+    let mut asset = serde_json::json!({ "url": url, "signature": signature });
+    if let Some(size) = size {
+        asset["size"] = size;
+    }
+    let mut manifest = serde_json::json!({
+        "version": version,
+        "notes": format!("Keysmith Switch {version}"),
+        "pub_date": "2026-08-19T00:00:00Z",
+        "platforms": { "darwin-aarch64": asset },
+    });
+    if let Some(minimum) = minimum_updater_version {
+        manifest["minimum_updater_version"] = serde_json::json!(minimum);
+    }
+    manifest.to_string()
 }
 
 #[test]
@@ -131,6 +155,8 @@ fn check_update_selects_stable_endpoint_by_default() {
     assert_eq!(check.latest_version.as_deref(), Some("0.2.0"));
     assert_eq!(check.current_version, APP_VERSION);
     assert_eq!(check.release_page, RELEASE_PAGE);
+    assert_eq!(check.install_mode, InstallMode::InApp);
+    assert_eq!(check.reason, None);
     stable.assert();
     assert_eq!(beta.hits(), 0);
 }
@@ -264,6 +290,234 @@ fn check_update_rejects_corrupt_metadata() {
 }
 
 #[test]
+fn check_update_below_minimum_is_manual_and_install_skips_artifact() {
+    let _guard = env_lock();
+    let server = MockServer::start();
+    let signature = load_text("artifact-0.2.0.bin.sig");
+    let artifact_url = server.url("/artifact-0.2.0.bin");
+    let body = manifest_with_policy(
+        "0.2.0",
+        &artifact_url,
+        &signature,
+        Some("0.1.3"),
+        Some(serde_json::json!(40_446_842_u64)),
+    );
+    let metadata = serve_json(&server, "/releases/latest/download/latest.json", &body);
+    let artifact = serve_artifact(&server, "/artifact-0.2.0.bin", "artifact-0.2.0.bin");
+    let artifact_head = server.mock(|when, then| {
+        when.method("HEAD").path("/artifact-0.2.0.bin");
+        then.status(200).header("content-length", "40446842");
+    });
+    let mut req = base_req(&server);
+    req.current_version = Some("0.1.2".into());
+
+    let check = check_update(&req);
+    assert!(check.available);
+    assert_eq!(check.install_mode, InstallMode::Manual);
+    assert_eq!(check.reason, Some(UpdateReason::BootstrapRequired));
+    assert!(!check.restart_required);
+    assert!(check.error.is_none());
+    assert_eq!(check.size, Some(40_446_842));
+    assert_eq!(
+        check.release_page,
+        "https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.2.0"
+    );
+
+    let install = install_update(&InstallRequest {
+        confirmed: true,
+        check: req,
+    });
+    assert!(!install.ok);
+    assert_eq!(install.install_mode, InstallMode::Manual);
+    assert_eq!(install.reason, Some(UpdateReason::BootstrapRequired));
+    assert!(!install.restart_required);
+    assert!(install.error.is_none());
+    assert_eq!(artifact.hits(), 0, "manual policy must not fetch artifact");
+    assert_eq!(
+        artifact_head.hits(),
+        0,
+        "manual policy must not probe artifact"
+    );
+    assert_eq!(metadata.hits(), 2);
+}
+
+#[test]
+fn check_update_at_minimum_keeps_in_app_install() {
+    let _guard = env_lock();
+    let server = MockServer::start();
+    let signature = load_text("artifact-0.2.0.bin.sig");
+    let body = manifest_with_policy(
+        "0.2.0",
+        &server.url("/artifact-0.2.0.bin"),
+        &signature,
+        Some("0.1.3"),
+        Some(serde_json::json!(1234)),
+    );
+    serve_json(&server, "/releases/latest/download/latest.json", &body);
+    let mut req = base_req(&server);
+    req.current_version = Some("0.1.3".into());
+
+    let check = check_update(&req);
+    assert!(check.available);
+    assert_eq!(check.install_mode, InstallMode::InApp);
+    assert_eq!(check.reason, None);
+    assert!(check.restart_required);
+    assert_eq!(check.size, Some(1234));
+}
+
+#[test]
+fn check_update_legacy_metadata_keeps_in_app_install() {
+    let _guard = env_lock();
+    let server = MockServer::start();
+    let body = fixture_manifest(
+        "0.2.0",
+        &server.url("/artifact-0.2.0.bin"),
+        &load_text("artifact-0.2.0.bin.sig"),
+    );
+    serve_json(&server, "/releases/latest/download/latest.json", &body);
+
+    let check = check_update(&base_req(&server));
+    assert!(check.available);
+    assert_eq!(check.install_mode, InstallMode::InApp);
+    assert_eq!(check.reason, None);
+}
+
+#[test]
+fn plugin_raw_metadata_gate_preserves_legacy_and_enforces_minimum() {
+    let legacy = serde_json::json!({"version": "0.2.0"});
+    assert_eq!(
+        bootstrap_reason_for_metadata("0.1.1", &legacy).unwrap(),
+        None
+    );
+
+    let policy = serde_json::json!({
+        "version": "0.2.0",
+        "minimum_updater_version": "0.1.3"
+    });
+    assert_eq!(
+        bootstrap_reason_for_metadata("0.1.2", &policy).unwrap(),
+        Some(UpdateReason::BootstrapRequired)
+    );
+    assert_eq!(
+        bootstrap_reason_for_metadata("0.1.3", &policy).unwrap(),
+        None
+    );
+
+    let invalid = serde_json::json!({
+        "version": "0.2.0",
+        "minimum_updater_version": "0.1"
+    });
+    assert!(bootstrap_reason_for_metadata("0.1.1", &invalid).is_err());
+}
+
+#[test]
+fn check_update_rejects_zero_manifest_size() {
+    let _guard = env_lock();
+    let server = MockServer::start();
+    let body = manifest_with_policy(
+        "0.2.0",
+        &server.url("/artifact-0.2.0.bin"),
+        &load_text("artifact-0.2.0.bin.sig"),
+        Some("0.1.3"),
+        Some(serde_json::json!(0)),
+    );
+    serve_json(&server, "/releases/latest/download/latest.json", &body);
+
+    let check = check_update(&base_req(&server));
+    assert!(!check.available);
+    assert_eq!(check.install_mode, InstallMode::None);
+    assert!(
+        check
+            .error
+            .as_deref()
+            .unwrap_or("")
+            .contains("positive integer"),
+        "{:?}",
+        check.error
+    );
+}
+
+#[test]
+fn check_update_rejects_invalid_minimum_updater_version() {
+    let _guard = env_lock();
+    let server = MockServer::start();
+    let body = manifest_with_policy(
+        "0.2.0",
+        &server.url("/artifact-0.2.0.bin"),
+        &load_text("artifact-0.2.0.bin.sig"),
+        Some("0.1"),
+        Some(serde_json::json!(1234)),
+    );
+    serve_json(&server, "/releases/latest/download/latest.json", &body);
+
+    let check = check_update(&base_req(&server));
+    assert!(!check.available);
+    assert_eq!(check.install_mode, InstallMode::None);
+    assert!(
+        check
+            .error
+            .as_deref()
+            .unwrap_or("")
+            .contains("invalid minimum_updater_version"),
+        "{:?}",
+        check.error
+    );
+}
+
+#[test]
+fn check_update_prefers_manifest_size_without_head_request() {
+    let _guard = env_lock();
+    let server = MockServer::start();
+    let artifact_url = server.url("/artifact-0.2.0.bin");
+    let body = manifest_with_policy(
+        "0.2.0",
+        &artifact_url,
+        &load_text("artifact-0.2.0.bin.sig"),
+        None,
+        Some(serde_json::json!(98_765)),
+    );
+    serve_json(&server, "/releases/latest/download/latest.json", &body);
+    let head = server.mock(|when, then| {
+        when.method("HEAD").path("/artifact-0.2.0.bin");
+        then.status(200).header("content-length", "111");
+    });
+
+    let check = check_update(&base_req(&server));
+    assert_eq!(check.size, Some(98_765));
+    assert_eq!(head.hits(), 0);
+}
+
+#[test]
+fn check_update_head_fallback_follows_redirect_and_ignores_zero_length() {
+    let _guard = env_lock();
+    let server = MockServer::start();
+    let artifact_url = server.url("/artifact-redirect");
+    let body = manifest_with_policy(
+        "0.2.0",
+        &artifact_url,
+        &load_text("artifact-0.2.0.bin.sig"),
+        None,
+        None,
+    );
+    serve_json(&server, "/releases/latest/download/latest.json", &body);
+    let redirect = server.mock(|when, then| {
+        when.method("HEAD").path("/artifact-redirect");
+        then.status(302)
+            .header("content-length", "0")
+            .header("location", "/artifact-final");
+    });
+    let final_head = server.mock(|when, then| {
+        when.method("HEAD").path("/artifact-final");
+        then.status(200).header("content-length", "40446842");
+    });
+
+    let check = check_update(&base_req(&server));
+    assert_eq!(check.size, Some(40_446_842));
+    redirect.assert();
+    final_head.assert();
+}
+
+#[test]
 fn check_update_offline_keeps_current_version() {
     let _guard = env_lock();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -341,12 +595,61 @@ fn install_update_rejects_signature_error() {
         check: base_req(&server),
     });
     assert!(!install.ok);
-    assert_eq!(install.release_page, RELEASE_PAGE);
-    assert!(
-        install.error.as_deref().unwrap_or("").contains("signature"),
-        "{:?}",
-        install.error
+    assert_eq!(install.install_mode, InstallMode::Manual);
+    assert_eq!(install.reason, Some(UpdateReason::SignatureKeyMismatch));
+    assert_eq!(
+        install.release_page,
+        "https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.2.0"
     );
+    assert!(install.error.is_none());
+}
+
+#[test]
+fn install_update_other_signature_failure_remains_closed() {
+    let _guard = env_lock();
+    let server = MockServer::start();
+    serve_json(
+        &server,
+        "/releases/latest/download/latest.json",
+        &fixture_manifest(
+            "0.2.0",
+            &server.url("/artifact-corrupt.bin"),
+            &load_text("artifact-0.2.0.bin.sig"),
+        ),
+    );
+    serve_artifact(&server, "/artifact-corrupt.bin", "artifact-0.0.9.bin");
+
+    let install = install_update(&InstallRequest {
+        confirmed: true,
+        check: base_req(&server),
+    });
+    assert!(!install.ok);
+    assert_eq!(install.install_mode, InstallMode::None);
+    assert_eq!(install.reason, None);
+    assert_eq!(install.error.as_deref(), Some("update verification failed"));
+}
+
+#[test]
+fn tauri_unexpected_key_id_maps_to_manual_without_raw_error() {
+    let error =
+        tauri_plugin_updater::Error::Minisign(updater_minisign_verify::Error::UnexpectedKeyId);
+    let install = updater_error_install(&error, Some("0.2.0"));
+    assert!(!install.ok);
+    assert_eq!(install.install_mode, InstallMode::Manual);
+    assert_eq!(install.reason, Some(UpdateReason::SignatureKeyMismatch));
+    assert!(install.error.is_none());
+}
+
+#[test]
+fn tauri_other_signature_error_is_not_misclassified_or_exposed() {
+    let error =
+        tauri_plugin_updater::Error::Minisign(updater_minisign_verify::Error::InvalidSignature);
+    let install = updater_error_install(&error, Some("0.2.0"));
+    assert!(!install.ok);
+    assert_eq!(install.install_mode, InstallMode::None);
+    assert_eq!(install.reason, None);
+    assert_eq!(install.error.as_deref(), Some("update verification failed"));
+    assert!(!install.error.as_deref().unwrap().contains("signature was"));
 }
 
 #[test]
@@ -367,15 +670,7 @@ fn install_update_download_interrupt_keeps_current_version() {
         check: base_req(&server),
     });
     assert!(!install.ok);
-    assert!(
-        install.error.as_deref().is_some_and(|error| {
-            error.contains("interrupt")
-                || error.contains("reset by peer")
-                || error.contains("empty reply")
-        }),
-        "{:?}",
-        install.error
-    );
+    assert_eq!(install.error.as_deref(), Some("update download failed"));
     assert_eq!(check.current_version, APP_VERSION);
 }
 

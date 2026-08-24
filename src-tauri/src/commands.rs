@@ -23,8 +23,9 @@ use crate::ops;
 use crate::paths::AppPaths;
 use crate::redact::redact_text;
 use crate::updater::{
-    check_update, install_update, runtime_update_config, InstallRequest, UpdateChannel,
-    UpdateCheck, UpdateInstall, UpdateRequest,
+    bootstrap_reason_for_metadata, check_update, install_update, manual_install,
+    runtime_update_config, update_failure, updater_error_install, InstallMode, InstallRequest,
+    UpdateChannel, UpdateCheck, UpdateInstall, UpdateReason, UpdateRequest,
 };
 
 pub struct AppState {
@@ -799,6 +800,8 @@ pub async fn install_app_update(
     if !confirmed {
         return Ok(UpdateInstall {
             ok: false,
+            install_mode: InstallMode::None,
+            reason: None,
             restart_required: false,
             error: Some("confirmation required".into()),
             release_page: crate::updater::RELEASE_PAGE.into(),
@@ -819,14 +822,28 @@ pub async fn install_app_update(
     if let Some(err) = check.error.as_deref() {
         return Ok(UpdateInstall {
             ok: false,
+            install_mode: InstallMode::None,
+            reason: None,
             restart_required: false,
             error: Some(err.to_string()),
             release_page: crate::updater::RELEASE_PAGE.into(),
         });
     }
+    if check.install_mode == InstallMode::Manual {
+        return Ok(UpdateInstall {
+            ok: false,
+            install_mode: InstallMode::Manual,
+            reason: check.reason,
+            restart_required: false,
+            error: None,
+            release_page: check.release_page,
+        });
+    }
     if !check.available {
         return Ok(UpdateInstall {
             ok: false,
+            install_mode: InstallMode::None,
+            reason: None,
             restart_required: false,
             error: Some("no update available".into()),
             release_page: crate::updater::RELEASE_PAGE.into(),
@@ -844,6 +861,8 @@ pub async fn install_app_update(
             });
             Ok(UpdateInstall {
                 ok: false,
+                install_mode: InstallMode::None,
+                reason: None,
                 restart_required: false,
                 error: Some("simulated apply failure; current version kept".into()),
                 release_page: crate::updater::RELEASE_PAGE.into(),
@@ -879,12 +898,11 @@ async fn apply_with_plugin(
         }) {
         Ok(updater) => updater,
         Err(error) => {
-            return Ok(UpdateInstall {
-                ok: false,
-                restart_required: false,
-                error: Some(format!("updater unavailable: {error}")),
-                release_page: crate::updater::RELEASE_PAGE.into(),
-            });
+            eprintln!(
+                "updater setup failed: category=internal detail={}",
+                redact_text(&error.to_string())
+            );
+            return Ok(update_failure("updater unavailable"));
         }
     };
     match updater.check().await {
@@ -892,10 +910,26 @@ async fn apply_with_plugin(
             if expected_version.is_some_and(|expected| update.version.to_string() != expected) {
                 return Ok(UpdateInstall {
                     ok: false,
+                    install_mode: InstallMode::None,
+                    reason: None,
                     restart_required: false,
                     error: Some("update metadata changed after confirmation; check again".into()),
                     release_page: crate::updater::RELEASE_PAGE.into(),
                 });
+            }
+            match bootstrap_reason_for_metadata(&update.current_version, &update.raw_json) {
+                Ok(Some(UpdateReason::BootstrapRequired)) => {
+                    return Ok(manual_install(
+                        UpdateReason::BootstrapRequired,
+                        Some(&update.version),
+                    ));
+                }
+                Ok(None) => {}
+                Ok(Some(_)) => unreachable!("metadata only yields bootstrapRequired"),
+                Err(_) => {
+                    eprintln!("updater metadata rejected: category=invalid_policy");
+                    return Ok(update_failure("invalid update metadata"));
+                }
             }
             let mut downloaded = 0_u64;
             let result = update
@@ -920,26 +954,11 @@ async fn apply_with_plugin(
                 Ok(()) => {
                     app.restart();
                 }
-                Err(error) => Ok(UpdateInstall {
-                    ok: false,
-                    restart_required: false,
-                    error: Some(format!("{error}")),
-                    release_page: crate::updater::RELEASE_PAGE.into(),
-                }),
+                Err(error) => Ok(updater_error_install(&error, Some(&update.version))),
             }
         }
-        Ok(None) => Ok(UpdateInstall {
-            ok: false,
-            restart_required: false,
-            error: Some("no update available".into()),
-            release_page: crate::updater::RELEASE_PAGE.into(),
-        }),
-        Err(error) => Ok(UpdateInstall {
-            ok: false,
-            restart_required: false,
-            error: Some(format!("{error}")),
-            release_page: crate::updater::RELEASE_PAGE.into(),
-        }),
+        Ok(None) => Ok(update_failure("no update available")),
+        Err(error) => Ok(updater_error_install(&error, expected_version)),
     }
 }
 

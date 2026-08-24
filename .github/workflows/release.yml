@@ -74,6 +74,7 @@ jobs:
           set -euo pipefail
           version="$(python3 -c 'import json; print(json.load(open("src-tauri/tauri.conf.json"))["version"])')"
           python3 scripts/check-version.py --expected "$version"
+          python3 -m unittest discover -s scripts/tests -p 'test_*.py'
           npm test
           npm run build
           python3 scripts/build-sidecars.py
@@ -342,8 +343,10 @@ jobs:
           else
             base_url="https://github.com/Jia-Ethan/keysmith-switch-releases/releases/download/$tag"
           fi
+          minimum_updater_version="0.1.3"
           python3 scripts/generate-latest-json.py \
             --version "$version" \
+            --minimum-updater-version "$minimum_updater_version" \
             --notes "$(cat scripts/updater-notes.md)" \
             --base-url "$base_url" \
             --darwin-aarch64 "$mac" \
@@ -356,7 +359,47 @@ jobs:
             --arg workflow_run_id "$GITHUB_RUN_ID" \
             '{repository: $repository, source_tag: $source_tag, source_commit: $source_commit, workflow_run_id: $workflow_run_id}' \
             > candidate/provenance.json
-          jq -e '(.platforms | keys | sort) == ["darwin-aarch64", "windows-x86_64"] and all(.platforms[]; (.signature | type == "string" and length > 0) and (.sha256 | test("^[0-9a-f]{64}$")))' candidate/latest.json >/dev/null
+          jq -e --arg tag "$tag" --arg minimum "$minimum_updater_version" '
+            .minimum_updater_version == $minimum and
+            (.platforms | keys | sort) == ["darwin-aarch64", "windows-x86_64"] and
+            all(.platforms[];
+              (.url | startswith("https://github.com/Jia-Ethan/keysmith-switch-releases/releases/download/" + $tag + "/")) and
+              (.signature | type == "string" and length > 0) and
+              (.sha256 | test("^[0-9a-f]{64}$")) and
+              (.size | type == "number" and . > 0 and floor == .))
+          ' candidate/latest.json >/dev/null
+          python3 - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+          from urllib.parse import quote
+
+          root = Path("candidate")
+          manifest = json.loads((root / "latest.json").read_text(encoding="utf-8"))
+          if manifest.get("minimum_updater_version") != "0.1.3":
+              raise SystemExit("minimum_updater_version must be 0.1.3")
+          expected = {
+              "darwin-aarch64": root / "Keysmith.Switch.app.tar.gz",
+              "windows-x86_64": root / f"Keysmith.Switch_{manifest['version']}_x64-setup.exe",
+          }
+          for platform, artifact in expected.items():
+              entry = manifest["platforms"][platform]
+              expected_url = (
+                  "https://github.com/Jia-Ethan/keysmith-switch-releases/releases/download/"
+                  f"v{manifest['version']}/{quote(artifact.name, safe='')}"
+              )
+              if entry["url"] != expected_url:
+                  raise SystemExit(f"unexpected {platform} URL")
+              if entry["signature"] != Path(f"{artifact}.sig").read_text(encoding="utf-8").strip():
+                  raise SystemExit(f"unexpected {platform} signature")
+              if entry["sha256"] != hashlib.sha256(artifact.read_bytes()).hexdigest():
+                  raise SystemExit(f"unexpected {platform} SHA-256")
+              size = entry.get("size")
+              if isinstance(size, bool) or not isinstance(size, int) or size <= 0:
+                  raise SystemExit(f"invalid {platform} size")
+              if size != artifact.stat().st_size:
+                  raise SystemExit(f"unexpected {platform} size")
+          PY
           (cd candidate && sha256sum latest.json provenance.json ./*.dmg ./*.app.tar.gz ./*.app.tar.gz.sig ./*.exe ./*.exe.sig > SHA256SUMS.txt)
       - uses: actions/upload-artifact@v4
         with:

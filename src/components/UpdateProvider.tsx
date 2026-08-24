@@ -65,8 +65,13 @@ export function UpdateProvider({
     try {
       const result = await api.checkAppUpdate(channel);
       setUpdate(result);
-      if (result.error) setError(result.error);
+      if (result.installMode === "manual") {
+        setError(null);
+      } else if (result.error) {
+        setError(result.error);
+      }
     } catch (err) {
+      setUpdate(null);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       checkingRef.current = false;
@@ -75,14 +80,26 @@ export function UpdateProvider({
   }, [channel]);
 
   const install = useCallback(async () => {
-    if (!update?.available || installingRef.current) return null;
+    if (!update?.available || update.installMode === "manual" || installingRef.current) return null;
     installingRef.current = true;
     setInstalling(true);
     setProgress(0);
     setError(null);
     try {
       const result = await api.installAppUpdate(channel);
-      if (!result.ok) {
+      if (result.installMode === "manual") {
+        setUpdate((current) => current ? {
+          ...current,
+          available: true,
+          installMode: "manual",
+          reason: result.reason,
+          restartRequired: false,
+          error: null,
+          releasePage: result.releasePage || current.releasePage,
+        } : current);
+        setProgress(null);
+        setError(null);
+      } else if (!result.ok) {
         setError(result.error || "update failed");
       } else {
         setProgress(100);
@@ -96,6 +113,8 @@ export function UpdateProvider({
         restartRequired: false,
         error: message,
         releasePage: PUBLIC_RELEASE_PAGE,
+        installMode: "none",
+        reason: null,
       } satisfies UpdateInstall;
     } finally {
       installingRef.current = false;

@@ -1,8 +1,8 @@
 # Keysmith Switch 发布门槛
 
-本文件记录 `v0.1.3` 及后续版本的发布边界。应用安装包不使用 Apple Developer ID、公证或 Windows Authenticode；应用内更新仍使用独立生产密钥签名并在客户端安装前验证。
+本文件记录 `v0.1.4-rc.1` 候选及后续版本的发布边界。应用安装包不使用 Apple Developer ID、公证或 Windows Authenticode；应用内更新仍使用独立生产密钥签名并在客户端安装前验证。
 
-应用版本：`0.1.3`
+应用版本：`0.1.4-rc.1`
 
 identifier：`com.jia-ethan.keysmith-switch`
 
@@ -28,6 +28,7 @@ identifier：`com.jia-ethan.keysmith-switch`
 - source gate 先用生产私钥签临时文件，再使用生产公钥验证，证明密钥配对正确。
 - macOS `.app.tar.gz` 和 Windows NSIS `.exe` 必须由 Tauri 生成非空 `.sig`。
 - 每个平台 payload 必须用同一生产公钥通过独立 `verify_updater` 验证。
+- `latest.json` 必须包含 `minimum_updater_version: "0.1.3"`；每个平台必须提供正整数 `size`，且与实际 payload 字节数一致。
 - `latest.json` 只允许 HTTPS、非空签名、正确 SHA-256，并且仅包含 `darwin-aarch64` 与 `windows-x86_64`。
 - 签名失败、离线、损坏 metadata、版本降级、确认后 metadata 变化或下载中断时，客户端保留当前版本。
 
@@ -61,17 +62,19 @@ identifier：`com.jia-ethan.keysmith-switch`
 
 - 检查和安装使用同一 channel、endpoint、生产公钥和 platform key。
 - 安装必须经过用户确认；不能静默安装。
+- 客户端版本低于 metadata 的 `minimum_updater_version` 时进入手动更新状态，后端安装命令不得下载 payload。
+- updater key ID 不匹配时返回结构化手动更新原因；底层验签错误只进入脱敏日志，不直出界面。
 - 用户界面不展示 Preview、平台签名、Developer ID、公证或 Authenticode 说明。
 - 发布文档必须准确说明 bootstrap 和系统警告边界，不得把 updater minisign 描述成平台代码签名。
 
 ## 发布顺序
 
-1. 版本、发布说明和 workflow 进入 `main`，CI 全部通过。
-2. 创建 GitHub-verified annotated tag `v0.1.3`。
-3. 手动触发源仓库 `release` workflow，参数为 `source_tag=v0.1.3`、`channel=stable`。
+1. 公开 updater 仓库先合并 metadata 校验 PR，源仓库再合并协议与 `0.1.4-rc.1` PR，CI 全部通过。
+2. 创建 GitHub-verified annotated tag `v0.1.4-rc.1`。
+3. 手动触发源仓库 `release` workflow，参数为 `source_tag=v0.1.4-rc.1`、`channel=beta`。
 4. 独立下载并验证 source candidate artifact、provenance、payload、签名和 SHA-256。
-5. 手动触发公开仓库 publish workflow，经 `production` 审批后发布。
-6. 从公开 Release 重新下载全部资产，复核 SHA-256、`latest.json` 和可公开访问性。
-7. 手动安装 `v0.1.3` 完成 bootstrap 验收；不从 `v0.1.1` 测试自动更新。
+5. 手动触发公开仓库 workflow，仅运行验证 job；不批准 `production`，验证后取消等待中的 publish job。
+6. 确认没有创建 Release、没有写入 beta/stable feed，也没有发布任何资产。
+7. 候选只验收双平台构建、生产密钥兼容、metadata、签名、大小和发布链；不宣称完成真实应用内安装与重启验收。
 
 创建 tag、触发 workflow、批准 production 或创建公开 Release 均属于外部发布动作，需要当次明确确认。

@@ -74,8 +74,8 @@
 | `get_settings` | `{}` | `Settings` |
 | `update_settings` | `SettingsPatch` | `Settings` |
 | `get_about` | `{}` | `AboutInfo` |
-| `check_app_update` | `{ channel? }` | `UpdateCheck` |
-| `install_app_update` | `{ confirmed: true }` | `UpdateInstall` |
+| `check_app_update` | `{ channel? }` | `UpdateCheck`（含 `installMode` 与 `reason`） |
+| `install_app_update` | `{ confirmed: true }` | `UpdateInstall`（含 `installMode` 与 `reason`） |
 | `plan_official_action` | `{ product, action }` | `OfficialPlan` |
 | `confirm_official_action` | `{ planId, confirmed: true }` | `OfficialResult` |
 | `list_advanced_tools` | `{}` | `{ tools, enabled }` |
@@ -106,6 +106,9 @@
 - beta endpoint：`https://raw.githubusercontent.com/Jia-Ethan/keysmith-switch-releases/beta/latest.json`
 - 环境覆盖：`KEYSMITH_SWITCH_UPDATER_ENDPOINT`、`KEYSMITH_SWITCH_UPDATER_PUBKEY`
 - 禁止静默安装；`install_app_update` 必须 `confirmed: true`
+- metadata 可用 `minimum_updater_version` 声明能验证当前签名密钥的最早客户端；低于门槛时只返回目标版本的手动下载入口，不请求 updater payload
+- `installMode` 为 `none | inApp | manual`；`reason` 为 `bootstrapRequired | signatureKeyMismatch | null`
+- metadata 平台项优先提供正整数 `size`；旧 feed 缺失时才使用跟随重定向的 HEAD fallback
 - 签名失败、离线、损坏 metadata、降级、下载中断：保持当前版本
 - 失败提供公开 Release 页：`https://github.com/Jia-Ethan/keysmith-switch-releases/releases`
 

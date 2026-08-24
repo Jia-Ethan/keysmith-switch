@@ -15,9 +15,13 @@ jobs:
         with:
           node-version: "20"
           cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - run: python3 -m unittest discover -s scripts/tests -p 'test_*.py'
 
   rust:
     runs-on: macos-14

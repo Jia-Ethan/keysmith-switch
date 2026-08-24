@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { applyLanguage } from "../i18n";
 import type { ToastApi } from "../hooks/useToasts";
-import { DEFAULT_SETTINGS } from "../types";
+import { DEFAULT_SETTINGS, type UpdateCheck } from "../types";
 import { SettingsPage } from "./SettingsPage";
 
 const listTools = vi.fn();
@@ -19,19 +19,9 @@ const confirmOfficialAction = vi.fn();
 const cancelOfficialAction = vi.fn();
 const checkUpdate = vi.fn();
 const installUpdate = vi.fn();
+const openExternal = vi.fn();
 let updaterState: {
-  update: {
-    available: boolean;
-    currentVersion: string;
-    latestVersion: string | null;
-    notes: string | null;
-    size: number | null;
-    channel: "stable";
-    restartRequired: boolean;
-    progress: number | null;
-    error: string | null;
-    releasePage: string;
-  } | null;
+  update: UpdateCheck | null;
   checking: boolean;
   installing: boolean;
   progress: number | null;
@@ -59,7 +49,7 @@ vi.mock("../api", () => ({
 }));
 
 vi.mock("../lib/runtime", () => ({
-  openExternal: vi.fn(),
+  openExternal: (...args: unknown[]) => openExternal(...args),
   pickFiles: vi.fn().mockResolvedValue([]),
   pickSavePath: vi.fn().mockResolvedValue(null),
   isTauriRuntime: vi.fn().mockReturnValue(false),
@@ -130,6 +120,8 @@ describe("SettingsPage data safety", () => {
       restartRequired: true,
       error: null,
       releasePage: "https://github.com/Jia-Ethan/keysmith-switch-releases/releases",
+      installMode: "inApp",
+      reason: null,
     });
   });
 
@@ -271,6 +263,8 @@ describe("SettingsPage data safety", () => {
       progress: null,
       error: null,
       releasePage: "https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.1.2",
+      installMode: "inApp",
+      reason: null,
     };
 
     render(
@@ -291,6 +285,106 @@ describe("SettingsPage data safety", () => {
     expect(screen.getByRole("dialog", { name: "更新并重启" })).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("confirm-install-update"));
     await waitFor(() => expect(installUpdate).toHaveBeenCalledTimes(1));
+  });
+
+  it("shows only the release download action for a bootstrap-required manual update", async () => {
+    const releasePage = "https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.1.3";
+    updaterState.update = {
+      available: true,
+      currentVersion: "0.1.1",
+      latestVersion: "0.1.3",
+      notes: null,
+      size: 0,
+      channel: "stable",
+      restartRequired: false,
+      progress: null,
+      error: null,
+      releasePage,
+      installMode: "manual",
+      reason: "bootstrapRequired",
+    };
+
+    render(
+      <SettingsPage
+        settings={DEFAULT_SETTINGS}
+        onSave={vi.fn()}
+        toast={toast}
+        initialTab="about"
+      />,
+    );
+
+    expect(screen.getByTestId("manual-update-message")).toHaveTextContent(
+      "当前版本需要先手动升级，之后即可继续使用应用内更新。",
+    );
+    expect(screen.queryByText("0 B")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("install-update")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "更新并重启" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("open-update-release"));
+    expect(openExternal).toHaveBeenCalledWith(releasePage);
+    expect(installUpdate).not.toHaveBeenCalled();
+  });
+
+  it("localizes a signing-key mismatch without exposing the backend error", () => {
+    updaterState.error = "UnexpectedKeyId: public key 1234 does not match";
+    updaterState.update = {
+      available: true,
+      currentVersion: "0.1.3",
+      latestVersion: "0.1.4",
+      notes: null,
+      size: null,
+      channel: "stable",
+      restartRequired: false,
+      progress: null,
+      error: null,
+      releasePage: "https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.1.4",
+      installMode: "manual",
+      reason: "signatureKeyMismatch",
+    };
+
+    render(
+      <SettingsPage
+        settings={DEFAULT_SETTINGS}
+        onSave={vi.fn()}
+        toast={toast}
+        initialTab="about"
+      />,
+    );
+
+    expect(screen.getByTestId("manual-update-message")).toHaveTextContent(
+      "此更新使用了新的发布签名。为确保安全，请从官方下载页手动安装。",
+    );
+    expect(screen.queryByText(/UnexpectedKeyId|public key 1234/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("does not display an unknown update size", () => {
+    updaterState.update = {
+      available: true,
+      currentVersion: "0.1.3",
+      latestVersion: "0.1.4",
+      notes: null,
+      size: null,
+      channel: "stable",
+      restartRequired: true,
+      progress: null,
+      error: null,
+      releasePage: "https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.1.4",
+      installMode: "inApp",
+      reason: null,
+    };
+
+    render(
+      <SettingsPage
+        settings={DEFAULT_SETTINGS}
+        onSave={vi.fn()}
+        toast={toast}
+        initialTab="about"
+      />,
+    );
+
+    expect(screen.getByText("发现新版本")).toBeInTheDocument();
+    expect(screen.queryByText("0 B")).not.toBeInTheDocument();
   });
 
   it("shows explicit empty states for adapters and official products", async () => {

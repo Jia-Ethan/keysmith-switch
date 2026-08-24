@@ -12,6 +12,8 @@
 
 稳定版 `v0.1.3` 已发布。它是生产 updater 公钥的 bootstrap 版本：现有 `v0.1.1` 用户需要手动安装一次 `v0.1.3`，后续版本才能通过应用内更新。
 
+当前源码版本为 `v0.1.4-rc.1` 候选，正在加入长期 updater 兼容协议。候选仅用于构建、签名与发布链验证，不是正式 Release，也不会更新 stable 或 beta 公共 feed。
+
 公开 updater 仓库 [`Jia-Ethan/keysmith-switch-releases`](https://github.com/Jia-Ethan/keysmith-switch-releases)、来源验证、生产 updater 签名与受保护发布环境已经启用。
 
 详见 [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md) 与 [`docs/RELEASE_GATES.md`](docs/RELEASE_GATES.md)。
@@ -52,7 +54,7 @@ macOS Apple Silicon 本地开发构建（不生成 updater artifact）：
 npx tauri build --target aarch64-apple-darwin --config src-tauri/tauri.preview.macos.conf.json
 ```
 
-GitHub Actions 的 `development-candidate` 工作流只用于开发候选验证，不生成 updater artifacts。`release` workflow 从 GitHub-verified tag 构建 macOS/Windows updater payload，使用 minisign 签名并交给公开仓库复核发布。
+GitHub Actions 的 `development-candidate` 工作流只用于开发候选验证，不生成 updater artifacts。`release` workflow 从 GitHub-verified tag 构建 macOS/Windows updater payload，使用 minisign 签名，并在 `latest.json` 写入 `minimum_updater_version` 与准确 payload 字节数后交给公开仓库复核。
 
 ## 数据位置
 
