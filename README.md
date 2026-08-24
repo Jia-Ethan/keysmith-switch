@@ -63,6 +63,10 @@ GitHub Actions 的 `development-candidate` 工作流只用于开发候选验证�
 
 测试可用 `KEYSMITH_SWITCH_HOME` 覆盖数据根。
 
+## 反馈
+
+Bug、需求与破限建议统一提交至 [GitHub Discussions](https://github.com/Jia-Ethan/keysmith-switch/discussions/3)。请勿公开提交 token、完整配置、提示词正文或其他敏感信息。当前仓库尚未启用 Private Vulnerability Reporting，安全漏洞请勿在 Discussion 公开披露。
+
 ## 内置 CLI
 
 `third_party/keysmith/` 钉选审计版本，随应用原子更新：
