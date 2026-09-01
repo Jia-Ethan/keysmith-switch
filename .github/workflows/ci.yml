@@ -1,0 +1,79 @@
+# Validate frontend, Rust core, and bundled sidecars on pull requests and main.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  frontend:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: python3 -m unittest discover -s scripts/tests -p 'test_*.py'
+
+  rust:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python3 scripts/build-sidecars.py
+      - run: cargo fmt --check
+        working-directory: src-tauri
+      - run: cargo check
+        working-directory: src-tauri
+      - run: cargo test
+        working-directory: src-tauri
+
+  sidecar-macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python3 scripts/build-sidecars.py
+      - run: test -x src-tauri/binaries/keysmith-claude-aarch64-apple-darwin
+      - run: test -x src-tauri/binaries/keysmith-codex-aarch64-apple-darwin
+      - run: test -x src-tauri/binaries/keysmith-grok-aarch64-apple-darwin
+      - run: test -x src-tauri/binaries/keysmith-zcode-aarch64-apple-darwin
+
+  sidecar-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python scripts/build-sidecars.py
+      - name: Verify all Windows sidecars
+        shell: pwsh
+        run: |
+          $sidecars = @(
+            "keysmith-claude-x86_64-pc-windows-msvc.exe",
+            "keysmith-codex-x86_64-pc-windows-msvc.exe",
+            "keysmith-grok-x86_64-pc-windows-msvc.exe",
+            "keysmith-zcode-x86_64-pc-windows-msvc.exe"
+          )
+          foreach ($sidecar in $sidecars) {
+            $path = Join-Path "src-tauri/binaries" $sidecar
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              throw "Required Windows sidecar missing: $path"
+            }
+          }

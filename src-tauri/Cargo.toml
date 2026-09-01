@@ -1,0 +1,56 @@
+[package]
+name = "keysmith-switch"
+version = "0.1.4-rc.1"
+description = "Keysmith Switch — local prompt manager for Claude Code, Codex, Grok Build, and ZCode"
+authors = ["Jia-Ethan"]
+license = "MIT"
+edition = "2021"
+rust-version = "1.85.0"
+
+[lib]
+name = "keysmith_switch_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+doctest = false
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+anyhow = "1"
+chrono = { version = "0.4", features = ["serde"] }
+dirs = "5"
+hex = "0.4"
+regex = "1"
+rusqlite = { version = "0.32", features = ["bundled", "backup"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+similar = "2"
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-process = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-window-state = "2"
+updater-minisign-verify = { package = "minisign-verify", version = "=0.2.5" }
+auto-launch = "0.5"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+tempfile = "3"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "process", "time", "io-util", "sync"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+walkdir = "2"
+which = "6"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+httpmock = "0.7"
+pretty_assertions = "1"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1

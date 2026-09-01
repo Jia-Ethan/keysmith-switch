@@ -1,0 +1,74 @@
+name: Bug report / Bug 报告
+description: Report a reproducible problem / 报告可复现的问题
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请先删除 token、cookie、用户名、私人路径、完整配置和提示词正文。安全漏洞不要在公开 Issue 中披露。
+
+        Remove tokens, cookies, usernames, private paths, complete configuration, and prompt content. Do not disclose vulnerabilities in a public issue.
+
+  - type: input
+    id: keysmith-version
+    attributes:
+      label: Keysmith Switch 版本 / Version
+      description: Find the app version in Settings or About.
+      placeholder: Keysmith Switch 0.1.3
+    validations:
+      required: true
+
+  - type: input
+    id: operating-system
+    attributes:
+      label: 操作系统与架构 / Operating system and architecture
+      placeholder: macOS 15.5, Apple Silicon or Windows 11, x64
+    validations:
+      required: true
+
+  - type: dropdown
+    id: operation
+    attributes:
+      label: 操作位置 / Area
+      options:
+        - startup
+        - tool status
+        - prompt management
+        - install / update / uninstall tool
+        - app update
+        - settings
+        - other
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 实际发生的问题（含复现步骤和预期结果）/ What happened (include steps and what you expected)
+      description: Provide the smallest sequence that reproduces the problem, what you expected, and what actually happened.
+      placeholder: |
+        1. Open ...
+        2. Expected ...
+        3. Actually saw ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnostic-output
+    attributes:
+      label: 脱敏后的日志或截图（可选，但强烈建议附上）/ Redacted logs or screenshots (optional, strongly recommended)
+      description: Include the visible error and relevant logs where available. Do not paste complete configuration or prompt content.
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: 其他信息 / Additional context
+      description: Add only directly relevant information, such as whether the problem is consistent or intermittent and how the app was installed.
+
+  - type: checkboxes
+    id: redaction
+    attributes:
+      label: 脱敏确认 / Redaction confirmation
+      options:
+        - label: I removed tokens, cookies, usernames, private paths, complete configuration, and prompt content. / 我已删除这些敏感信息。
+          required: true
