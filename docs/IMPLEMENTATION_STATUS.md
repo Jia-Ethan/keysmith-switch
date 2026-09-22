@@ -1,8 +1,8 @@
 # Keysmith Switch 实现状态
 
-更新日期：2026-08-24（Asia/Shanghai）
+更新日期：2026-09-22（Asia/Shanghai）
 
-阶段：**稳定版仍为 `v0.1.3`；候选 tag `v0.1.4-rc.1` 指向 `6019cb9`，当前 `main` 为包含后续界面优化的 `bd6bf7f`；两者均未形成新的 Release 或公共 feed。**
+阶段：**源码准备 `v0.1.4`。`main` 已包含 #7–#12。还没有 annotated tag，没有安装包，也没有更新公共 feed。已发布的稳定包仍是 `v0.1.3`。**
 
 ## 产品状态
 

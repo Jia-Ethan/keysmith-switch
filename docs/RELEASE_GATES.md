@@ -1,8 +1,8 @@
 # Keysmith Switch 发布门槛
 
-本文件记录 `v0.1.4-rc.1` 候选及后续版本的发布边界。应用安装包不使用 Apple Developer ID、公证或 Windows Authenticode；应用内更新仍使用独立生产密钥签名并在客户端安装前验证。
+本文件记录 `v0.1.4` 及后续版本的发布边界。应用安装包不使用 Apple Developer ID、公证或 Windows Authenticode；应用内更新仍使用独立生产密钥签名并在客户端安装前验证。
 
-应用版本：`0.1.4-rc.1`
+应用版本：`0.1.4`
 
 identifier：`com.jia-ethan.keysmith-switch`
 
@@ -67,14 +67,17 @@ identifier：`com.jia-ethan.keysmith-switch`
 - 用户界面不展示 Preview、平台签名、Developer ID、公证或 Authenticode 说明。
 - 发布文档必须准确说明 bootstrap 和系统警告边界，不得把 updater minisign 描述成平台代码签名。
 
-## 发布顺序
+## v0.1.4 发布顺序
 
-1. 公开 updater 仓库先合并 metadata 校验 PR，源仓库再合并协议与 `0.1.4-rc.1` PR，CI 全部通过。
-2. 创建 GitHub-verified annotated tag `v0.1.4-rc.1`。
-3. 手动触发源仓库 `release` workflow，参数为 `source_tag=v0.1.4-rc.1`、`channel=beta`。
+`v0.1.4-rc.1` 只验证过构建链，没有公开安装包。`v0.1.4` 是接替四个桌面安装包的稳定版，不是另一轮 beta。
+
+1. 源仓库合并本发布准备，`main` CI 通过。版本七处一致，tag 名必须等于 `v` 加 `package.json` 的版本。
+2. 创建 GitHub-verified annotated tag `v0.1.4`。这一步需要当次确认。
+3. 手动触发源仓库 `release` workflow：`source_tag=v0.1.4`、`channel=stable`。
 4. 独立下载并验证 source candidate artifact、provenance、payload、签名和 SHA-256。
-5. 手动触发公开仓库 workflow，仅运行验证 job；不批准 `production`，验证后取消等待中的 publish job。
-6. 确认没有创建 Release、没有写入 beta/stable feed，也没有发布任何资产。
-7. 候选只验收双平台构建、生产密钥兼容、metadata、签名、大小和发布链；不宣称完成真实应用内安装与重启验收。
+5. 手动触发公开仓库 workflow。批准受保护的 `production` environment 后，才发布不可变 Release 并更新 stable feed。
+6. 发布说明使用 `scripts/release-notes.md`。其中写明本版本接替 Claude、Grok、Codex、Zcode 四个桌面安装包；那些包不撤回，也不改成 Latest。
+7. `latest.json` 仍要求 `minimum_updater_version: "0.1.3"` 和每个平台的正整数 `size`。已安装 `v0.1.3` 的客户端可应用内更新。`v0.1.1` 仍须手动安装。
+8. 真实应用内下载、安装与重启，以及 Windows x64 实体机的手动安装、启动和卸载，仍是发布后的验收，不由这次源码准备代替。
 
-创建 tag、触发 workflow、批准 production 或创建公开 Release 均属于外部发布动作，需要当次明确确认。
+创建 tag、触发 workflow、批准 production 或创建公开 Release 均属于外部发布动作，需要当次明确确认。本准备不执行这些动作。
