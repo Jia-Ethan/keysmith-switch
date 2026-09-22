@@ -6,9 +6,9 @@ use std::thread;
 use httpmock::prelude::*;
 use keysmith_switch_lib::updater::{
     bootstrap_reason_for_metadata, check_update, fixture_manifest, install_update,
-    resolve_update_endpoint, runtime_update_config, updater_error_install, updater_fixture_dir,
-    verify_minisign, InstallMode, InstallRequest, UpdateChannel, UpdateReason, UpdateRequest,
-    APP_VERSION, BETA_ENDPOINT, FIXTURE_PUBKEY, RELEASE_PAGE, STABLE_ENDPOINT,
+    known_manual_bootstrap, resolve_update_endpoint, runtime_update_config, updater_error_install,
+    updater_fixture_dir, verify_minisign, InstallMode, InstallRequest, UpdateChannel, UpdateReason,
+    UpdateRequest, APP_VERSION, BETA_ENDPOINT, FIXTURE_PUBKEY, RELEASE_PAGE, STABLE_ENDPOINT,
 };
 
 fn env_lock() -> std::sync::MutexGuard<'static, ()> {
@@ -366,6 +366,71 @@ fn check_update_at_minimum_keeps_in_app_install() {
 }
 
 #[test]
+fn known_fixture_key_client_cannot_apply_production_release() {
+    assert!(known_manual_bootstrap("0.1.1", "0.1.3"));
+    assert!(known_manual_bootstrap("v0.1.2", "v0.1.3"));
+    assert!(!known_manual_bootstrap("0.1.3", "0.1.4"));
+    assert!(!known_manual_bootstrap("0.1.4-rc.1", "0.1.4"));
+    assert!(!known_manual_bootstrap("0.1.1", "0.1.2"));
+}
+
+#[test]
+fn check_update_v011_legacy_feed_is_manual_and_never_reports_zero_size() {
+    let _guard = env_lock();
+    let server = MockServer::start();
+    let signature = load_text("artifact-0.2.0.bin.sig");
+    let artifact_url = server.url("/artifact-0.2.0.bin");
+    let body = fixture_manifest("0.1.3", &artifact_url, &signature);
+    serve_json(&server, "/releases/latest/download/latest.json", &body);
+    let artifact = serve_artifact(&server, "/artifact-0.2.0.bin", "artifact-0.2.0.bin");
+    let artifact_head = server.mock(|when, then| {
+        when.method("HEAD").path("/artifact-0.2.0.bin");
+        then.status(200).header("content-length", "0");
+    });
+    let mut req = base_req(&server);
+    req.current_version = Some("0.1.1".into());
+
+    let check = check_update(&req);
+    assert!(check.available);
+    assert_eq!(check.install_mode, InstallMode::Manual);
+    assert_eq!(check.reason, Some(UpdateReason::BootstrapRequired));
+    assert_eq!(check.size, None);
+    assert!(!check.restart_required);
+    assert!(check.error.is_none());
+    assert_eq!(
+        check.detail.as_ref().map(|detail| detail.code.as_str()),
+        Some("bootstrap_required")
+    );
+    assert!(check
+        .detail
+        .as_ref()
+        .is_some_and(|detail| detail.message.contains("releases/tag/v0.1.3")));
+    assert_eq!(
+        check.release_page,
+        "https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.1.3"
+    );
+
+    let install = install_update(&InstallRequest {
+        confirmed: true,
+        check: req,
+    });
+    assert!(!install.ok);
+    assert_eq!(install.install_mode, InstallMode::Manual);
+    assert_eq!(install.reason, Some(UpdateReason::BootstrapRequired));
+    assert!(install.error.is_none());
+    assert_eq!(
+        artifact.hits(),
+        0,
+        "a doomed install must not fetch the payload"
+    );
+    assert_eq!(
+        artifact_head.hits(),
+        0,
+        "a zero content-length must not become 0 B"
+    );
+}
+
+#[test]
 fn check_update_legacy_metadata_keeps_in_app_install() {
     let _guard = env_lock();
     let server = MockServer::start();
@@ -638,6 +703,15 @@ fn tauri_unexpected_key_id_maps_to_manual_without_raw_error() {
     assert_eq!(install.install_mode, InstallMode::Manual);
     assert_eq!(install.reason, Some(UpdateReason::SignatureKeyMismatch));
     assert!(install.error.is_none());
+    assert_eq!(
+        install.detail.as_ref().map(|detail| detail.code.as_str()),
+        Some("signature_key_mismatch")
+    );
+    assert!(install
+        .detail
+        .as_ref()
+        .is_some_and(|detail| !detail.message.is_empty()));
+    assert!(!install.restart_required);
 }
 
 #[test]

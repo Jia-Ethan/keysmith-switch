@@ -93,6 +93,7 @@ export function UpdateProvider({
           available: true,
           installMode: "manual",
           reason: result.reason,
+          detail: result.detail ?? current.detail ?? null,
           restartRequired: false,
           error: null,
           releasePage: result.releasePage || current.releasePage,

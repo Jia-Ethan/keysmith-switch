@@ -39,6 +39,7 @@ function UpdateHarness() {
       <output data-testid="update-version">{updater.update?.latestVersion ?? "none"}</output>
       <output data-testid="install-mode">{updater.update?.installMode ?? "none"}</output>
       <output data-testid="manual-reason">{updater.update?.reason ?? "none"}</output>
+      <output data-testid="update-detail">{updater.update?.detail?.message ?? "none"}</output>
       <output data-testid="update-error">{updater.error ?? "none"}</output>
     </div>
   );
@@ -99,10 +100,14 @@ describe("UpdateProvider", () => {
     installAppUpdate.mockResolvedValue({
       ok: false,
       restartRequired: false,
-      error: "Unexpected key id: secret backend detail",
+      error: null,
       releasePage: availableUpdate.releasePage,
       installMode: "manual",
       reason: "signatureKeyMismatch",
+      detail: {
+        code: "signature_key_mismatch",
+        message: "The signature was created with a different key than the one provided",
+      },
     } satisfies UpdateInstall);
 
     render(
@@ -118,6 +123,10 @@ describe("UpdateProvider", () => {
     await waitFor(() => expect(screen.getByTestId("install-mode")).toHaveTextContent("manual"));
     expect(screen.getByTestId("manual-reason")).toHaveTextContent("signatureKeyMismatch");
     expect(screen.getByTestId("update-error")).toHaveTextContent("none");
+    expect(screen.getByTestId("update-detail")).toHaveTextContent(
+      "The signature was created with a different key than the one provided",
+    );
+    expect(screen.queryByText(/secret backend detail/)).not.toBeInTheDocument();
   });
 
   it("does not call the install command for an update already marked manual", async () => {

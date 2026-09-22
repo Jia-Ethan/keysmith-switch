@@ -314,7 +314,7 @@ describe("SettingsPage data safety", () => {
     );
 
     expect(screen.getByTestId("manual-update-message")).toHaveTextContent(
-      "当前版本需要先手动升级，之后即可继续使用应用内更新。",
+      "v0.1.1 内置的是测试更新公钥，无法安装带正式签名的版本。请从官方下载页手动安装，当前版本会保持不变。",
     );
     expect(screen.queryByText("0 B")).not.toBeInTheDocument();
     expect(screen.queryByTestId("install-update")).not.toBeInTheDocument();
@@ -352,10 +352,53 @@ describe("SettingsPage data safety", () => {
     );
 
     expect(screen.getByTestId("manual-update-message")).toHaveTextContent(
-      "此更新使用了新的发布签名。为确保安全，请从官方下载页手动安装。",
+      "更新包的签名与本机内置公钥不一致，无法在应用内安装。请从官方下载页手动安装，当前版本会保持不变。",
     );
     expect(screen.queryByText(/UnexpectedKeyId|public key 1234/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("install-update")).not.toBeInTheDocument();
+  });
+
+  it("keeps the raw signature error inside details and still links the release page", () => {
+    const releasePage = "https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.1.3";
+    updaterState.update = {
+      available: true,
+      currentVersion: "0.1.1",
+      latestVersion: "0.1.3",
+      notes: null,
+      size: 0,
+      channel: "stable",
+      restartRequired: false,
+      progress: null,
+      error: null,
+      releasePage,
+      installMode: "manual",
+      reason: "signatureKeyMismatch",
+      detail: {
+        code: "signature_key_mismatch",
+        message: "The signature was created with a different key than the one provided",
+      },
+    };
+
+    render(
+      <SettingsPage
+        settings={DEFAULT_SETTINGS}
+        onSave={vi.fn()}
+        toast={toast}
+        initialTab="about"
+      />,
+    );
+
+    expect(screen.getByTestId("manual-update-message")).toHaveTextContent("手动安装");
+    expect(screen.queryByText("The signature was created with a different key than the one provided")).not.toBeVisible();
+    fireEvent.click(screen.getByText("详情"));
+    expect(screen.getByTestId("update-error-details")).toHaveTextContent(
+      "The signature was created with a different key than the one provided",
+    );
+    expect(screen.queryByText("0 B")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("install-update")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("open-update-release"));
+    expect(openExternal).toHaveBeenCalledWith(releasePage);
   });
 
   it("does not display an unknown update size", () => {

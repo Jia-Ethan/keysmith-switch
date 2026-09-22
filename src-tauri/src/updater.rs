@@ -26,6 +26,9 @@ use minisign_verify::{PublicKey, Signature};
 
 pub const APP_VERSION: &str = "0.1.4-rc.1";
 pub const RELEASE_PAGE: &str = "https://github.com/Jia-Ethan/keysmith-switch-releases/releases";
+/// First release whose updater key can verify production minisign payloads.
+/// `v0.1.1` shipped the TEST ONLY fixture key, so it cannot apply `v0.1.3`.
+pub const PRODUCTION_UPDATER_FLOOR: &str = "0.1.3";
 pub const STABLE_ENDPOINT: &str =
     "https://github.com/Jia-Ethan/keysmith-switch-releases/releases/latest/download/latest.json";
 pub const BETA_ENDPOINT: &str =
@@ -137,6 +140,13 @@ pub enum UpdateReason {
     SignatureKeyMismatch,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateDetail {
+    pub code: String,
+    pub message: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateCheck {
@@ -148,6 +158,8 @@ pub struct UpdateCheck {
     pub channel: UpdateChannel,
     pub install_mode: InstallMode,
     pub reason: Option<UpdateReason>,
+    /// Underlying updater text. Shown only inside the details disclosure.
+    pub detail: Option<UpdateDetail>,
     pub restart_required: bool,
     pub progress: Option<f64>,
     pub error: Option<String>,
@@ -160,6 +172,7 @@ pub struct UpdateInstall {
     pub ok: bool,
     pub install_mode: InstallMode,
     pub reason: Option<UpdateReason>,
+    pub detail: Option<UpdateDetail>,
     pub restart_required: bool,
     pub error: Option<String>,
     pub release_page: String,
@@ -327,6 +340,7 @@ pub fn install_update(req: &InstallRequest) -> UpdateInstall {
             ok: false,
             install_mode: InstallMode::None,
             reason: None,
+            detail: None,
             restart_required: false,
             error: Some("confirmation required".to_string()),
             release_page: RELEASE_PAGE.to_string(),
@@ -338,6 +352,7 @@ pub fn install_update(req: &InstallRequest) -> UpdateInstall {
             ok: false,
             install_mode: InstallMode::None,
             reason: None,
+            detail: None,
             restart_required: false,
             error: Some(err.to_string()),
             release_page: RELEASE_PAGE.to_string(),
@@ -348,6 +363,7 @@ pub fn install_update(req: &InstallRequest) -> UpdateInstall {
             ok: false,
             install_mode: InstallMode::Manual,
             reason: check.reason,
+            detail: check.detail,
             restart_required: false,
             error: None,
             release_page: check.release_page,
@@ -358,6 +374,7 @@ pub fn install_update(req: &InstallRequest) -> UpdateInstall {
             ok: false,
             install_mode: InstallMode::None,
             reason: None,
+            detail: None,
             restart_required: false,
             error: Some("no update available".to_string()),
             release_page: RELEASE_PAGE.to_string(),
@@ -369,6 +386,7 @@ pub fn install_update(req: &InstallRequest) -> UpdateInstall {
             ok: true,
             install_mode: InstallMode::InApp,
             reason: None,
+            detail: None,
             restart_required: true,
             error: None,
             release_page: RELEASE_PAGE.to_string(),
@@ -376,14 +394,18 @@ pub fn install_update(req: &InstallRequest) -> UpdateInstall {
         Err(InstallPolicyError::SignatureKeyMismatch) => manual_install(
             UpdateReason::SignatureKeyMismatch,
             check.latest_version.as_deref(),
+            Some(signature_key_mismatch_detail()),
         ),
-        Err(InstallPolicyError::BootstrapRequired(version)) => {
-            manual_install(UpdateReason::BootstrapRequired, Some(&version))
-        }
+        Err(InstallPolicyError::BootstrapRequired(version)) => manual_install(
+            UpdateReason::BootstrapRequired,
+            Some(&version),
+            Some(bootstrap_detail(&version)),
+        ),
         Err(InstallPolicyError::Message(err)) => UpdateInstall {
             ok: false,
             install_mode: InstallMode::None,
             reason: None,
+            detail: None,
             restart_required: false,
             error: Some(err),
             release_page: RELEASE_PAGE.to_string(),
@@ -439,40 +461,44 @@ fn finish_check(
             channel: resolved.channel,
             install_mode: InstallMode::None,
             reason: None,
+            detail: None,
             restart_required: false,
             progress: None,
             error: None,
             release_page: RELEASE_PAGE.to_string(),
         },
         std::cmp::Ordering::Greater => {
-            let bootstrap_required = match bootstrap_reason(
-                &resolved.current_version,
-                manifest.minimum_updater_version.as_deref(),
-            ) {
-                Ok(Some(UpdateReason::BootstrapRequired)) => true,
-                Ok(None) => false,
-                Ok(Some(_)) => unreachable!("metadata only yields bootstrapRequired"),
-                Err(error) => {
-                    return keep_current(resolved, Some(manifest.version), Some(error));
-                }
-            };
+            let metadata_minimum = manifest.minimum_updater_version.as_deref();
+            let bootstrap_required =
+                match bootstrap_reason(&resolved.current_version, metadata_minimum) {
+                    Ok(Some(UpdateReason::BootstrapRequired)) => true,
+                    Ok(None) => {
+                        known_manual_bootstrap(&resolved.current_version, &manifest.version)
+                    }
+                    Ok(Some(_)) => unreachable!("metadata only yields bootstrapRequired"),
+                    Err(error) => {
+                        return keep_current(resolved, Some(manifest.version), Some(error));
+                    }
+                };
             if bootstrap_required {
+                let version = manifest.version.clone();
                 return UpdateCheck {
                     available: true,
                     current_version: resolved.current_version.clone(),
-                    latest_version: Some(manifest.version.clone()),
+                    latest_version: Some(version.clone()),
                     notes: manifest.notes,
-                    size: asset.size,
+                    size: positive_size(asset.size),
                     channel: resolved.channel,
                     install_mode: InstallMode::Manual,
                     reason: Some(UpdateReason::BootstrapRequired),
+                    detail: Some(bootstrap_detail(&version)),
                     restart_required: false,
                     progress: None,
                     error: None,
-                    release_page: release_page_for(&manifest.version),
+                    release_page: release_page_for(&version),
                 };
             }
-            let size = asset.size.or_else(|| head_size(&asset.url));
+            let size = positive_size(asset.size).or_else(|| head_size(&asset.url));
             UpdateCheck {
                 available: true,
                 current_version: resolved.current_version.clone(),
@@ -482,6 +508,7 @@ fn finish_check(
                 channel: resolved.channel,
                 install_mode: InstallMode::InApp,
                 reason: None,
+                detail: None,
                 restart_required: true,
                 progress: None,
                 error: None,
@@ -538,12 +565,14 @@ fn download_and_verify(resolved: &ResolvedUpdate) -> Result<(), InstallPolicyErr
             },
         ));
     }
-    if bootstrap_reason(
+    let metadata_requires_bootstrap = bootstrap_reason(
         &resolved.current_version,
         manifest.minimum_updater_version.as_deref(),
     )
     .map_err(InstallPolicyError::Message)?
-    .is_some()
+    .is_some();
+    if metadata_requires_bootstrap
+        || known_manual_bootstrap(&resolved.current_version, &manifest.version)
     {
         return Err(InstallPolicyError::BootstrapRequired(manifest.version));
     }
@@ -600,6 +629,7 @@ fn keep_current(
         channel: resolved.channel,
         install_mode: InstallMode::None,
         reason: None,
+        detail: None,
         restart_required: false,
         progress: None,
         error,
@@ -792,11 +822,58 @@ pub fn release_page_for(version: &str) -> String {
     format!("{RELEASE_PAGE}/tag/v{}", strip_v(version))
 }
 
-pub fn manual_install(reason: UpdateReason, version: Option<&str>) -> UpdateInstall {
+/// Versions that cannot verify a production minisign payload.
+///
+/// Published `v0.1.3` metadata does not carry `minimum_updater_version`, so a
+/// client still on the fixture key would otherwise offer an in-app install
+/// that is guaranteed to fail. The floor is the client version, not a feed edit.
+pub fn known_manual_bootstrap(current_version: &str, target_version: &str) -> bool {
+    let Ok(ordering) = compare_semver(strip_v(current_version), PRODUCTION_UPDATER_FLOOR) else {
+        return false;
+    };
+    if ordering != std::cmp::Ordering::Less {
+        return false;
+    }
+    compare_semver(strip_v(target_version), PRODUCTION_UPDATER_FLOOR)
+        .is_ok_and(|target| target != std::cmp::Ordering::Less)
+}
+
+fn positive_size(size: Option<u64>) -> Option<u64> {
+    size.filter(|value| *value > 0)
+}
+
+fn bootstrap_detail(target_version: &str) -> UpdateDetail {
+    UpdateDetail {
+        code: "bootstrap_required".to_string(),
+        message: format!(
+            "installed updater key cannot verify {target}; install {} manually",
+            release_page_for(target_version),
+            target = strip_v(target_version)
+        ),
+    }
+}
+
+fn signature_key_mismatch_detail() -> UpdateDetail {
+    UpdateDetail {
+        code: "signature_key_mismatch".to_string(),
+        message: "The signature was created with a different key than the one provided".to_string(),
+    }
+}
+
+pub fn manual_install(
+    reason: UpdateReason,
+    version: Option<&str>,
+    detail: Option<UpdateDetail>,
+) -> UpdateInstall {
+    let detail = detail.or_else(|| match reason {
+        UpdateReason::BootstrapRequired => version.map(bootstrap_detail),
+        UpdateReason::SignatureKeyMismatch => Some(signature_key_mismatch_detail()),
+    });
     UpdateInstall {
         ok: false,
         install_mode: InstallMode::Manual,
         reason: Some(reason),
+        detail,
         restart_required: false,
         error: None,
         release_page: version
@@ -813,7 +890,14 @@ pub fn updater_error_install(
     match error {
         tauri_plugin_updater::Error::Minisign(updater_minisign_verify::Error::UnexpectedKeyId) => {
             log_updater_error("verification", "signature_key_mismatch", &detail);
-            manual_install(UpdateReason::SignatureKeyMismatch, version)
+            manual_install(
+                UpdateReason::SignatureKeyMismatch,
+                version,
+                Some(UpdateDetail {
+                    code: "signature_key_mismatch".to_string(),
+                    message: detail,
+                }),
+            )
         }
         tauri_plugin_updater::Error::Minisign(_) => {
             log_updater_error("verification", "signature_invalid", &detail);
@@ -842,6 +926,7 @@ pub fn update_failure(message: &str) -> UpdateInstall {
         ok: false,
         install_mode: InstallMode::None,
         reason: None,
+        detail: None,
         restart_required: false,
         error: Some(message.to_string()),
         release_page: RELEASE_PAGE.to_string(),

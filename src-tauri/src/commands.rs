@@ -802,6 +802,7 @@ pub async fn install_app_update(
             ok: false,
             install_mode: InstallMode::None,
             reason: None,
+            detail: None,
             restart_required: false,
             error: Some("confirmation required".into()),
             release_page: crate::updater::RELEASE_PAGE.into(),
@@ -824,6 +825,7 @@ pub async fn install_app_update(
             ok: false,
             install_mode: InstallMode::None,
             reason: None,
+            detail: None,
             restart_required: false,
             error: Some(err.to_string()),
             release_page: crate::updater::RELEASE_PAGE.into(),
@@ -834,6 +836,7 @@ pub async fn install_app_update(
             ok: false,
             install_mode: InstallMode::Manual,
             reason: check.reason,
+            detail: check.detail,
             restart_required: false,
             error: None,
             release_page: check.release_page,
@@ -844,6 +847,7 @@ pub async fn install_app_update(
             ok: false,
             install_mode: InstallMode::None,
             reason: None,
+            detail: None,
             restart_required: false,
             error: Some("no update available".into()),
             release_page: crate::updater::RELEASE_PAGE.into(),
@@ -863,6 +867,7 @@ pub async fn install_app_update(
                 ok: false,
                 install_mode: InstallMode::None,
                 reason: None,
+                detail: None,
                 restart_required: false,
                 error: Some("simulated apply failure; current version kept".into()),
                 release_page: crate::updater::RELEASE_PAGE.into(),
@@ -912,16 +917,29 @@ async fn apply_with_plugin(
                     ok: false,
                     install_mode: InstallMode::None,
                     reason: None,
+                    detail: None,
                     restart_required: false,
                     error: Some("update metadata changed after confirmation; check again".into()),
                     release_page: crate::updater::RELEASE_PAGE.into(),
                 });
             }
-            match bootstrap_reason_for_metadata(&update.current_version, &update.raw_json) {
+            let metadata_bootstrap =
+                bootstrap_reason_for_metadata(&update.current_version, &update.raw_json);
+            let known_bootstrap =
+                crate::updater::known_manual_bootstrap(&update.current_version, &update.version);
+            match metadata_bootstrap {
                 Ok(Some(UpdateReason::BootstrapRequired)) => {
                     return Ok(manual_install(
                         UpdateReason::BootstrapRequired,
                         Some(&update.version),
+                        None,
+                    ));
+                }
+                Ok(None) if known_bootstrap => {
+                    return Ok(manual_install(
+                        UpdateReason::BootstrapRequired,
+                        Some(&update.version),
+                        None,
                     ));
                 }
                 Ok(None) => {}
