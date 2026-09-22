@@ -269,6 +269,11 @@ export interface DataDirs {
 export type UpdateInstallMode = "none" | "inApp" | "manual";
 export type UpdateManualReason = "bootstrapRequired" | "signatureKeyMismatch" | null;
 
+export interface UpdateDetail {
+  code: string;
+  message: string;
+}
+
 export interface UpdateCheck {
   available: boolean;
   currentVersion: string;
@@ -282,6 +287,7 @@ export interface UpdateCheck {
   releasePage: string;
   installMode: UpdateInstallMode;
   reason: UpdateManualReason;
+  detail?: UpdateDetail | null;
 }
 
 export interface UpdateInstall {
@@ -291,6 +297,7 @@ export interface UpdateInstall {
   releasePage: string;
   installMode: UpdateInstallMode;
   reason: UpdateManualReason;
+  detail?: UpdateDetail | null;
 }
 
 export interface OfficialPlan {

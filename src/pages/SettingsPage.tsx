@@ -735,13 +735,25 @@ export function SettingsPage({
                         : ""}
                     </p>
                     {updater.update.installMode === "manual" ? (
-                      <p className="mt-1 max-w-2xl text-sm text-muted-foreground" data-testid="manual-update-message">
-                        {t(updater.update.reason === "signatureKeyMismatch"
-                          ? "about.manualSignatureKeyMismatch"
-                          : updater.update.reason === "bootstrapRequired"
-                            ? "about.manualBootstrapRequired"
-                            : "about.manualUpdateRequired")}
-                      </p>
+                      <div className="mt-1 max-w-2xl">
+                        <p className="text-sm text-muted-foreground" data-testid="manual-update-message">
+                          {t(updater.update.reason === "signatureKeyMismatch"
+                            ? "about.manualSignatureKeyMismatch"
+                            : updater.update.reason === "bootstrapRequired"
+                              ? "about.manualBootstrapRequired"
+                              : "about.manualUpdateRequired")}
+                        </p>
+                        {updater.update.detail?.message ? (
+                          <details className="mt-2" data-testid="update-error-details">
+                            <summary className="cursor-pointer text-xs text-muted-foreground">
+                              {t("about.updateDetails")}
+                            </summary>
+                            <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 font-mono text-[11px] leading-snug text-muted-foreground">
+                              {updater.update.detail.message}
+                            </pre>
+                          </details>
+                        ) : null}
+                      </div>
                     ) : null}
                   </div>
                   <div className="ml-auto">
