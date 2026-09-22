@@ -66,6 +66,9 @@ async fn temp_home_activate_deactivate_restore_recover_drift_lock() {
             prompt_id: created.id.clone(),
             scope: Scope::User,
             project_dir: None,
+            runtime: false,
+            append_file: None,
+            max_tokens: None,
         },
         &opts,
     )

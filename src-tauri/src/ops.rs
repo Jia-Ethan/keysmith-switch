@@ -117,6 +117,9 @@ pub async fn plan_activate(
         scope: input.scope,
         project_dir: input.project_dir.clone(),
         name: Some(name.clone()),
+        runtime: input.runtime,
+        append_file: input.append_file.clone(),
+        max_tokens: input.max_tokens,
     };
     let envelope = run_adapter_with(prompt.tool, command, opts).await?;
     let request = json!({
@@ -127,6 +130,9 @@ pub async fn plan_activate(
         "name": name,
         "file": prompt.path,
         "fileSha256": prompt.sha256,
+        "runtime": input.runtime,
+        "appendFile": input.append_file,
+        "maxTokens": input.max_tokens,
     });
     let operation = store_preview(
         store,
@@ -198,6 +204,20 @@ pub async fn confirm_activate(
         scope,
         project_dir: project_dir.clone(),
         name: Some(name),
+        runtime: request
+            .get("runtime")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false),
+        append_file: request.get("appendFile").and_then(|value| {
+            value
+                .as_str()
+                .filter(|path| !path.is_empty())
+                .map(PathBuf::from)
+        }),
+        max_tokens: request
+            .get("maxTokens")
+            .and_then(|value| value.as_u64())
+            .filter(|tokens| *tokens > 0),
     };
     let envelope = run_adapter_with(plan.tool, command, opts).await?;
     let execute_id = persist_execute(store, &plan, OperationKind::Activate, &envelope, request)?;

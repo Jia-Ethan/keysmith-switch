@@ -8,12 +8,14 @@
 | --- | --- |
 | version | `--version` |
 | status | `status --scope <scope> [--project-dir <abs>] [--runtime] --json` |
-| plan-activate | `install --scope <scope> --file <abs.md> --name <safe> [--project-dir <abs>] --json` |
-| activate | 同上 + `--yes` |
+| plan-activate | `install --scope <scope> --file <abs.md> --name <safe> [--project-dir <abs>] [--runtime] [--append-file <abs.md>] [--max-tokens <n>] --json` |
+| activate | 同上 + `--yes`。`--runtime` 只在 user scope；`--max-tokens` 是正整数 |
 | plan-deactivate | `uninstall --scope <scope> [--project-dir <abs>] --json` |
 | deactivate | 同上 + `--yes` |
 | doctor | `doctor --json` |
 | recover | `recover --scope <scope> [--project-dir <abs>] --json` 确认后加 `--yes` |
+| backups | `backups --scope <scope> [--project-dir <abs>] --json`。只读，没有 `--yes` |
+| restore | `restore --target <abs> --backup <name> [--scope <scope>] [--project-dir <abs>] --json`。预览在前，确认后加 `--yes` |
 
 stdout JSON schema: `claude-keysmith/v1`。`blockers` 非空或 `ok=false` 即失败关闭。
 

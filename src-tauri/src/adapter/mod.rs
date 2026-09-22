@@ -40,6 +40,13 @@ pub enum AdapterCommand {
         project_dir: Option<PathBuf>,
         #[serde(default)]
         name: Option<String>,
+        /// Claude user scope only. Other tools ignore these.
+        #[serde(default)]
+        runtime: bool,
+        #[serde(default)]
+        append_file: Option<PathBuf>,
+        #[serde(default)]
+        max_tokens: Option<u64>,
     },
     Activate {
         file: PathBuf,
@@ -48,6 +55,29 @@ pub enum AdapterCommand {
         project_dir: Option<PathBuf>,
         #[serde(default)]
         name: Option<String>,
+        #[serde(default)]
+        runtime: bool,
+        #[serde(default)]
+        append_file: Option<PathBuf>,
+        #[serde(default)]
+        max_tokens: Option<u64>,
+    },
+    /// Claude `backups`. Read-only.
+    Backups {
+        scope: Scope,
+        #[serde(default)]
+        project_dir: Option<PathBuf>,
+    },
+    /// Claude `restore --target --backup`. Preview until `execute`.
+    Restore {
+        target: PathBuf,
+        backup: String,
+        #[serde(default)]
+        scope: Option<Scope>,
+        #[serde(default)]
+        project_dir: Option<PathBuf>,
+        #[serde(default)]
+        execute: bool,
     },
     PlanDeactivate {
         scope: Scope,
@@ -78,6 +108,8 @@ impl AdapterCommand {
     pub fn name(&self) -> &'static str {
         match self {
             Self::Status { .. } => "status",
+            Self::Backups { .. } => "backups",
+            Self::Restore { .. } => "restore",
             Self::PlanActivate { .. } => "plan-activate",
             Self::Activate { .. } => "activate",
             Self::PlanDeactivate { .. } => "plan-deactivate",
@@ -91,7 +123,7 @@ impl AdapterCommand {
     pub fn is_preview(&self) -> bool {
         match self {
             Self::Activate { .. } | Self::Deactivate { .. } => false,
-            Self::Recover { execute, .. } => !execute,
+            Self::Recover { execute, .. } | Self::Restore { execute, .. } => !execute,
             _ => true,
         }
     }
@@ -208,7 +240,13 @@ fn command_scope(command: &AdapterCommand) -> Option<(Scope, Option<PathBuf>)> {
         }
         | AdapterCommand::Recover {
             scope, project_dir, ..
+        }
+        | AdapterCommand::Backups {
+            scope, project_dir, ..
         } => Some((*scope, project_dir.clone())),
+        AdapterCommand::Restore {
+            scope, project_dir, ..
+        } => scope.map(|scope| (scope, project_dir.clone())),
         AdapterCommand::Doctor | AdapterCommand::Version => None,
     }
 }

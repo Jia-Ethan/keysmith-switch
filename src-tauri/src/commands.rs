@@ -527,6 +527,9 @@ pub async fn plan_activate(
     prompt_id: String,
     scope: String,
     project_dir: Option<String>,
+    runtime: Option<bool>,
+    append_file: Option<String>,
+    max_tokens: Option<u64>,
 ) -> Result<UiPlanResult> {
     let result = ops::plan_activate(
         &state.store,
@@ -534,6 +537,9 @@ pub async fn plan_activate(
             prompt_id,
             scope: scope.parse()?,
             project_dir: project_dir.map(PathBuf::from),
+            runtime: runtime.unwrap_or(false),
+            append_file: append_file.map(PathBuf::from),
+            max_tokens,
         },
         &opts(),
     )
