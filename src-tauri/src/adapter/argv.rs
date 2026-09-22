@@ -121,9 +121,7 @@ fn claude_args(command: &AdapterCommand) -> Result<PreparedCommand> {
                 preview: !*execute,
             })
         }
-        AdapterCommand::Reconcile { .. } => {
-            Err(Error::unavailable("reconcile is a Grok command"))
-        }
+        AdapterCommand::Reconcile { .. } => Err(Error::unavailable("reconcile is a Grok command")),
     }
 }
 
