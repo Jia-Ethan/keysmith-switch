@@ -79,6 +79,9 @@ async fn real_vendored_claude_and_grok_in_temp_home() {
             prompt_id: prompt.id.clone(),
             scope: Scope::User,
             project_dir: None,
+            runtime: false,
+            append_file: None,
+            max_tokens: None,
         },
         &claude_opts,
     )
