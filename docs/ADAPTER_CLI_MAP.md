@@ -60,6 +60,8 @@ stdout JSON schema: `claude-keysmith/v1`。`blockers` 非空或 `ok=false` 即�
 
 确认 token 来自预览 envelope 的 `plan.confirmation_token`，不是 Switch 自己的 operation id。预览本身不带 `--yes`，也不带 token。
 
+进阶 `run` 传 `--prompt` / `--mode` / `--timeout` 等，不再退回 `--help`。`breaktest` 必须带 `--bank`。两者按行发 `advanced-output`，`cancel_advanced` 结束进程。
+
 ## ZCode (`third_party/keysmith/zcode/zcode-keysmith.py`)
 
 | 统一命令 | argv |
