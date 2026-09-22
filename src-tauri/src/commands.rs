@@ -1060,7 +1060,14 @@ pub fn list_advanced_tools(state: State<'_, AppState>) -> Result<serde_json::Val
         AdvancedToolInfo {
             kind: "scenario".into(),
             name: "Scenario evaluation".into(),
-            description: "Read-only Codex scenario list via vendored CLI".into(),
+            description:
+                "Codex scenarios: list, status, deploy, uninstall, recover. Text output, --lang en."
+                    .into(),
+        },
+        AdvancedToolInfo {
+            kind: "scaffold".into(),
+            name: "Fixture packs".into(),
+            description: "Codex fixtures: scaffold, list, uninstall. Preview before --yes.".into(),
         },
         AdvancedToolInfo {
             kind: "grokRun".into(),
@@ -1093,10 +1100,10 @@ pub fn run_advanced(
     let extra = args.unwrap_or_default();
     let input = extra.get("input").cloned();
     let (tool, argv) = match kind.as_str() {
-        "scenario" => (
-            ToolKind::Codex,
-            vec!["--scenario-list".to_string(), "--lang".into(), "en".into()],
-        ),
+        "scenario" | "scenarioStatus" | "scenarioDeploy" | "scenarioUninstall"
+        | "scenarioRecover" | "scaffold" | "scaffoldList" | "scaffoldUninstall" => {
+            (ToolKind::Codex, codex_advanced_argv(kind.as_str(), &extra)?)
+        }
         "grokRun" => {
             let mut argv = vec!["run".to_string()];
             if let Some(prompt) = input {
@@ -1132,6 +1139,90 @@ struct ProcOut {
     stderr: String,
 }
 
+fn codex_advanced_argv(
+    kind: &str,
+    extra: &std::collections::BTreeMap<String, String>,
+) -> Result<Vec<String>> {
+    let mut argv = Vec::new();
+    let confirm = extra
+        .get("confirm")
+        .is_some_and(|value| value == "yes" || value == "true");
+    match kind {
+        "scenario" => argv.push("--scenario-list".into()),
+        "scenarioStatus" => argv.push("--scenario-status".into()),
+        "scenarioDeploy" => {
+            let id = required_token(extra, "scenario", "scenario id")?;
+            argv.extend(["--deploy-scenario".into(), id]);
+        }
+        "scenarioUninstall" => {
+            let id = required_token(extra, "deployment", "deployment id")?;
+            argv.extend(["--scenario-uninstall".into(), id]);
+        }
+        "scenarioRecover" => argv.push("--scenario-recover".into()),
+        "scaffoldList" => argv.push("--scaffold-list".into()),
+        "scaffold" => {
+            let pack = required_token(extra, "pack", "fixture pack")?;
+            argv.extend(["--scaffold".into(), pack]);
+        }
+        "scaffoldUninstall" => {
+            let pack = required_token(extra, "pack", "fixture pack")?;
+            argv.extend(["--scaffold-uninstall".into(), pack]);
+        }
+        other => {
+            return Err(Error::invalid(format!(
+                "unknown codex advanced tool: {other}"
+            )));
+        }
+    }
+    if let Some(target) = nonempty(extra, "targetDir") {
+        argv.extend(["--target-dir".into(), target]);
+    }
+    if let Some(root) = nonempty(extra, "scenarioRoot") {
+        argv.extend(["--scenario-root".into(), root]);
+    }
+    if let Some(pack_dir) = nonempty(extra, "packDir") {
+        argv.extend(["--pack-dir".into(), pack_dir]);
+    }
+    // Preview is the default. --yes is added only after an explicit confirm.
+    if confirm {
+        argv.push("--yes".into());
+    }
+    argv.extend(["--lang".into(), "en".into()]);
+    if argv
+        .iter()
+        .any(|item| item == "--preset" || item == "--json")
+    {
+        return Err(Error::invalid(
+            "codex advanced commands do not take --preset or --json",
+        ));
+    }
+    Ok(argv)
+}
+
+fn required_token(
+    extra: &std::collections::BTreeMap<String, String>,
+    key: &str,
+    label: &str,
+) -> Result<String> {
+    let value = nonempty(extra, key).ok_or_else(|| Error::invalid(format!("missing {label}")))?;
+    if !value
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' || ch == '.')
+    {
+        return Err(Error::invalid(format!(
+            "{label} has unsupported characters"
+        )));
+    }
+    Ok(value)
+}
+
+fn nonempty(extra: &std::collections::BTreeMap<String, String>, key: &str) -> Option<String> {
+    extra
+        .get(key)
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
 fn run_resolved(cli: &crate::adapter::process::ResolvedCli, argv: &[String]) -> Result<ProcOut> {
     let mut cmd = Command::new(&cli.program);
     cmd.args(&cli.prefix);
@@ -1158,6 +1249,101 @@ fn truncate_utf8(bytes: &[u8]) -> String {
         bytes
     };
     String::from_utf8_lossy(slice).into_owned()
+}
+
+#[cfg(test)]
+mod codex_advanced_tests {
+    use super::codex_advanced_argv;
+    use std::collections::BTreeMap;
+
+    fn args(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+        pairs
+            .iter()
+            .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn scenario_and_scaffold_preview_before_yes_and_stay_text() {
+        let list = codex_advanced_argv("scenario", &BTreeMap::new()).unwrap();
+        assert_eq!(list, vec!["--scenario-list", "--lang", "en"]);
+
+        let status = codex_advanced_argv(
+            "scenarioStatus",
+            &args(&[
+                ("targetDir", "/tmp/project"),
+                ("scenarioRoot", "/tmp/scenarios"),
+            ]),
+        )
+        .unwrap();
+        assert_eq!(
+            status,
+            vec![
+                "--scenario-status",
+                "--target-dir",
+                "/tmp/project",
+                "--scenario-root",
+                "/tmp/scenarios",
+                "--lang",
+                "en"
+            ]
+        );
+        assert!(!status
+            .iter()
+            .any(|item| item == "--yes" || item == "--json" || item == "--preset"));
+
+        let deploy = codex_advanced_argv(
+            "scenarioDeploy",
+            &args(&[("scenario", "example_fixture"), ("confirm", "yes")]),
+        )
+        .unwrap();
+        let yes = deploy.iter().position(|item| item == "--yes").unwrap();
+        let flag = deploy
+            .iter()
+            .position(|item| item == "--deploy-scenario")
+            .unwrap();
+        assert!(flag < yes);
+        assert_eq!(deploy[flag + 1], "example_fixture");
+        assert!(deploy.windows(2).any(|pair| pair == ["--lang", "en"]));
+
+        let uninstall =
+            codex_advanced_argv("scenarioUninstall", &args(&[("deployment", "abc123")])).unwrap();
+        assert!(uninstall
+            .windows(2)
+            .any(|pair| pair == ["--scenario-uninstall", "abc123"]));
+        assert!(!uninstall.iter().any(|item| item == "--yes"));
+
+        let recover =
+            codex_advanced_argv("scenarioRecover", &args(&[("confirm", "true")])).unwrap();
+        assert!(recover
+            .windows(2)
+            .any(|pair| pair == ["--scenario-recover", "--yes"]));
+
+        let packs = codex_advanced_argv("scaffoldList", &BTreeMap::new()).unwrap();
+        assert_eq!(packs, vec!["--scaffold-list", "--lang", "en"]);
+        let scaffold = codex_advanced_argv("scaffold", &args(&[("pack", "basic")])).unwrap();
+        assert!(scaffold
+            .windows(2)
+            .any(|pair| pair == ["--scaffold", "basic"]));
+        assert!(!scaffold.iter().any(|item| item == "--yes"));
+        let remove = codex_advanced_argv(
+            "scaffoldUninstall",
+            &args(&[("pack", "basic"), ("confirm", "yes")]),
+        )
+        .unwrap();
+        assert!(remove
+            .windows(2)
+            .any(|pair| pair == ["--scaffold-uninstall", "basic"]));
+        assert!(remove.iter().any(|item| item == "--yes"));
+    }
+
+    #[test]
+    fn scenario_ids_reject_paths_and_preset_is_not_a_flag() {
+        assert!(
+            codex_advanced_argv("scenarioDeploy", &args(&[("scenario", "../overlay")])).is_err()
+        );
+        assert!(codex_advanced_argv("scaffold", &BTreeMap::new()).is_err());
+    }
 }
 
 fn user_home() -> PathBuf {

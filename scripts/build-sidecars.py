@@ -69,6 +69,7 @@ SPECS = [
         "datas": [
             VENDOR / "codex" / "examples" / "gpt-unrestricted.md",
             VENDOR / "codex" / "examples" / "gpt-contract.md",
+            VENDOR / "codex" / "examples" / "gpt-overlay.md",
         ],
         "hidden": [],
     },
