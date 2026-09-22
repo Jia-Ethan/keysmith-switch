@@ -47,6 +47,8 @@ stdout JSON schema: `claude-keysmith/v1`。`blockers` 非空或 `ok=false` 即�
 
 `--grok-dir` 必须绝对路径。schema: `grok-keysmith.envelope.v1`。状态：`not-installed` / `active-aligned` / `inactive` / `drift` / `conflict` / `recovery-required`。scope 仅 `user`。
 
+进阶 `run` 传 `--prompt` / `--mode` / `--timeout` 等，不再退回 `--help`。`breaktest` 必须带 `--bank`。两者按行发 `advanced-output`，`cancel_advanced` 结束进程。
+
 ## ZCode (`third_party/keysmith/zcode/zcode-keysmith.py`)
 
 | 统一命令 | argv |

@@ -105,6 +105,7 @@ pub fn run() {
             commands::cancel_official_action,
             commands::list_advanced_tools,
             commands::run_advanced,
+            commands::cancel_advanced,
             commands::get_startup_report,
             commands::import_existing_prompts,
             commands::import_markdown_files,
