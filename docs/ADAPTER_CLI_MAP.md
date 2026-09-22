@@ -31,8 +31,16 @@ stdout JSON schema: `claude-keysmith/v1`。`blockers` 非空或 `ok=false` 即�
 | deactivate | `--uninstall --codex-dir <abs> --yes --lang en` |
 | doctor | 与 status 相同（无独立 doctor） |
 | recover | `--recover --codex-dir <abs> --lang en` 确认后加 `--yes` |
+| scenario-list | `--scenario-list --lang en` |
+| scenario-status | `--scenario-status [--target-dir <abs>] [--scenario-root <abs>] --lang en` |
+| scenario-deploy | `--deploy-scenario <id> [--target-dir <abs>] --lang en`，确认后加 `--yes` |
+| scenario-uninstall | `--scenario-uninstall <deployment id> [--target-dir <abs>] --lang en`，确认后加 `--yes` |
+| scenario-recover | `--scenario-recover [--target-dir <abs>] --lang en`，确认后加 `--yes` |
+| scaffold-list | `--scaffold-list [--pack-dir <abs>] --lang en` |
+| scaffold | `--scaffold <pack> [--pack-dir <abs>] --lang en`，确认后加 `--yes` |
+| scaffold-uninstall | `--scaffold-uninstall <pack> --lang en`，确认后加 `--yes` |
 
-无稳定 JSON。解析结构化文本字段：`配置激活状态` / `activation`、`conflict`、`recovery`、journal、paths。scope 仅 `user`。
+无稳定 JSON。解析结构化文本字段：`配置激活状态` / `activation`、`conflict`、`recovery`、journal、paths。scope 仅 `user`。不传 `--json`。不搬 `--preset`。内置 overlay 是 `third_party/keysmith/codex/examples/gpt-overlay.md`，跟其他示例一样可导入，不通过 CLI 选择。预览默认不加 `--yes`。
 
 ## Grok (`third_party/keysmith/grok/grok-keysmith.py`)
 
