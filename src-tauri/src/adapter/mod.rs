@@ -61,6 +61,9 @@ pub enum AdapterCommand {
         append_file: Option<PathBuf>,
         #[serde(default)]
         max_tokens: Option<u64>,
+        /// Grok envelope `confirmation_token`. Unused by the other tools.
+        #[serde(default)]
+        expected_preview_token: Option<String>,
     },
     /// Claude `backups`. Read-only.
     Backups {
@@ -92,6 +95,8 @@ pub enum AdapterCommand {
         project_dir: Option<PathBuf>,
         #[serde(default)]
         name: Option<String>,
+        #[serde(default)]
+        expected_preview_token: Option<String>,
     },
     Doctor,
     Recover {
@@ -100,8 +105,17 @@ pub enum AdapterCommand {
         project_dir: Option<PathBuf>,
         #[serde(default)]
         execute: bool,
+        #[serde(default)]
+        expected_preview_token: Option<String>,
     },
     Version,
+    /// Grok `--reconcile`. Preview until `execute`, which passes the envelope token.
+    Reconcile {
+        #[serde(default)]
+        execute: bool,
+        #[serde(default)]
+        expected_preview_token: Option<String>,
+    },
 }
 
 impl AdapterCommand {
@@ -117,13 +131,16 @@ impl AdapterCommand {
             Self::Doctor => "doctor",
             Self::Recover { .. } => "recover",
             Self::Version => "version",
+            Self::Reconcile { .. } => "reconcile",
         }
     }
 
     pub fn is_preview(&self) -> bool {
         match self {
             Self::Activate { .. } | Self::Deactivate { .. } => false,
-            Self::Recover { execute, .. } | Self::Restore { execute, .. } => !execute,
+            Self::Recover { execute, .. }
+            | Self::Restore { execute, .. }
+            | Self::Reconcile { execute, .. } => !execute,
             _ => true,
         }
     }
@@ -247,6 +264,6 @@ fn command_scope(command: &AdapterCommand) -> Option<(Scope, Option<PathBuf>)> {
         AdapterCommand::Restore {
             scope, project_dir, ..
         } => scope.map(|scope| (scope, project_dir.clone())),
-        AdapterCommand::Doctor | AdapterCommand::Version => None,
+        AdapterCommand::Doctor | AdapterCommand::Version | AdapterCommand::Reconcile { .. } => None,
     }
 }
