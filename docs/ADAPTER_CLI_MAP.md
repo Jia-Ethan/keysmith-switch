@@ -41,13 +41,16 @@ stdout JSON schema: `claude-keysmith/v1`。`blockers` 非空或 `ok=false` 即�
 | version | `--version` |
 | status | `--status --json --grok-dir <abs>` |
 | plan-activate | `--file <abs.md> --dry-run --json --grok-dir <abs>` |
-| activate | `--file <abs.md> --yes --json --grok-dir <abs>` |
+| activate | `--file <abs.md> --expected-preview-token <64 hex> --yes --json --grok-dir <abs>` |
 | plan-deactivate | `--uninstall --json --grok-dir <abs>` |
-| deactivate | `--uninstall --yes --json --grok-dir <abs>` |
+| deactivate | `--uninstall --expected-preview-token <64 hex> --yes --json --grok-dir <abs>` |
 | doctor | `--status --json --grok-dir <abs>` |
-| recover | `--recover --json --grok-dir <abs>` 确认后加 `--yes` |
+| recover | `--recover --json --grok-dir <abs>`。确认时加 `--expected-preview-token <64 hex> --yes` |
+| reconcile | `--reconcile --json --grok-dir <abs>`。确认时加 `--expected-preview-token <64 hex> --yes` |
 
 `--grok-dir` 必须绝对路径。schema: `grok-keysmith.envelope.v1`。状态：`not-installed` / `active-aligned` / `inactive` / `drift` / `conflict` / `recovery-required`。scope 仅 `user`。
+
+确认 token 来自预览 envelope 的 `plan.confirmation_token`，不是 Switch 自己的 operation id。预览本身不带 `--yes`，也不带 token。
 
 ## ZCode (`third_party/keysmith/zcode/zcode-keysmith.py`)
 
