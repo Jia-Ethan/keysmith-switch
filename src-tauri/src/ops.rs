@@ -166,6 +166,7 @@ pub async fn confirm_activate(
             "prompt changed since preview; run plan-activate again",
         ));
     }
+    let mut preview_token = None;
     if let Some(plan_env) = plan.envelope_json.as_deref() {
         if let Ok(preview) = serde_json::from_str::<Envelope>(plan_env) {
             if !preview.ok || !preview.blockers.is_empty() {
@@ -174,6 +175,14 @@ pub async fn confirm_activate(
                         .error
                         .unwrap_or_else(|| "preview reported blockers".into()),
                 ));
+            }
+            if plan.tool == ToolKind::Grok {
+                preview_token = preview.confirmation_token.clone();
+                if preview_token.is_none() {
+                    return Err(Error::command_failed(
+                        "grok preview did not include a confirmation token",
+                    ));
+                }
             }
         }
     }
@@ -198,6 +207,7 @@ pub async fn confirm_activate(
         scope,
         project_dir: project_dir.clone(),
         name: Some(name),
+        expected_preview_token: preview_token,
     };
     let envelope = run_adapter_with(plan.tool, command, opts).await?;
     let execute_id = persist_execute(store, &plan, OperationKind::Activate, &envelope, request)?;
@@ -321,6 +331,7 @@ pub async fn confirm_deactivate(
             "deactivate refused because unmanaged edits were detected",
         ));
     }
+    let mut preview_token = None;
     if let Some(plan_env) = plan.envelope_json.as_deref() {
         if let Ok(preview) = serde_json::from_str::<Envelope>(plan_env) {
             if preview.recovery_required || preview.status == ToolStatus::Drift {
@@ -334,6 +345,14 @@ pub async fn confirm_deactivate(
                         .error
                         .unwrap_or_else(|| "preview reported blockers".into()),
                 ));
+            }
+            if plan.tool == ToolKind::Grok {
+                preview_token = preview.confirmation_token.clone();
+                if preview_token.is_none() {
+                    return Err(Error::command_failed(
+                        "grok preview did not include a confirmation token",
+                    ));
+                }
             }
         }
     }
@@ -349,6 +368,7 @@ pub async fn confirm_deactivate(
             scope,
             project_dir: project_dir.clone(),
             name,
+            expected_preview_token: preview_token,
         },
         opts,
     )
@@ -425,6 +445,7 @@ pub async fn plan_recover(
             scope,
             project_dir: project_dir.clone(),
             execute: false,
+            expected_preview_token: None,
         },
         opts,
     )
@@ -458,6 +479,7 @@ pub async fn confirm_recover(
 ) -> Result<OperationResult> {
     let _lock = HomeLock::acquire(store.paths())?;
     let plan = require_preview(store, operation_id, OperationKind::Recover)?;
+    let mut preview_token = None;
     if let Some(plan_env) = plan.envelope_json.as_deref() {
         if let Ok(preview) = serde_json::from_str::<Envelope>(plan_env) {
             if !preview.ok || !preview.blockers.is_empty() {
@@ -466,6 +488,14 @@ pub async fn confirm_recover(
                         .error
                         .unwrap_or_else(|| "recovery preview reported blockers".into()),
                 ));
+            }
+            if plan.tool == ToolKind::Grok {
+                preview_token = preview.confirmation_token.clone();
+                if preview_token.is_none() {
+                    return Err(Error::command_failed(
+                        "grok preview did not include a confirmation token",
+                    ));
+                }
             }
         }
     }
@@ -478,6 +508,7 @@ pub async fn confirm_recover(
             scope,
             project_dir: project_dir.clone(),
             execute: true,
+            expected_preview_token: preview_token,
         },
         opts,
     )

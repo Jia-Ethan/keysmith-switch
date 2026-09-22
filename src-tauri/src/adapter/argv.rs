@@ -62,6 +62,7 @@ fn claude_args(command: &AdapterCommand) -> Result<PreparedCommand> {
             scope,
             project_dir,
             name,
+            ..
         } => {
             validate_scope(ToolKind::Claude, *scope, project_dir.as_deref())?;
             let preview = matches!(command, AdapterCommand::PlanActivate { .. });
@@ -89,6 +90,7 @@ fn claude_args(command: &AdapterCommand) -> Result<PreparedCommand> {
             scope,
             project_dir,
             name,
+            ..
         } => {
             validate_scope(ToolKind::Claude, *scope, project_dir.as_deref())?;
             let preview = matches!(command, AdapterCommand::PlanDeactivate { .. });
@@ -105,6 +107,7 @@ fn claude_args(command: &AdapterCommand) -> Result<PreparedCommand> {
             scope,
             project_dir,
             execute,
+            ..
         } => {
             validate_scope(ToolKind::Claude, *scope, project_dir.as_deref())?;
             let mut args = vec!["recover".into(), "--scope".into(), scope.as_str().into()];
@@ -117,6 +120,9 @@ fn claude_args(command: &AdapterCommand) -> Result<PreparedCommand> {
                 args,
                 preview: !*execute,
             })
+        }
+        AdapterCommand::Reconcile { .. } => {
+            Err(Error::unavailable("reconcile is a Grok command"))
         }
     }
 }
@@ -153,6 +159,9 @@ fn codex_args(command: &AdapterCommand, home: Option<&Path>) -> Result<PreparedC
                 preview = false;
             }
         }
+        AdapterCommand::Reconcile { .. } => {
+            return Err(Error::unavailable("reconcile is a Grok command"));
+        }
     }
     if !matches!(command, AdapterCommand::Version) {
         args.push("--lang".into());
@@ -177,22 +186,48 @@ fn grok_args(command: &AdapterCommand, home: Option<&Path>) -> Result<PreparedCo
             push_flag_name(&mut args, name.as_deref());
             args.push("--dry-run".into());
         }
-        AdapterCommand::Activate { file, name, .. } => {
+        AdapterCommand::Activate {
+            file,
+            name,
+            expected_preview_token,
+            ..
+        } => {
             args.push("--file".into());
             args.push(abs(file)?);
             push_flag_name(&mut args, name.as_deref());
+            push_grok_token(&mut args, expected_preview_token.as_deref())?;
             args.push("--yes".into());
             preview = false;
         }
         AdapterCommand::PlanDeactivate { .. } => args.push("--uninstall".into()),
-        AdapterCommand::Deactivate { .. } => {
+        AdapterCommand::Deactivate {
+            expected_preview_token,
+            ..
+        } => {
             args.push("--uninstall".into());
+            push_grok_token(&mut args, expected_preview_token.as_deref())?;
             args.push("--yes".into());
             preview = false;
         }
-        AdapterCommand::Recover { execute, .. } => {
+        AdapterCommand::Recover {
+            execute,
+            expected_preview_token,
+            ..
+        } => {
             args.push("--recover".into());
             if *execute {
+                push_grok_token(&mut args, expected_preview_token.as_deref())?;
+                args.push("--yes".into());
+                preview = false;
+            }
+        }
+        AdapterCommand::Reconcile {
+            execute,
+            expected_preview_token,
+        } => {
+            args.push("--reconcile".into());
+            if *execute {
+                push_grok_token(&mut args, expected_preview_token.as_deref())?;
                 args.push("--yes".into());
                 preview = false;
             }
@@ -280,7 +315,24 @@ fn zcode_args(command: &AdapterCommand, home: Option<&Path>) -> Result<PreparedC
         AdapterCommand::Recover { .. } => {
             Err(Error::unavailable("recover is not supported for ZCode"))
         }
+        AdapterCommand::Reconcile { .. } => Err(Error::unavailable("reconcile is a Grok command")),
     }
+}
+
+fn push_grok_token(args: &mut Vec<String>, token: Option<&str>) -> Result<()> {
+    let Some(token) = token.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Err(Error::invalid(
+            "grok confirm requires the preview confirmation token",
+        ));
+    };
+    if token.len() != 64 || !token.chars().all(|ch| ch.is_ascii_hexdigit()) {
+        return Err(Error::invalid(
+            "grok preview token must be 64 hex characters",
+        ));
+    }
+    args.push("--expected-preview-token".into());
+    args.push(token.to_ascii_lowercase());
+    Ok(())
 }
 
 fn push_project_dir(

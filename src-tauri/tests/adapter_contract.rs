@@ -92,6 +92,98 @@ async fn grok_fixture_contract() {
     assert!(status.argv.iter().any(|item| item == "--grok-dir"));
 }
 
+const GROK_TOKEN: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+#[tokio::test]
+async fn grok_confirm_forwards_envelope_token_and_reconcile_previews_first() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let opts = opts(&home, "grok-keysmith.py");
+    let file = home.join("prompt.md");
+    std::fs::write(&file, "hello grok\n").unwrap();
+
+    let missing = run_adapter_with(
+        ToolKind::Grok,
+        AdapterCommand::Activate {
+            file: file.clone(),
+            scope: Scope::User,
+            project_dir: None,
+            name: None,
+            expected_preview_token: None,
+        },
+        &opts,
+    )
+    .await;
+    assert!(
+        missing.is_err(),
+        "confirm without the envelope token must not run"
+    );
+
+    let activate = run_adapter_with(
+        ToolKind::Grok,
+        AdapterCommand::Activate {
+            file,
+            scope: Scope::User,
+            project_dir: None,
+            name: None,
+            expected_preview_token: Some(GROK_TOKEN.into()),
+        },
+        &opts,
+    )
+    .await
+    .unwrap();
+    let token_at = activate
+        .argv
+        .iter()
+        .position(|item| item == "--expected-preview-token")
+        .unwrap();
+    let yes_at = activate
+        .argv
+        .iter()
+        .position(|item| item == "--yes")
+        .unwrap();
+    assert!(token_at < yes_at);
+    assert_eq!(activate.argv[token_at + 1], GROK_TOKEN);
+    assert!(!activate.preview);
+
+    let preview = run_adapter_with(
+        ToolKind::Grok,
+        AdapterCommand::Reconcile {
+            execute: false,
+            expected_preview_token: None,
+        },
+        &opts,
+    )
+    .await
+    .unwrap();
+    assert!(preview.preview, "{preview:?}");
+    assert!(preview.argv.iter().any(|item| item == "--reconcile"));
+    assert!(!preview.argv.iter().any(|item| item == "--yes"));
+    assert!(!preview
+        .argv
+        .iter()
+        .any(|item| item == "--expected-preview-token"));
+
+    let confirm = run_adapter_with(
+        ToolKind::Grok,
+        AdapterCommand::Reconcile {
+            execute: true,
+            expected_preview_token: Some(GROK_TOKEN.into()),
+        },
+        &opts,
+    )
+    .await
+    .unwrap();
+    assert!(confirm.argv.iter().any(|item| item == "--reconcile"));
+    assert!(confirm
+        .argv
+        .windows(2)
+        .any(|pair| pair[0] == "--expected-preview-token" && pair[1] == GROK_TOKEN));
+    assert!(confirm.argv.iter().any(|item| item == "--yes"));
+    assert!(!confirm.preview);
+}
+
 #[tokio::test]
 async fn codex_fixture_contract() {
     let tmp = tempfile::tempdir().unwrap();
@@ -133,6 +225,7 @@ async fn zcode_fixture_contract() {
             scope: Scope::User,
             project_dir: None,
             execute: true,
+            expected_preview_token: None,
         },
         &opts,
     )

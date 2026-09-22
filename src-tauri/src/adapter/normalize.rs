@@ -241,6 +241,12 @@ fn normalize_grok(
         .and_then(Value::as_array)
         .map(string_values)
         .unwrap_or_else(|| envelope.conflicts.clone());
+    envelope.confirmation_token = plan
+        .get("confirmation_token")
+        .or_else(|| result.get("confirmation_token"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .filter(|token| token.len() == 64 && token.chars().all(|ch| ch.is_ascii_hexdigit()));
     if let Some(rule) = plan.get("rule").and_then(|value| value.get("path")) {
         if let Some(path) = rule.as_str() {
             envelope.planned_files.push(PlannedFile {
