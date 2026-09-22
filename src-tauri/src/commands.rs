@@ -1,5 +1,4 @@
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -31,6 +30,7 @@ use crate::updater::{
 pub struct AppState {
     pub store: Store,
     official_cancel: Mutex<Option<Arc<AtomicBool>>>,
+    advanced_cancel: Mutex<Option<Arc<AtomicBool>>>,
 }
 
 impl AppState {
@@ -40,6 +40,7 @@ impl AppState {
         Ok(Self {
             store: Store::open(&paths)?,
             official_cancel: Mutex::new(None),
+            advanced_cancel: Mutex::new(None),
         })
     }
 }
@@ -1084,7 +1085,8 @@ pub fn list_advanced_tools(state: State<'_, AppState>) -> Result<serde_json::Val
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn run_advanced(
+pub async fn run_advanced(
+    app: tauri::AppHandle,
     state: State<'_, AppState>,
     kind: String,
     args: Option<std::collections::BTreeMap<String, String>>,
@@ -1098,22 +1100,13 @@ pub fn run_advanced(
         }));
     }
     let extra = args.unwrap_or_default();
-    let input = extra.get("input").cloned();
     let (tool, argv) = match kind.as_str() {
         "scenario" | "scenarioStatus" | "scenarioDeploy" | "scenarioUninstall"
         | "scenarioRecover" | "scaffold" | "scaffoldList" | "scaffoldUninstall" => {
             (ToolKind::Codex, codex_advanced_argv(kind.as_str(), &extra)?)
         }
-        "grokRun" => {
-            let mut argv = vec!["run".to_string()];
-            if let Some(prompt) = input {
-                argv.extend(["--prompt".into(), prompt]);
-            } else {
-                argv.push("--help".into());
-            }
-            (ToolKind::Grok, argv)
-        }
-        "grokBreaktest" => (ToolKind::Grok, vec!["breaktest".into(), "--help".into()]),
+        "grokRun" => (ToolKind::Grok, grok_run_argv(&extra)?),
+        "grokBreaktest" => (ToolKind::Grok, grok_breaktest_argv(&extra)?),
         other => {
             return Ok(serde_json::json!({
                 "ok": false,
@@ -1124,19 +1117,189 @@ pub fn run_advanced(
         }
     };
     let cli = resolve_cli(tool, &opts())?;
-    let output = run_resolved(&cli, &argv)?;
+    let cancel = Arc::new(AtomicBool::new(false));
+    {
+        let mut running = state
+            .advanced_cancel
+            .lock()
+            .map_err(|_| Error::lock("advanced action state is unavailable"))?;
+        if running.is_some() {
+            return Err(Error::lock("another advanced action is already running"));
+        }
+        *running = Some(Arc::clone(&cancel));
+    }
+    let output = run_resolved_streaming(&app, &cli, &argv, Arc::clone(&cancel)).await;
+    if let Ok(mut running) = state.advanced_cancel.lock() {
+        *running = None;
+    }
+    let output = output?;
     Ok(serde_json::json!({
         "ok": output.status,
         "kind": kind,
         "output": redact_text(&output.stdout),
+        "cancelled": output.cancelled,
         "error": if output.status { serde_json::Value::Null } else { serde_json::Value::String(redact_text(&output.stderr)) },
     }))
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn cancel_advanced(state: State<'_, AppState>) -> Result<serde_json::Value> {
+    let running = state
+        .advanced_cancel
+        .lock()
+        .map_err(|_| Error::lock("advanced action state is unavailable"))?;
+    let cancelled = if let Some(flag) = running.as_ref() {
+        flag.store(true, Ordering::SeqCst);
+        true
+    } else {
+        false
+    };
+    Ok(serde_json::json!({ "ok": true, "cancelled": cancelled }))
+}
+
+fn grok_run_argv(extra: &std::collections::BTreeMap<String, String>) -> Result<Vec<String>> {
+    let mut argv = vec!["run".to_string()];
+    push_choice(
+        &mut argv,
+        "--mode",
+        extra.get("mode"),
+        &["default", "override"],
+    )?;
+    push_choice(
+        &mut argv,
+        "--wrap",
+        extra.get("wrap"),
+        &["none", "fixture", "scoped", "describe"],
+    )?;
+    push_text(&mut argv, "--model", extra.get("model"))?;
+    push_text(
+        &mut argv,
+        "--reasoning-effort",
+        extra.get("reasoningEffort"),
+    )?;
+    push_text(
+        &mut argv,
+        "--prompt",
+        extra.get("prompt").or_else(|| extra.get("input")),
+    )?;
+    push_abs(&mut argv, "--prompt-file", extra.get("promptFile"))?;
+    push_abs(&mut argv, "--cwd", extra.get("cwd"))?;
+    push_number(&mut argv, "--timeout", extra.get("timeout"))?;
+    if argv.len() == 1 {
+        return Err(Error::invalid(
+            "grok run needs a prompt, prompt file, or mode",
+        ));
+    }
+    Ok(argv)
+}
+
+fn grok_breaktest_argv(extra: &std::collections::BTreeMap<String, String>) -> Result<Vec<String>> {
+    let mut argv = vec!["breaktest".to_string()];
+    let bank = extra
+        .get("bank")
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| Error::invalid("grok breaktest requires a bank"))?;
+    if bank.contains('\0') || bank.starts_with('-') {
+        return Err(Error::invalid("grok breaktest bank is not a path"));
+    }
+    argv.extend(["--bank".into(), bank.to_string()]);
+    push_choice(
+        &mut argv,
+        "--mode",
+        extra.get("mode"),
+        &["default", "override", "ab"],
+    )?;
+    push_choice(
+        &mut argv,
+        "--wrap",
+        extra.get("wrap"),
+        &["none", "fixture", "scoped", "describe"],
+    )?;
+    push_number(&mut argv, "--repetitions", extra.get("repetitions"))?;
+    push_number(&mut argv, "--timeout", extra.get("timeout"))?;
+    push_number(&mut argv, "--concurrency", extra.get("concurrency"))?;
+    push_text(&mut argv, "--model", extra.get("model"))?;
+    push_abs(&mut argv, "--output-dir", extra.get("outputDir"))?;
+    if extra.get("resume").is_some_and(|value| value == "true") {
+        argv.push("--resume".into());
+    }
+    if extra
+        .get("retryFailed")
+        .is_some_and(|value| value == "true")
+    {
+        argv.push("--retry-failed".into());
+    }
+    Ok(argv)
+}
+
+fn push_choice(
+    argv: &mut Vec<String>,
+    flag: &str,
+    value: Option<&String>,
+    allowed: &[&str],
+) -> Result<()> {
+    let Some(value) = value
+        .map(|item| item.trim())
+        .filter(|item| !item.is_empty())
+    else {
+        return Ok(());
+    };
+    if !allowed.contains(&value) {
+        return Err(Error::invalid(format!("{flag} is not an allowed value")));
+    }
+    argv.extend([flag.into(), value.to_string()]);
+    Ok(())
+}
+
+fn push_text(argv: &mut Vec<String>, flag: &str, value: Option<&String>) -> Result<()> {
+    let Some(value) = value
+        .map(|item| item.trim())
+        .filter(|item| !item.is_empty())
+    else {
+        return Ok(());
+    };
+    if value.contains('\0') || value.starts_with('-') {
+        return Err(Error::invalid(format!("{flag} value is not accepted")));
+    }
+    argv.extend([flag.into(), value.to_string()]);
+    Ok(())
+}
+
+fn push_abs(argv: &mut Vec<String>, flag: &str, value: Option<&String>) -> Result<()> {
+    let Some(value) = value
+        .map(|item| item.trim())
+        .filter(|item| !item.is_empty())
+    else {
+        return Ok(());
+    };
+    let path = PathBuf::from(value);
+    if !path.is_absolute() {
+        return Err(Error::invalid(format!("{flag} must be an absolute path")));
+    }
+    argv.extend([flag.into(), path.to_string_lossy().into_owned()]);
+    Ok(())
+}
+
+fn push_number(argv: &mut Vec<String>, flag: &str, value: Option<&String>) -> Result<()> {
+    let Some(value) = value
+        .map(|item| item.trim())
+        .filter(|item| !item.is_empty())
+    else {
+        return Ok(());
+    };
+    if value.parse::<f64>().is_err() || value.starts_with('-') {
+        return Err(Error::invalid(format!("{flag} must be a positive number")));
+    }
+    argv.extend([flag.into(), value.to_string()]);
+    Ok(())
 }
 
 struct ProcOut {
     status: bool,
     stdout: String,
     stderr: String,
+    cancelled: bool,
 }
 
 fn codex_advanced_argv(
@@ -1223,22 +1386,97 @@ fn nonempty(extra: &std::collections::BTreeMap<String, String>, key: &str) -> Op
         .filter(|value| !value.is_empty())
 }
 
-fn run_resolved(cli: &crate::adapter::process::ResolvedCli, argv: &[String]) -> Result<ProcOut> {
-    let mut cmd = Command::new(&cli.program);
+async fn run_resolved_streaming(
+    app: &tauri::AppHandle,
+    cli: &crate::adapter::process::ResolvedCli,
+    argv: &[String],
+    cancel: Arc<AtomicBool>,
+) -> Result<ProcOut> {
+    use std::process::Stdio;
+    use tokio::process::Command as TokioCommand;
+
+    let mut cmd = TokioCommand::new(&cli.program);
     cmd.args(&cli.prefix);
     cmd.args(argv);
     cmd.env("PYTHONUTF8", "1");
     cmd.env("PYTHONNOUSERSITE", "1");
-    let output = cmd
-        .output()
+    cmd.stdout(Stdio::piped());
+    cmd.stderr(Stdio::piped());
+    cmd.kill_on_drop(true);
+    let mut child = cmd
+        .spawn()
         .map_err(|error| Error::command_failed(error.to_string()))?;
-    let stdout = truncate_utf8(&output.stdout);
-    let stderr = truncate_utf8(&output.stderr);
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+    let app_out = app.clone();
+    let app_err = app.clone();
+    let stdout_task = tokio::spawn(async move { collect_stdout(stdout, &app_out).await });
+    let stderr_task = tokio::spawn(async move { collect_stderr(stderr, &app_err).await });
+    let status = loop {
+        if cancel.load(Ordering::SeqCst) {
+            let _ = child.kill().await;
+            break false;
+        }
+        match child.try_wait() {
+            Ok(Some(code)) => break code.success(),
+            Ok(None) => tokio::time::sleep(Duration::from_millis(80)).await,
+            Err(_) => break false,
+        }
+    };
+    let _ = child.wait().await;
+    let out_text = stdout_task.await.unwrap_or_default();
+    let err_text = stderr_task.await.unwrap_or_default();
+    let cancelled = cancel.load(Ordering::SeqCst);
     Ok(ProcOut {
-        status: output.status.success(),
-        stdout,
-        stderr,
+        status: status && !cancelled,
+        stdout: truncate_owned(&out_text),
+        stderr: truncate_owned(&err_text),
+        cancelled,
     })
+}
+
+async fn collect_stdout(
+    pipe: Option<tokio::process::ChildStdout>,
+    app: &tauri::AppHandle,
+) -> String {
+    collect_lines(pipe, app, "stdout").await
+}
+
+async fn collect_stderr(
+    pipe: Option<tokio::process::ChildStderr>,
+    app: &tauri::AppHandle,
+) -> String {
+    collect_lines(pipe, app, "stderr").await
+}
+
+async fn collect_lines<R>(pipe: Option<R>, app: &tauri::AppHandle, stream: &str) -> String
+where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    use tauri::Emitter;
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    let Some(pipe) = pipe else {
+        return String::new();
+    };
+    let mut reader = BufReader::new(pipe).lines();
+    let mut lines = Vec::new();
+    while let Ok(Some(line)) = reader.next_line().await {
+        let _ = app.emit(
+            "advanced-output",
+            serde_json::json!({ "stream": stream, "line": redact_text(&line) }),
+        );
+        lines.push(line);
+    }
+    lines.join("\n")
+}
+
+fn truncate_owned(text: &str) -> String {
+    const LIMIT: usize = 32 * 1024;
+    if text.len() > LIMIT {
+        text.chars().take(LIMIT).collect()
+    } else {
+        text.to_string()
+    }
 }
 
 fn truncate_utf8(bytes: &[u8]) -> String {
@@ -1343,6 +1581,51 @@ mod codex_advanced_tests {
             codex_advanced_argv("scenarioDeploy", &args(&[("scenario", "../overlay")])).is_err()
         );
         assert!(codex_advanced_argv("scaffold", &BTreeMap::new()).is_err());
+    }
+}
+
+#[cfg(test)]
+mod grok_advanced_tests {
+    use super::{grok_breaktest_argv, grok_run_argv};
+    use std::collections::BTreeMap;
+
+    fn args(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+        pairs
+            .iter()
+            .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn grok_run_and_breaktest_pass_real_args_not_help() {
+        let run = grok_run_argv(&args(&[
+            ("prompt", "hello"),
+            ("mode", "override"),
+            ("timeout", "30"),
+        ]))
+        .unwrap();
+        assert_eq!(run[0], "run");
+        assert!(run.windows(2).any(|pair| pair == ["--prompt", "hello"]));
+        assert!(run.windows(2).any(|pair| pair == ["--mode", "override"]));
+        assert!(run.windows(2).any(|pair| pair == ["--timeout", "30"]));
+        assert!(!run.iter().any(|item| item == "--help"));
+
+        let bank = grok_breaktest_argv(&args(&[
+            ("bank", "/tmp/prompts.txt"),
+            ("mode", "ab"),
+            ("repetitions", "2"),
+            ("resume", "true"),
+        ]))
+        .unwrap();
+        assert_eq!(bank[0], "breaktest");
+        assert!(bank
+            .windows(2)
+            .any(|pair| pair == ["--bank", "/tmp/prompts.txt"]));
+        assert!(bank.windows(2).any(|pair| pair == ["--mode", "ab"]));
+        assert!(bank.iter().any(|item| item == "--resume"));
+        assert!(!bank.iter().any(|item| item == "--help"));
+        assert!(grok_breaktest_argv(&BTreeMap::new()).is_err());
+        assert!(grok_run_argv(&args(&[("mode", "remote")])).is_err());
     }
 }
 
