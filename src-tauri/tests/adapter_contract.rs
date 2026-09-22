@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use keysmith_switch_lib::adapter::normalize::normalize;
+use keysmith_switch_lib::adapter::process::Captured;
 use keysmith_switch_lib::adapter::{
     run_adapter_with, AdapterCommand, AdapterOptions, Envelope, ToolKind,
 };
@@ -144,4 +146,48 @@ async fn zcode_fixture_contract() {
         .as_deref()
         .unwrap_or_default()
         .contains("recover"));
+}
+
+#[tokio::test]
+async fn zcode_032_json_uninstall_parses_without_changing_argv() {
+    let command = AdapterCommand::PlanDeactivate {
+        scope: Scope::User,
+        project_dir: None,
+        name: None,
+    };
+    let captured = Captured {
+        argv: vec!["uninstall".into(), "--dry-run".into()],
+        truncated: false,
+        stdout: r#"{
+            "schema": "zcode-keysmith/v1",
+            "operation": "uninstall",
+            "mode": "preview",
+            "ok": true,
+            "actions": [{"action": "plan", "path": "/tmp/managed/system-role.md", "detail": "target"}],
+            "warnings": [],
+            "blockers": [],
+            "exit_status": 0,
+            "error": null,
+            "managed_dir": "/tmp/managed",
+            "write": false,
+            "removed": [],
+            "backups": []
+        }"#
+        .into(),
+        stderr: String::new(),
+        exit_code: 0,
+        timed_out: false,
+    };
+    let envelope = Envelope::new(ToolKind::Zcode, "plan-deactivate");
+    let parsed = normalize(ToolKind::Zcode, &command, &captured, envelope);
+    assert!(parsed.ok, "{parsed:?}");
+    assert!(parsed.preview);
+    assert_eq!(parsed.planned_files.len(), 1);
+    assert_eq!(parsed.planned_files[0].action, "plan");
+    assert!(parsed
+        .target_paths
+        .iter()
+        .any(|path| path.role == "managed_dir"));
+    assert!(!captured.argv.iter().any(|item| item == "--json"));
+    assert!(!captured.argv.iter().any(|item| item == "--yes"));
 }

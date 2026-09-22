@@ -58,6 +58,8 @@ stdout JSON schema: `claude-keysmith/v1`。`blockers` 非空或 `ok=false` 即�
 | plan-deactivate | `uninstall --dry-run` |
 | deactivate | `uninstall --yes` |
 | doctor | `doctor` |
-| recover | 不支持：envelope `ok=false`，`unavailableReason` 说明 v0.1.0 无 recover |
+| recover | 不支持：envelope `ok=false`，`unavailableReason` 说明无 recover |
 
-仅 macOS。Windows 不调用 CLI。scope 仅 `user`。无 JSON，解析 doctor/install 文本行。
+仅 macOS。Windows 不调用 CLI。scope 仅 `user`。不支持 recover。
+
+doctor / install 继续解析文本行，不传 `--json`。0.3.2 的 uninstall 在带 `--json` 时输出 `zcode-keysmith/v1`；解析器两者都接受。现有 argv 仍是文本模式。

@@ -34,7 +34,7 @@ fn normalize_claude(
     mut envelope: Envelope,
 ) -> Envelope {
     if matches!(command, AdapterCommand::Version) {
-        let version = extract_version(&captured.stdout, "7.1");
+        let version = extract_version(&captured.stdout, "7.2");
         envelope.adapter_version = Some(version);
         envelope.ok = captured.exit_code == 0;
         envelope.preview = true;
@@ -368,16 +368,14 @@ fn normalize_zcode(
     mut envelope: Envelope,
 ) -> Envelope {
     if matches!(command, AdapterCommand::Version) {
-        if let Some(version) = captured
-            .stdout
-            .lines()
-            .next()
-            .and_then(|line| line.split_whitespace().last())
-        {
-            envelope.adapter_version = Some(normalize_version(version));
+        if let Some(version) = zcode_version_token(&captured.stdout) {
+            envelope.adapter_version = Some(normalize_version(&version));
         }
         envelope.ok = captured.exit_code == 0;
         return envelope;
+    }
+    if let Some(json) = zcode_json(&captured.stdout) {
+        return normalize_zcode_json(command, captured, envelope, &json);
     }
     let text = captured.stdout.as_str();
     envelope.ok = captured.exit_code == 0;
@@ -426,6 +424,107 @@ fn normalize_zcode(
         AdapterCommand::Doctor | AdapterCommand::Status { .. }
     ) {
         envelope.doctor.ok = captured.exit_code == 0;
+        envelope.doctor.checks.push(DoctorCheck {
+            name: "system_file_exists".into(),
+            ok: system_exists,
+            detail: Some(system_exists.to_string()),
+        });
+        if !system_exists {
+            envelope.status = ToolStatus::NotInstalled;
+        }
+    }
+    envelope
+}
+
+fn zcode_version_token(stdout: &str) -> Option<String> {
+    if let Some(json) = zcode_json(stdout) {
+        if let Some(version) = json.get("version").and_then(Value::as_str) {
+            return Some(version.to_string());
+        }
+    }
+    stdout
+        .lines()
+        .next()
+        .and_then(|line| line.split_whitespace().last())
+        .map(str::to_string)
+}
+
+fn zcode_json(stdout: &str) -> Option<Value> {
+    let value = parse_json(stdout).ok()?;
+    let schema = value.get("schema").and_then(Value::as_str).unwrap_or("");
+    if schema == "zcode-keysmith/v1" {
+        Some(value)
+    } else {
+        None
+    }
+}
+
+fn normalize_zcode_json(
+    command: &AdapterCommand,
+    captured: &Captured,
+    mut envelope: Envelope,
+    json: &Value,
+) -> Envelope {
+    let operation = json.get("operation").and_then(Value::as_str).unwrap_or("");
+    let mode = json.get("mode").and_then(Value::as_str).unwrap_or("");
+    envelope.preview = mode != "execute";
+    envelope.ok = json_bool(json, "ok").unwrap_or(false) && captured.exit_code == 0;
+    if let Some(error) = json.get("error").and_then(Value::as_str) {
+        if !error.is_empty() {
+            envelope.blockers.push(redact_text(error));
+            envelope.ok = false;
+        }
+    }
+    envelope.blockers.extend(json_string_list(json, "blockers"));
+    envelope.warnings.extend(json_string_list(json, "warnings"));
+    if !envelope.blockers.is_empty() {
+        envelope.ok = false;
+    }
+    envelope.planned_files.extend(json_actions(json));
+    for path in json_string_list(json, "removed") {
+        envelope.planned_files.push(PlannedFile {
+            path,
+            action: "removed".into(),
+            detail: "removed".into(),
+        });
+    }
+    let managed = json.get("managed").cloned().unwrap_or_else(|| json.clone());
+    let system_exists = json_bool(&managed, "system_file_exists").unwrap_or(false);
+    if let Some(hash) = json_string(&managed, "system_file_sha256") {
+        if hash != "missing" && !hash.is_empty() {
+            envelope.current_fingerprint = Some(hash);
+        }
+    }
+    for (key, role) in [
+        ("system_file", "system_file"),
+        ("config_file", "config_file"),
+        ("wrapper", "wrapper"),
+        ("managed_dir", "managed_dir"),
+        ("dir", "managed_dir"),
+    ] {
+        push_target(&mut envelope, &managed, key, role);
+    }
+    envelope.status = if operation == "doctor" {
+        if system_exists && envelope.blockers.is_empty() {
+            ToolStatus::Active
+        } else {
+            ToolStatus::NotInstalled
+        }
+    } else if operation == "uninstall" && mode == "execute" {
+        ToolStatus::NotInstalled
+    } else if operation == "install" && mode == "execute" {
+        ToolStatus::Active
+    } else if system_exists {
+        ToolStatus::Active
+    } else {
+        ToolStatus::Inactive
+    };
+    if matches!(
+        command,
+        AdapterCommand::Doctor | AdapterCommand::Status { .. }
+    ) || operation == "doctor"
+    {
+        envelope.doctor.ok = envelope.ok;
         envelope.doctor.checks.push(DoctorCheck {
             name: "system_file_exists".into(),
             ok: system_exists,
