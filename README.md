@@ -10,9 +10,18 @@
 
 ## 状态
 
-稳定版 `v0.1.3` 已发布。它是生产 updater 公钥的 bootstrap 版本：现有 `v0.1.1` 用户需要手动安装一次 `v0.1.3`，后续版本才能通过应用内更新。
+准备发布的版本是 `v0.1.4`。源码已在 `main`，安装包、annotated tag 和公共 feed 还没有发出。
 
-当前源码版本为 `v0.1.4-rc.1` 候选，已完成长期 updater 兼容协议的双平台构建、生产密钥、metadata 与公开发布链验证。候选没有创建 Release，也没有更新 stable 或 beta 公共 feed。
+`v0.1.4` 接替四个独立桌面安装包。之后只维护 Keysmith Switch。已发出的 Claude、Grok、Codex、Zcode 桌面包保持原样，不撤回，也不改成各自仓库的 Latest。
+
+| 产品 | 最后的桌面安装包 | sidecar |
+| --- | --- | --- |
+| Claude | [`desktop-v0.1.0-beta.3`](https://github.com/Jia-Ethan/claude-keysmith/releases/tag/desktop-v0.1.0-beta.3) | v7.2 |
+| Grok | [`desktop-v0.1.0-beta.5`](https://github.com/Jia-Ethan/grok-keysmith/releases/tag/desktop-v0.1.0-beta.5) | v0.6.1 |
+| Codex | [`desktop-v0.6.0-beta.2`](https://github.com/Jia-Ethan/codex-keysmith/releases/tag/desktop-v0.6.0-beta.2) | v0.6.0 |
+| Zcode | [`desktop-v0.1.0-beta.1`](https://github.com/Jia-Ethan/zcode-keysmith/releases/tag/desktop-v0.1.0-beta.1)（prerelease） | 0.3.2 |
+
+已安装 `v0.1.3` 的 Switch 可以从应用内更新到 `v0.1.4`。`v0.1.1` 内置测试 updater 公钥，仍须手动安装。范围见 [keysmith-switch#6](https://github.com/Jia-Ethan/keysmith-switch/issues/6)。
 
 公开 updater 仓库 [`Jia-Ethan/keysmith-switch-releases`](https://github.com/Jia-Ethan/keysmith-switch-releases)、来源验证、生产 updater 签名与受保护发布环境已经启用。
 
@@ -24,12 +33,14 @@
 
 ## 下载
 
-当前稳定版：[`v0.1.3`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.1.3)
+待发布：[`v0.1.4`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.1.4)
 
-- macOS Apple Silicon：`Keysmith.Switch_0.1.3_aarch64.dmg`
-- Windows x64：`Keysmith.Switch_0.1.3_x64-setup.exe`
+- macOS Apple Silicon（M 系列，含 Mac Studio M4 Max）：`Keysmith.Switch_0.1.4_aarch64.dmg`
+- Windows x64：`Keysmith.Switch_0.1.4_x64-setup.exe`
 
-`v0.1.1` 用户需要手动下载安装本版本以完成 updater bootstrap。
+这两个文件要等 tag 和公开仓库的 `production` 审批之后才会出现。现在还不能下载。
+
+已发布的稳定包仍是 [`v0.1.3`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.1.3)。`v0.1.1` 用户需要手动安装 `v0.1.3` 或 `v0.1.4` 才能完成 updater bootstrap。
 
 ## 开发
 

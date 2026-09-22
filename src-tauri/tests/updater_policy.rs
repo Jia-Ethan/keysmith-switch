@@ -370,7 +370,7 @@ fn known_fixture_key_client_cannot_apply_production_release() {
     assert!(known_manual_bootstrap("0.1.1", "0.1.3"));
     assert!(known_manual_bootstrap("v0.1.2", "v0.1.3"));
     assert!(!known_manual_bootstrap("0.1.3", "0.1.4"));
-    assert!(!known_manual_bootstrap("0.1.4-rc.1", "0.1.4"));
+    assert!(!known_manual_bootstrap("0.1.4", "0.1.5"));
     assert!(!known_manual_bootstrap("0.1.1", "0.1.2"));
 }
 

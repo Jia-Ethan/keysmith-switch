@@ -24,7 +24,7 @@ mod minisign_verify;
 
 use minisign_verify::{PublicKey, Signature};
 
-pub const APP_VERSION: &str = "0.1.4-rc.1";
+pub const APP_VERSION: &str = "0.1.4";
 pub const RELEASE_PAGE: &str = "https://github.com/Jia-Ethan/keysmith-switch-releases/releases";
 /// First release whose updater key can verify production minisign payloads.
 /// `v0.1.1` shipped the TEST ONLY fixture key, so it cannot apply `v0.1.3`.
