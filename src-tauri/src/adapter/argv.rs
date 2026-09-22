@@ -56,12 +56,18 @@ fn claude_args(command: &AdapterCommand) -> Result<PreparedCommand> {
             scope,
             project_dir,
             name,
+            runtime,
+            append_file,
+            max_tokens,
         }
         | AdapterCommand::Activate {
             file,
             scope,
             project_dir,
             name,
+            runtime,
+            append_file,
+            max_tokens,
         } => {
             validate_scope(ToolKind::Claude, *scope, project_dir.as_deref())?;
             let preview = matches!(command, AdapterCommand::PlanActivate { .. });
@@ -74,6 +80,27 @@ fn claude_args(command: &AdapterCommand) -> Result<PreparedCommand> {
             ];
             push_project_dir(&mut args, *scope, project_dir.as_deref())?;
             push_name(&mut args, name.as_deref());
+            if *runtime {
+                if *scope != Scope::User {
+                    return Err(Error::invalid(
+                        "claude --runtime is only valid for user scope",
+                    ));
+                }
+                args.push("--runtime".into());
+            }
+            if let Some(append) = append_file {
+                args.push("--append-file".into());
+                args.push(abs(append)?);
+            }
+            if let Some(tokens) = max_tokens {
+                if *tokens == 0 {
+                    return Err(Error::invalid(
+                        "claude --max-tokens must be a positive integer",
+                    ));
+                }
+                args.push("--max-tokens".into());
+                args.push(tokens.to_string());
+            }
             if !preview {
                 args.push("--yes".into());
             }
@@ -118,6 +145,48 @@ fn claude_args(command: &AdapterCommand) -> Result<PreparedCommand> {
                 preview: !*execute,
             })
         }
+        AdapterCommand::Backups { scope, project_dir } => {
+            validate_scope(ToolKind::Claude, *scope, project_dir.as_deref())?;
+            let mut args = vec!["backups".into(), "--scope".into(), scope.as_str().into()];
+            push_project_dir(&mut args, *scope, project_dir.as_deref())?;
+            args.push("--json".into());
+            Ok(PreparedCommand {
+                args,
+                preview: true,
+            })
+        }
+        AdapterCommand::Restore {
+            target,
+            backup,
+            scope,
+            project_dir,
+            execute,
+        } => {
+            if backup.trim().is_empty() {
+                return Err(Error::invalid("claude restore requires a backup name"));
+            }
+            let mut args = vec![
+                "restore".into(),
+                "--target".into(),
+                abs(target)?,
+                "--backup".into(),
+                backup.clone(),
+            ];
+            if let Some(scope) = scope {
+                validate_scope(ToolKind::Claude, *scope, project_dir.as_deref())?;
+                args.push("--scope".into());
+                args.push(scope.as_str().into());
+                push_project_dir(&mut args, *scope, project_dir.as_deref())?;
+            }
+            if *execute {
+                args.push("--yes".into());
+            }
+            args.push("--json".into());
+            Ok(PreparedCommand {
+                args,
+                preview: !*execute,
+            })
+        }
     }
 }
 
@@ -152,6 +221,11 @@ fn codex_args(command: &AdapterCommand, home: Option<&Path>) -> Result<PreparedC
                 args.push("--yes".into());
                 preview = false;
             }
+        }
+        AdapterCommand::Backups { .. } | AdapterCommand::Restore { .. } => {
+            return Err(Error::unavailable(
+                "backups and restore are Claude commands",
+            ));
         }
     }
     if !matches!(command, AdapterCommand::Version) {
@@ -196,6 +270,11 @@ fn grok_args(command: &AdapterCommand, home: Option<&Path>) -> Result<PreparedCo
                 args.push("--yes".into());
                 preview = false;
             }
+        }
+        AdapterCommand::Backups { .. } | AdapterCommand::Restore { .. } => {
+            return Err(Error::unavailable(
+                "backups and restore are Claude commands",
+            ));
         }
     }
     if let Some(dir) = tool_dir(home, ".grok") {
@@ -280,6 +359,9 @@ fn zcode_args(command: &AdapterCommand, home: Option<&Path>) -> Result<PreparedC
         AdapterCommand::Recover { .. } => {
             Err(Error::unavailable("recover is not supported for ZCode"))
         }
+        AdapterCommand::Backups { .. } | AdapterCommand::Restore { .. } => Err(Error::unavailable(
+            "backups and restore are Claude commands",
+        )),
     }
 }
 

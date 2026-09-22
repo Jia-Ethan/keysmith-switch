@@ -125,6 +125,9 @@ async fn user_cancel_activate_without_confirmed_plan() {
             prompt_id: created.id,
             scope: Scope::User,
             project_dir: None,
+            runtime: false,
+            append_file: None,
+            max_tokens: None,
         },
         &opts,
     )

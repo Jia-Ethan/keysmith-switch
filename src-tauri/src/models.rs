@@ -488,6 +488,15 @@ pub struct PlanActivateInput {
     pub prompt_id: String,
     pub scope: Scope,
     pub project_dir: Option<PathBuf>,
+    /// Claude user scope. Passes `--runtime` on install. Other tools ignore it.
+    #[serde(default)]
+    pub runtime: bool,
+    /// Claude `--append-file`. Only meaningful with `runtime`.
+    #[serde(default)]
+    pub append_file: Option<PathBuf>,
+    /// Claude `--max-tokens`. Only meaningful with `runtime`.
+    #[serde(default)]
+    pub max_tokens: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
