@@ -6,6 +6,7 @@ pub mod db;
 pub mod desktop;
 pub mod diff;
 pub mod error;
+pub mod feedback;
 pub mod lock;
 pub mod logging;
 pub mod models;
@@ -98,6 +99,7 @@ pub fn run() {
             commands::get_settings,
             commands::update_settings,
             commands::get_about,
+            feedback::submit_feedback,
             commands::check_app_update,
             commands::install_app_update,
             commands::plan_official_action,

@@ -1,16 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import * as api from "../api";
 import { ErrorBanner } from "../components/ErrorBanner";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { Feedback } from "../components/Feedback";
 import { useUpdateOptional } from "../components/UpdateProvider";
 import { IconAlert, IconDownload, IconExternal, IconMonitor, IconMoon, IconRefresh, IconSun, IconTrash } from "../components/icons";
 import { ToolLogo } from "../components/ToolLogos";
 import {
   Button,
   Checkbox,
-  Disclosure,
   Input,
   Mono,
   Segmented,
@@ -21,7 +21,7 @@ import {
 } from "../components/ui";
 import { useTheme, type ThemeMode } from "../hooks/useTheme";
 import type { ToastApi } from "../hooks/useToasts";
-import { formatArgv, formatBytes } from "../lib/format";
+import { formatBytes } from "../lib/format";
 import { toastSafeMessage } from "../lib/redact";
 import { isTauriRuntime, openExternal, pickFiles, pickSavePath } from "../lib/runtime";
 import type {
@@ -39,7 +39,7 @@ import type {
   SettingsPatch,
   ToolId,
 } from "../types";
-import { TOOL_IDS } from "../types";
+import { TOOL_IDS, PUBLIC_RELEASE_PAGE } from "../types";
 
 type TabId = "general" | "tools" | "data" | "about";
 
@@ -458,14 +458,9 @@ export function SettingsPage({
 
                 {officialPlan ? (
                   <div className="mt-3 rounded-2xl border border-border bg-background/45 p-3 text-[14px]" data-testid="official-plan">
-                    <p className="font-medium capitalize text-foreground">
-                      {officialPlan.product} / {officialPlan.action}
+                    <p className="font-medium text-foreground">
+                      {officialPlan.product} · {officialPlan.action === "install" ? t("about.officialInstall") : t("about.officialUpdate")}
                     </p>
-                    <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5">
-                      <DetailRow label={t("about.command")}><Mono>{formatArgv(officialPlan.argv)}</Mono></DetailRow>
-                      <DetailRow label={t("about.dest")}><Mono>{officialPlan.dest || "—"}</Mono></DetailRow>
-                      <DetailRow label={t("about.source")}>{officialPlan.source || "—"}</DetailRow>
-                    </dl>
                     {officialPlan.blockers.length > 0 ? (
                       <div className="mt-2 flex items-start gap-2 rounded-xl border border-destructive/40 bg-destructive/10 px-2.5 py-2 text-destructive">
                         <IconAlert size={14} className="mt-px shrink-0" />
@@ -710,26 +705,35 @@ export function SettingsPage({
               </div>
 
               {updater?.error && updater.update?.installMode !== "manual" ? (
-                <div className="mt-3">
+                <div className="mt-3 space-y-2" key={`error-${updater.checkCount}`}>
                   <ErrorBanner
                     message={updater.error}
                     onRetry={() => void updater.check()}
                     retryLabel={t("common.retry")}
                   />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    data-testid="open-update-release-on-error"
+                    onClick={() => void openExternal(updater.update?.releasePage || PUBLIC_RELEASE_PAGE)}
+                  >
+                    <IconExternal />
+                    {t("about.openReleasePage")}
+                  </Button>
                 </div>
               ) : null}
 
-              {(!updater?.error || updater.update?.installMode === "manual") && updater?.update && !updater.update.available ? (
-                <p className="mt-3 text-sm text-primary">
+              {(!updater?.error || updater.update?.installMode === "manual") && !updater?.checking && updater?.update && !updater.update.available ? (
+                <p className="mt-3 animate-page-in text-sm text-primary" role="status" key={`current-${updater.checkCount}`}>
                   {updater.update.currentVersion} · {t("about.upToDate")}
                 </p>
               ) : null}
 
-              {(!updater?.error || updater.update?.installMode === "manual") && updater?.update?.available ? (
-                <div className="mt-3 flex flex-wrap items-center gap-3 border-t border-border pt-3">
+              {(!updater?.error || updater.update?.installMode === "manual") && !updater?.checking && updater?.update?.available ? (
+                <div className="mt-3 flex animate-page-in flex-wrap items-center gap-3 border-t border-border pt-3" key={`available-${updater.checkCount}`}>
                   <div>
                     <p className="text-sm font-medium text-primary">
-                      {t("about.updateAvailable")}
+                      {t("about.updateAvailable")} · {updater.update.latestVersion ?? "—"}
                       {typeof updater.update.size === "number" && updater.update.size > 0
                         ? ` · ${formatBytes(updater.update.size)}`
                         : ""}
@@ -783,6 +787,8 @@ export function SettingsPage({
                 </div>
               ) : null}
             </section>
+
+            <Feedback />
 
             <div className="p-4 sm:p-5">
               <div className="space-y-3">
@@ -973,15 +979,6 @@ export function SettingsPage({
   );
 }
 
-function DetailRow({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <>
-      <dt className="whitespace-nowrap text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 break-words text-foreground">{children}</dd>
-    </>
-  );
-}
-
 function OfficialToolRow({
   product,
   busy,
@@ -1021,27 +1018,24 @@ function OfficialToolRow({
             data-testid={`official-plan-${product.product}`}
             onClick={() => onPlan(product.product, action)}
           >
-            {t("about.planAction")}
+            {t(action === "install" ? "about.officialInstall" : "about.officialUpdate")}
           </Button>
         ) : null}
       </div>
-      {blocked ? (
-        <p className="mt-1.5 flex items-start gap-1.5 text-[14px] text-amber-600 dark:text-amber-500">
-          <IconAlert size={12} className="mt-px shrink-0" />
-          <span className="min-w-0">
-            {product.product === "zcode" ? t("about.zcodeMacOnly") : t("about.officialBlocked")}
-            {product.unavailableReason ? ` · ${product.unavailableReason}` : ""}
-          </span>
-        </p>
+      {product.unavailableReason ? (
+        <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[14px] text-amber-600 dark:text-amber-500">
+          <p className="flex min-w-0 items-start gap-1.5">
+            <IconAlert size={12} className="mt-px shrink-0" />
+            <span className="min-w-0">{product.product === "zcode" && !product.installed ? t("about.officialInstallManually") : product.product === "grok" ? t("about.officialAutomaticInstallUnavailable") : product.unavailableReason}</span>
+          </p>
+          {product.product === "zcode" && !product.installed ? (
+            <Button size="sm" variant="ghost" onClick={() => void openExternal(product.source)}>
+              <IconExternal />
+              {t("about.openOfficialInstaller")}
+            </Button>
+          ) : null}
+        </div>
       ) : null}
-      <Disclosure title={t("common.details")} testId={`official-details-${product.product}`}>
-        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[13px]">
-          <DetailRow label={t("about.executable")}><Mono>{product.executablePath ?? "—"}</Mono></DetailRow>
-          <DetailRow label={t("about.source")}>{product.source || "—"}</DetailRow>
-          <DetailRow label={t("about.command")}><Mono>{formatArgv(product.argv)}</Mono></DetailRow>
-          <DetailRow label={t("about.dest")}><Mono>{product.dest || "—"}</Mono></DetailRow>
-        </dl>
-      </Disclosure>
     </article>
   );
 }

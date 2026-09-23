@@ -21,6 +21,7 @@ interface UpdateContextValue {
   installing: boolean;
   progress: number | null;
   error: string | null;
+  checkCount: number;
   check: () => Promise<void>;
   install: () => Promise<UpdateInstall | null>;
 }
@@ -53,6 +54,7 @@ export function UpdateProvider({
   const [installing, setInstalling] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [checkCount, setCheckCount] = useState(0);
   const checkingRef = useRef(false);
   const installingRef = useRef(false);
 
@@ -62,18 +64,18 @@ export function UpdateProvider({
     setChecking(true);
     setProgress(null);
     setError(null);
+    setUpdate(null);
     try {
       const result = await api.checkAppUpdate(channel);
       setUpdate(result);
-      if (result.installMode === "manual") {
-        setError(null);
-      } else if (result.error) {
+      if (result.error) {
         setError(result.error);
       }
     } catch (err) {
       setUpdate(null);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
+      setCheckCount((count) => count + 1);
       checkingRef.current = false;
       setChecking(false);
     }
@@ -155,8 +157,8 @@ export function UpdateProvider({
   }, []);
 
   const value = useMemo<UpdateContextValue>(
-    () => ({ update, checking, installing, progress, error, check, install }),
-    [update, checking, installing, progress, error, check, install],
+    () => ({ update, checking, installing, progress, error, checkCount, check, install }),
+    [update, checking, installing, progress, error, checkCount, check, install],
   );
 
   return <UpdateContext.Provider value={value}>{children}</UpdateContext.Provider>;

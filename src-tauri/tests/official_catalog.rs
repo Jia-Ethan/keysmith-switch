@@ -139,7 +139,10 @@ fn plan_official_grok_latest_is_null() {
     assert_eq!(plan.current_version.as_deref(), Some("1.0.4"));
     assert!(plan.latest_version.is_none());
     assert!(plan.argv.is_empty());
-    assert!(plan.blockers.iter().any(|b| b.contains("latest feed")));
+    assert!(plan
+        .blockers
+        .iter()
+        .any(|b| b.contains("Grok automatic installation is not supported")));
 }
 
 #[test]
@@ -167,7 +170,7 @@ fn plan_official_codex_update_uses_npm_argv() {
 }
 
 #[test]
-fn plan_official_zcode_macos_manual_install() {
+fn plan_official_zcode_macos_installed_is_available() {
     let host = host_with(
         "macos",
         OfficialProduct::Zcode,
@@ -182,5 +185,11 @@ fn plan_official_zcode_macos_manual_install() {
     assert!(plan.latest_version.is_none());
     assert_eq!(plan.dest, "/Applications/ZCode.app");
     assert!(plan.argv.is_empty());
-    assert!(!plan.blockers.is_empty());
+    assert!(
+        plan.blockers
+            .iter()
+            .any(|b| b.contains("managed by the installed app")),
+        "{:?}",
+        plan.blockers
+    );
 }

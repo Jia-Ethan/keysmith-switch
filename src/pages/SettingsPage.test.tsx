@@ -26,6 +26,7 @@ let updaterState: {
   installing: boolean;
   progress: number | null;
   error: string | null;
+  checkCount: number;
   check: typeof checkUpdate;
   install: typeof installUpdate;
 };
@@ -112,6 +113,7 @@ describe("SettingsPage data safety", () => {
       installing: false,
       progress: null,
       error: null,
+      checkCount: 0,
       check: checkUpdate,
       install: installUpdate,
     };
@@ -251,6 +253,64 @@ describe("SettingsPage data safety", () => {
     expect(section).not.toHaveTextContent(/Preview|未签名|Developer ID|Authenticode|公证/i);
   });
 
+  it("shows a failed update check with a download fallback, not an up-to-date result", () => {
+    updaterState.update = {
+      available: false,
+      currentVersion: "0.1.4",
+      latestVersion: null,
+      notes: null,
+      size: null,
+      channel: "stable",
+      restartRequired: false,
+      progress: null,
+      error: "offline: network unavailable",
+      releasePage: "https://github.com/Jia-Ethan/keysmith-switch-releases/releases",
+      installMode: "none",
+      reason: null,
+    };
+    updaterState.error = updaterState.update.error;
+    updaterState.checkCount = 2;
+    render(<SettingsPage settings={DEFAULT_SETTINGS} onSave={vi.fn()} toast={toast} initialTab="about" />);
+
+    const section = screen.getByTestId("update-section");
+    expect(section).toHaveTextContent("offline: network unavailable");
+    expect(section).not.toHaveTextContent("已是最新版本");
+    fireEvent.click(screen.getByTestId("open-update-release-on-error"));
+    expect(openExternal).toHaveBeenCalledWith(updaterState.update.releasePage);
+  });
+
+  it("exposes the official download after an in-app installation failure", () => {
+    const releasePage = "https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.1.5";
+    updaterState.update = {
+      available: true,
+      currentVersion: "0.1.4",
+      latestVersion: "0.1.5",
+      notes: null,
+      size: 1_048_576,
+      channel: "stable",
+      restartRequired: true,
+      progress: null,
+      error: null,
+      releasePage,
+      installMode: "inApp",
+      reason: null,
+    };
+    updaterState.error = "signature verification failed";
+    render(<SettingsPage settings={DEFAULT_SETTINGS} onSave={vi.fn()} toast={toast} initialTab="about" />);
+
+    expect(screen.getByTestId("update-section")).toHaveTextContent("signature verification failed");
+    expect(screen.queryByTestId("install-update")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("open-update-release-on-error"));
+    expect(openExternal).toHaveBeenCalledWith(releasePage);
+  });
+
+  it("keeps the checking label visible until the pending request finishes", () => {
+    updaterState.checking = true;
+    render(<SettingsPage settings={DEFAULT_SETTINGS} onSave={vi.fn()} toast={toast} initialTab="about" />);
+    expect(screen.getByTestId("check-update")).toHaveTextContent("正在检查更新");
+    expect(screen.getByTestId("check-update")).toBeDisabled();
+  });
+
   it("requires dialog confirmation before updating and restarting", async () => {
     updaterState.update = {
       available: true,
@@ -277,7 +337,7 @@ describe("SettingsPage data safety", () => {
     );
 
     expect(screen.getByText("0.1.1 → 0.1.2")).toBeInTheDocument();
-    expect(screen.getByText(/发现新版本 · 1\.0 MB/)).toBeInTheDocument();
+    expect(screen.getByText(/发现新版本 · 0\.1\.2 · 1\.0 MB/)).toBeInTheDocument();
     const install = screen.getByTestId("install-update");
     expect(install).not.toBeDisabled();
     fireEvent.click(install);
@@ -426,7 +486,7 @@ describe("SettingsPage data safety", () => {
       />,
     );
 
-    expect(screen.getByText("发现新版本")).toBeInTheDocument();
+    expect(screen.getByText(/发现新版本/)).toBeInTheDocument();
     expect(screen.queryByText("0 B")).not.toBeInTheDocument();
   });
 

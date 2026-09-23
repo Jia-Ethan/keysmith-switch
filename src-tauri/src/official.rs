@@ -104,8 +104,10 @@ const ZCODE_APP: &str = "/Applications/ZCode.app";
 const ZCODE_BIN: &str = "/Applications/ZCode.app/Contents/MacOS/ZCode";
 const ZCODE_WINDOWS_REASON: &str =
     "ZCode is not available on Windows in Keysmith Switch; official desktop support is macOS-only";
+const ZCODE_NOT_INSTALLED_REASON: &str =
+    "ZCode is not installed; install it from the official download page";
 const GROK_NO_FEED: &str =
-    "no audited latest feed; local detection only, install is not auto-executed";
+    "Grok automatic installation is not supported because no audited install source is available";
 const VERSION_TIMEOUT: Duration = Duration::from_secs(5);
 const NPM_QUERY_TIMEOUT: Duration = Duration::from_secs(10);
 const INSTALL_TIMEOUT: Duration = Duration::from_secs(10 * 60);
@@ -139,6 +141,14 @@ pub fn plan_official_action_on(
         .cloned()
         .unwrap_or_else(|| default_dest(product, &os, &detected, npm_available));
     let (source, mut argv, mut blockers) = planned_command(product, action, &os);
+    if product == OfficialProduct::Zcode && os == "macos" {
+        blockers.clear();
+        if detected.executable_path.is_none() {
+            blockers.push(ZCODE_NOT_INSTALLED_REASON.to_string());
+        } else if action == OfficialAction::Update {
+            blockers.push("ZCode updates are managed by the installed app".to_string());
+        }
+    }
     if matches!(product, OfficialProduct::Claude | OfficialProduct::Codex) && !npm_available {
         blockers.push("npm is required to install or update this official CLI".to_string());
         argv.clear();

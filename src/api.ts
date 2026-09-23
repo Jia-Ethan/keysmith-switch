@@ -12,6 +12,8 @@ import type {
   DataDirs,
   Envelope,
   FirstRunReport,
+  FeedbackInput,
+  FeedbackResult,
   ImportResult,
   OfficialAction,
   OfficialPlan,
@@ -187,6 +189,10 @@ export function updateSettings(patch: SettingsPatch): Promise<Settings> {
 
 export function getAbout(): Promise<AboutInfo> {
   return call("get_about", {});
+}
+
+export function submitFeedback(input: FeedbackInput): Promise<FeedbackResult> {
+  return call("submit_feedback", { input });
 }
 
 export function checkAppUpdate(channel?: UpdateChannel): Promise<UpdateCheck> {

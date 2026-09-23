@@ -54,10 +54,10 @@ body:
       required: true
 
   - type: textarea
-    id: diagnostic-output
+    id: screenshot
     attributes:
-      label: 脱敏后的日志或截图（可选，但强烈建议附上）/ Redacted logs or screenshots (optional, strongly recommended)
-      description: Include the visible error and relevant logs where available. Do not paste complete configuration or prompt content.
+      label: 截图（可选）/ Screenshot (optional)
+      description: Review and redact screenshots before attaching. Do not upload logs, configuration, or prompt content.
 
   - type: textarea
     id: additional-context

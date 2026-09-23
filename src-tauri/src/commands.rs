@@ -91,6 +91,15 @@ fn tool_display_name(tool: ToolKind) -> &'static str {
     }
 }
 
+fn official_tool_kind(product: OfficialProduct) -> Option<ToolKind> {
+    Some(match product {
+        OfficialProduct::Claude => ToolKind::Claude,
+        OfficialProduct::Codex => ToolKind::Codex,
+        OfficialProduct::Grok => ToolKind::Grok,
+        OfficialProduct::Zcode => ToolKind::Zcode,
+    })
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UiConflict {
@@ -747,6 +756,13 @@ pub fn get_about(state: State<'_, AppState>) -> Result<AboutInfo> {
     .into_iter()
     .map(|product| {
         let plan = official_plan(product, OfficialAction::Install);
+        if plan.installed {
+            if let Some(tool) = official_tool_kind(product) {
+                if let Err(error) = crate::data::import_official_examples(&state.store, tool) {
+                    let _ = crate::logging::write_line("official-import", &error.to_string());
+                }
+            }
+        }
         let unavailable = plan.blockers.first().cloned();
         OfficialCard {
             product,
@@ -1028,6 +1044,13 @@ pub async fn confirm_official_action(
     }
     let result =
         task.map_err(|error| Error::message(format!("official action task failed: {error}")))?;
+    if result.ok {
+        if let Some(tool) = official_tool_kind(result.product) {
+            if let Err(error) = crate::data::import_official_examples(&state.store, tool) {
+                let _ = crate::logging::write_line("official-import", &error.to_string());
+            }
+        }
+    }
     Ok(result)
 }
 

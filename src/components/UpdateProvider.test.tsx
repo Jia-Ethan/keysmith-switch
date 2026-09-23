@@ -41,6 +41,8 @@ function UpdateHarness() {
       <output data-testid="manual-reason">{updater.update?.reason ?? "none"}</output>
       <output data-testid="update-detail">{updater.update?.detail?.message ?? "none"}</output>
       <output data-testid="update-error">{updater.error ?? "none"}</output>
+      <output data-testid="check-count">{updater.checkCount}</output>
+      <output data-testid="checking">{String(updater.checking)}</output>
     </div>
   );
 }
@@ -66,6 +68,43 @@ describe("UpdateProvider", () => {
 
     await act(async () => resolveCheck(availableUpdate));
     expect(screen.getByText("0.1.2")).toBeInTheDocument();
+  });
+
+  it("refreshes the completion event for two identical up-to-date checks", async () => {
+    const current = { ...availableUpdate, available: false, latestVersion: "0.1.4", currentVersion: "0.1.4", installMode: "none" as const };
+    checkAppUpdate.mockResolvedValue(current);
+    render(
+      <UpdateProvider channel="stable" autoCheck={false}>
+        <UpdateHarness />
+      </UpdateProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "check" }));
+    await waitFor(() => expect(screen.getByTestId("check-count")).toHaveTextContent("1"));
+    expect(screen.getByTestId("update-version")).toHaveTextContent("0.1.4");
+    fireEvent.click(screen.getByRole("button", { name: "check" }));
+    await waitFor(() => expect(screen.getByTestId("check-count")).toHaveTextContent("2"));
+    expect(screen.getByTestId("update-version")).toHaveTextContent("0.1.4");
+    expect(checkAppUpdate).toHaveBeenCalledTimes(2);
+  });
+
+  it("clears a prior success while checking and reports a returned request error", async () => {
+    let resolveCheck!: (value: UpdateCheck) => void;
+    checkAppUpdate.mockResolvedValueOnce(availableUpdate).mockReturnValueOnce(new Promise((resolve) => { resolveCheck = resolve; }));
+    render(
+      <UpdateProvider channel="stable" autoCheck={false}>
+        <UpdateHarness />
+      </UpdateProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "check" }));
+    await waitFor(() => expect(screen.getByTestId("check-count")).toHaveTextContent("1"));
+    fireEvent.click(screen.getByRole("button", { name: "check" }));
+    expect(screen.getByTestId("checking")).toHaveTextContent("true");
+    expect(screen.getByTestId("update-version")).toHaveTextContent("none");
+    await act(async () => resolveCheck({ ...availableUpdate, available: false, error: "offline: network unavailable" }));
+    expect(screen.getByTestId("update-error")).toHaveTextContent("offline: network unavailable");
+    expect(screen.getByTestId("check-count")).toHaveTextContent("2");
   });
 
   it("prevents duplicate installs after an available update is confirmed", async () => {
