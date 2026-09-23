@@ -1,4 +1,4 @@
-# Keysmith Switch v0.1.5
+# Keysmith Switch v0.1.6
 
 首屏改为四个 Harness。选中一个之后只有部署和卸载，各一次确认、一次结果。
 
@@ -11,9 +11,9 @@
 
 ## 安装
 
-- 已安装 `v0.1.3` 或 `v0.1.4`：可以在应用内更新到 `v0.1.5`。
+- 已安装 `v0.1.3` 或 `v0.1.4`：可以在应用内更新到 `v0.1.6`。
 - 仍在 `v0.1.1`：内置的是测试 updater 公钥，必须手动安装本版本。
-- macOS Apple Silicon：`Keysmith.Switch_0.1.5_aarch64.dmg`
-- Windows x64：`Keysmith.Switch_0.1.5_x64-setup.exe`
+- macOS Apple Silicon：`Keysmith.Switch_0.1.6_aarch64.dmg`
+- Windows x64：`Keysmith.Switch_0.1.6_x64-setup.exe`
 
 安装包不使用 Apple Developer ID、公证或 Windows Authenticode。更新包使用独立的生产 minisign 密钥签名。
