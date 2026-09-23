@@ -2,7 +2,7 @@
 
 更新日期：2026-09-22（Asia/Shanghai）
 
-阶段：**源码准备 `v0.1.4`。`main` 已包含 #7–#12。还没有 annotated tag，没有安装包，也没有更新公共 feed。已发布的稳定包仍是 `v0.1.3`。**
+阶段：**`v0.1.4` 已在 2026-09-22 公开。** annotated tag `v0.1.4`（`af73d7b`）指向源码 `0071d5d79`（#13）。源仓库 `release` run [35700418653](https://github.com/Jia-Ethan/keysmith-switch/actions/runs/35700418653) 成功。公开稳定包是 [`v0.1.4`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.1.4)（stable、Latest），含 macOS Apple Silicon 与 Windows x64 安装包；stable feed 的 `latest.json` 版本是 `0.1.4`。`main` 已包含 #7–#12。#6 仍 OPEN。
 
 ## 产品状态
 
@@ -94,4 +94,4 @@ GitHub-verified annotated tag `v0.1.3` 指向发布源码 commit。source releas
 - 前端 19 files / 92 tests、生产构建、Rust tray template 定向测试、`cargo check --offline` 与 `git diff --check` 通过。
 - 最终 bundle 为 arm64、ad-hoc 签名；四个 sidecar 的版本检查、隔离 preview smoke、`codesign --verify --deep --strict` 和数据库 `quick_check` 通过，应用成功启动且无新增崩溃报告。
 - `v0.1.3` 应用和升级前数据库已保存在 `~/Library/Application Support/Keysmith Switch/Upgrade Backups/`，用于本机回滚。
-- 这次替换不是 `v0.1.3 → v0.1.4-rc.1` 的应用内 updater 验收，也没有创建 Release、发布 RC 资产或更新 beta/stable feed；公开稳定版仍是 `v0.1.3`。
+- 这次替换不是 `v0.1.3 → v0.1.4-rc.1` 的应用内 updater 验收，也没有创建 Release、发布 RC 资产或更新 beta/stable feed。当时公开稳定版仍是 `v0.1.3`。2026-09-22 起公开稳定版是 `v0.1.4`。

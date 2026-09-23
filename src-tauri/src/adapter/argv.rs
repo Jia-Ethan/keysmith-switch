@@ -368,7 +368,7 @@ fn zcode_args(command: &AdapterCommand, home: Option<&Path>) -> Result<PreparedC
             })
         }
         AdapterCommand::PlanDeactivate { .. } => {
-            let mut args = vec!["uninstall".into(), "--dry-run".into()];
+            let mut args = vec!["uninstall".into(), "--dry-run".into(), "--json".into()];
             if let Some(dir) = managed {
                 args.push("--managed-dir".into());
                 args.push(dir);
@@ -379,7 +379,7 @@ fn zcode_args(command: &AdapterCommand, home: Option<&Path>) -> Result<PreparedC
             })
         }
         AdapterCommand::Deactivate { .. } => {
-            let mut args = vec!["uninstall".into(), "--yes".into()];
+            let mut args = vec!["uninstall".into(), "--yes".into(), "--json".into()];
             if let Some(dir) = managed {
                 args.push("--managed-dir".into());
                 args.push(dir);

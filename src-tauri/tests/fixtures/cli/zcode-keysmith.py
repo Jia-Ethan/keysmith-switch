@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
-"""Deterministic ZCode Keysmith fixture emitting text status/install lines."""
+"""Deterministic ZCode Keysmith fixture.
+
+doctor and install stay on text lines. uninstall emits zcode-keysmith/v1
+when --json is present, matching sidecar 0.3.2.
+"""
 from __future__ import annotations
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -61,12 +66,36 @@ def main(argv: list[str]) -> int:
         return 0
     if command == "uninstall":
         preview = "--yes" not in argv or "--dry-run" in argv
+        removed: list[str] = []
+        if not preview and system.exists():
+            removed.append(str(system))
+            system.unlink()
+        if "--json" in argv:
+            payload = {
+                "schema": "zcode-keysmith/v1",
+                "operation": "uninstall",
+                "mode": "preview" if preview else "execute",
+                "ok": True,
+                "actions": [
+                    {"action": "plan" if preview else "remove", "path": str(system), "detail": "target"}
+                ],
+                "warnings": [],
+                "blockers": [],
+                "exit_status": 0,
+                "error": None,
+                "managed_dir": str(root),
+                "write": not preview,
+                "removed": removed,
+                "activation": [],
+                "backups": [],
+            }
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+            return 0
         print("zcode-keysmith uninstall preview" if preview else "zcode-keysmith uninstall complete")
         print(f"target: {system}")
         print(f"write: {str(not preview).lower()}")
-        if not preview and system.exists():
-            print(f"removed: {system}")
-            system.unlink()
+        for path in removed:
+            print(f"removed: {path}")
         return 0
     print(f"unknown command {command}", file=sys.stderr)
     return 2
