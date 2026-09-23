@@ -192,6 +192,20 @@ export interface OfficialProduct {
   unavailableReason: string | null;
 }
 
+export interface FeedbackInput {
+  kind: "bug" | "feature";
+  description: string;
+  solution?: string;
+  contact?: string;
+  screenshots: string[];
+}
+
+export interface FeedbackResult {
+  issueUrl: string | null;
+  fallbackUrl: string | null;
+  reason: "ghMissing" | "notAuthenticated" | "noPermission" | "screenshotsManual" | "createFailed" | null;
+}
+
 export interface AboutInfo {
   app: {
     name: string;

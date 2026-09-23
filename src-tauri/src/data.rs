@@ -14,7 +14,7 @@ use zip::ZipArchive;
 use crate::db::Store;
 use crate::error::{Error, Result};
 use crate::lock::HomeLock;
-use crate::models::{now_rfc3339, sha256_hex, CreatePromptInput, ToolKind};
+use crate::models::{now_rfc3339, sha256_hex, CreatePromptInput, PromptSort, ToolKind};
 use crate::ops;
 use crate::paths::AppPaths;
 use crate::redact::redact_text;
@@ -294,20 +294,88 @@ pub fn import_candidates(store: &Store, paths: &[String]) -> Result<ImportResult
 
 pub fn import_markdown_file(store: &Store, tool: ToolKind, path: &Path) -> Result<bool> {
     let content = fs::read_to_string(path)?;
+    import_markdown_content(store, tool, path, &content, None)
+}
+
+fn import_markdown_content(
+    store: &Store,
+    tool: ToolKind,
+    path: &Path,
+    content: &str,
+    source_tag: Option<&str>,
+) -> Result<bool> {
     if content.trim().is_empty() {
         return Ok(false);
     }
-    let title = title_from_markdown(&content, path);
+    let content_hash = sha256_hex(content);
+    let same_content = store
+        .list_prompts(tool, None, None, PromptSort::Updated)?
+        .into_iter()
+        .any(|prompt| prompt.sha256 == content_hash);
+    let same_source = match source_tag {
+        Some(tag) => store.has_prompt_tag(tool, tag)?,
+        None => false,
+    };
+    if same_content || same_source {
+        return Ok(false);
+    }
+    let title = title_from_markdown(content, path);
     ops::create_prompt(
         store,
         CreatePromptInput {
             tool,
             title,
-            content,
-            tags: vec!["imported".into()],
+            content: content.to_string(),
+            tags: source_tag
+                .map(|tag| vec!["official".into(), "imported".into(), tag.to_string()])
+                .unwrap_or_else(|| vec!["imported".into()]),
         },
     )?;
     Ok(true)
+}
+
+fn official_resource_root() -> Option<PathBuf> {
+    if let Ok(root) = std::env::var("KEYSMITH_SWITCH_OFFICIAL_RESOURCES") {
+        let root = PathBuf::from(root);
+        if root.is_dir() {
+            return Some(root);
+        }
+    }
+    let mut roots = Vec::new();
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            roots.push(dir.join("../Resources/third_party/keysmith"));
+            roots.push(dir.join("third_party/keysmith"));
+        }
+    }
+    roots.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../third_party/keysmith"));
+    roots.into_iter().find(|root| root.is_dir())
+}
+
+pub fn import_official_examples(store: &Store, tool: ToolKind) -> Result<usize> {
+    let Some(root) = official_resource_root() else {
+        return Ok(0);
+    };
+    let dir = root.join(tool.as_str()).join("examples");
+    if !dir.is_dir() {
+        return Ok(0);
+    }
+    let mut imported = 0;
+    for entry in fs::read_dir(dir)? {
+        let path = entry?.path();
+        if path.extension().and_then(|value| value.to_str()) != Some("md") {
+            continue;
+        }
+        let content = fs::read_to_string(&path)?;
+        let source_tag = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(|name| format!("official-example:{name}"));
+        if import_markdown_content(store, tool, &path, &content, source_tag.as_deref())? {
+            imported += 1;
+        }
+    }
+    Ok(imported)
 }
 
 fn infer_tool_from_path(path: &Path) -> Option<ToolKind> {

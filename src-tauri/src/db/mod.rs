@@ -297,6 +297,19 @@ impl Store {
         Ok(out)
     }
 
+    pub fn has_prompt_tag(&self, tool: ToolKind, tag: &str) -> Result<bool> {
+        let conn = self.conn()?;
+        let mut stmt = conn.prepare("SELECT tags FROM prompts WHERE tool = ?1")?;
+        let mut rows = stmt.query(params![tool.as_str()])?;
+        while let Some(row) = rows.next()? {
+            let tags: String = row.get(0)?;
+            if decode_tags(tags).iter().any(|item| item == tag) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
     pub fn get_prompt(&self, id: &str) -> Result<PromptDetail> {
         let conn = self.conn()?;
         let row = conn

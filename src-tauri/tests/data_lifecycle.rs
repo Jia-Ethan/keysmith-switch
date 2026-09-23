@@ -1,6 +1,7 @@
 use keysmith_switch_lib::data::{
-    clear_all_data, clear_plan, export_zip, import_candidates, import_markdown_file, import_zip,
-    inspect_zip, scan_import_candidates, CLEAR_CONFIRM_PHRASE,
+    clear_all_data, clear_plan, export_zip, import_candidates, import_markdown_file,
+    import_official_examples, import_zip, inspect_zip, scan_import_candidates,
+    CLEAR_CONFIRM_PHRASE,
 };
 use keysmith_switch_lib::db::Store;
 use keysmith_switch_lib::models::{Activation, UpdatePromptInput};
@@ -53,6 +54,25 @@ fn import_copies_into_library_without_activation() {
     assert_eq!(listed[0].title, "Imported");
     let activations = store.list_activations(ToolKind::Codex).unwrap();
     assert!(activations.is_empty());
+}
+
+#[test]
+fn official_examples_import_is_idempotent() {
+    let (_tmp, store) = store();
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../third_party/keysmith");
+    std::env::set_var("KEYSMITH_SWITCH_OFFICIAL_RESOURCES", &root);
+    let first = import_official_examples(&store, ToolKind::Claude).unwrap();
+    let second = import_official_examples(&store, ToolKind::Claude).unwrap();
+    std::env::remove_var("KEYSMITH_SWITCH_OFFICIAL_RESOURCES");
+    assert!(first > 0);
+    assert_eq!(second, 0);
+    assert_eq!(
+        store
+            .list_prompts(ToolKind::Claude, None, None, PromptSort::Title)
+            .unwrap()
+            .len(),
+        first
+    );
 }
 
 #[test]

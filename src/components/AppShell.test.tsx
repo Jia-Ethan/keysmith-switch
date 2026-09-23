@@ -58,9 +58,12 @@ describe("AppShell tool navigation", () => {
     expect(onNavigate).toHaveBeenCalledWith({ kind: "tool", tool: "zcode" });
   });
 
-  it("shows settings and hides Advanced Tools by default", () => {
+  it("shows a gear settings control and hides Advanced Tools by default", () => {
     renderShell({ kind: "tool", tool: "claude" });
-    expect(screen.getByTestId("nav-settings")).toBeInTheDocument();
+    const settings = screen.getByTestId("nav-settings");
+    expect(settings).toBeInTheDocument();
+    expect(settings.querySelector("circle")).toBeInTheDocument();
+    expect(settings.querySelector("path")?.getAttribute("d")).toContain("M8 1.6");
     expect(screen.queryByTestId("nav-advanced")).not.toBeInTheDocument();
   });
 
