@@ -16,6 +16,6 @@ desktop prerelease is the source of the 0.3.2 tree; it is not a CLI release and
 is not Latest.
 
 Advanced Tools also vendor `grok_keysmith_runner.py` and `grok_keysmith_breaktest.py`
-from the same Grok commit. Zcode 0.3.2 can emit `zcode-keysmith/v1` JSON when
-`--json` is passed. The commands this tree already builds stay on the text
-doctor/install output; uninstall JSON is parsed when that is what the CLI prints.
+from the same Grok commit. Zcode 0.3.2 emits `zcode-keysmith/v1` when `--json` is
+passed. doctor and install stay on text. plan-deactivate and deactivate pass
+`--json` on uninstall; the parser still accepts the text lines.

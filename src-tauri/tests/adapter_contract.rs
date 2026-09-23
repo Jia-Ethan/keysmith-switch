@@ -384,14 +384,18 @@ async fn zcode_fixture_contract() {
 }
 
 #[tokio::test]
-async fn zcode_032_json_uninstall_parses_without_changing_argv() {
+async fn zcode_032_json_uninstall_parses() {
     let command = AdapterCommand::PlanDeactivate {
         scope: Scope::User,
         project_dir: None,
         name: None,
     };
     let captured = Captured {
-        argv: vec!["uninstall".into(), "--dry-run".into()],
+        argv: vec![
+            "uninstall".into(),
+            "--dry-run".into(),
+            "--json".into(),
+        ],
         truncated: false,
         stdout: r#"{
             "schema": "zcode-keysmith/v1",
@@ -423,6 +427,64 @@ async fn zcode_032_json_uninstall_parses_without_changing_argv() {
         .target_paths
         .iter()
         .any(|path| path.role == "managed_dir"));
-    assert!(!captured.argv.iter().any(|item| item == "--json"));
-    assert!(!captured.argv.iter().any(|item| item == "--yes"));
+    assert!(captured.argv.iter().any(|item| item == "--json"));
+    let json_at = captured.argv.iter().position(|item| item == "--json");
+    let yes_at = captured.argv.iter().position(|item| item == "--yes");
+    assert!(json_at.is_some());
+    assert!(yes_at.is_none());
+}
+
+#[tokio::test]
+async fn zcode_uninstall_json_preview_before_yes() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let opts = opts(&home, "zcode-keysmith.py");
+    let preview = run_adapter_with(
+        ToolKind::Zcode,
+        AdapterCommand::PlanDeactivate {
+            scope: Scope::User,
+            project_dir: None,
+            name: None,
+        },
+        &opts,
+    )
+    .await
+    .unwrap();
+    assert!(preview.preview, "{preview:?}");
+    assert!(preview.ok, "{preview:?}");
+    assert!(preview.argv.iter().any(|item| item == "--json"));
+    assert!(preview.argv.iter().any(|item| item == "--dry-run"));
+    assert!(!preview.argv.iter().any(|item| item == "--yes"));
+    assert!(preview
+        .planned_files
+        .iter()
+        .any(|file| file.action == "plan"));
+    assert!(!preview.argv.iter().any(|item| item == "doctor"));
+
+    let confirm = run_adapter_with(
+        ToolKind::Zcode,
+        AdapterCommand::Deactivate {
+            scope: Scope::User,
+            project_dir: None,
+            name: None,
+            expected_preview_token: None,
+        },
+        &opts,
+    )
+    .await
+    .unwrap();
+    assert!(!confirm.preview, "{confirm:?}");
+    assert!(confirm.ok, "{confirm:?}");
+    let json_at = confirm.argv.iter().position(|item| item == "--json");
+    let yes_at = confirm.argv.iter().position(|item| item == "--yes");
+    assert!(json_at.is_some() && yes_at.is_some());
+    assert!(json_at.unwrap() > yes_at.unwrap());
+    assert_eq!(confirm.status, ToolStatus::NotInstalled);
+
+    let doctor = run_adapter_with(ToolKind::Zcode, AdapterCommand::Doctor, &opts)
+        .await
+        .unwrap();
+    assert!(!doctor.argv.iter().any(|item| item == "--json"));
+    assert!(doctor.argv.iter().any(|item| item == "doctor"));
 }

@@ -10,7 +10,7 @@
 
 ## 状态
 
-准备发布的版本是 `v0.1.4`。源码已在 `main`，安装包、annotated tag 和公共 feed 还没有发出。
+当前稳定版是 `v0.1.4`。源码在 `main`（`0071d5d79`，#13）。annotated tag、安装包和公共 feed 已在 2026-09-22 发出。
 
 `v0.1.4` 接替四个独立桌面安装包。之后只维护 Keysmith Switch。已发出的 Claude、Grok、Codex、Zcode 桌面包保持原样，不撤回，也不改成各自仓库的 Latest。
 
@@ -33,14 +33,12 @@
 
 ## 下载
 
-待发布：[`v0.1.4`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.1.4)
+当前稳定版：[`v0.1.4`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.1.4)
 
 - macOS Apple Silicon（M 系列，含 Mac Studio M4 Max）：`Keysmith.Switch_0.1.4_aarch64.dmg`
 - Windows x64：`Keysmith.Switch_0.1.4_x64-setup.exe`
 
-这两个文件要等 tag 和公开仓库的 `production` 审批之后才会出现。现在还不能下载。
-
-已发布的稳定包仍是 [`v0.1.3`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.1.3)。`v0.1.1` 用户需要手动安装 `v0.1.3` 或 `v0.1.4` 才能完成 updater bootstrap。
+`v0.1.1` 用户需要手动安装 `v0.1.3` 或 `v0.1.4` 才能完成 updater bootstrap。已安装 `v0.1.3` 可以应用内更新。
 
 ## 开发
 
@@ -86,10 +84,10 @@ Bug、需求与破限建议统一提交至 [GitHub Discussions](https://github.c
 
 | 工具 | 版本 | HEAD |
 | --- | --- | --- |
-| claude-keysmith | v7.1 | 3fe8902d |
-| codex-keysmith | v0.3.8 | ae068de1 |
-| grok-keysmith | v0.4.1 | 1f49c54a |
-| zcode-keysmith | v0.1.0 | 77a27dec |
+| claude-keysmith | v7.2 | 7dbfa253 |
+| codex-keysmith | v0.6.0 | 33cf4049 |
+| grok-keysmith | v0.6.1 | 168f604a |
+| zcode-keysmith | 0.3.2（无 `v0.3.2` tag；不是 CLI Latest `v0.3.1`） | 7348b875 |
 
 ## 许可
 
