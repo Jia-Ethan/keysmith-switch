@@ -348,5 +348,21 @@
     "deactivateFailed": "Deactivate failed",
     "recoverFailed": "Recover failed",
     "validation": "Fill in the required fields first"
+  },
+  "harness": {
+    "title": "Harness",
+    "lead": "Deploy this tool's Keysmith prompt onto this machine, or take it off.",
+    "deploy": "Deploy",
+    "remove": "Remove",
+    "busyDeploy": "Deploying",
+    "busyRemove": "Removing",
+    "done": "Done",
+    "failed": "Failed",
+    "retry": "Retry",
+    "confirmDeployTitle": "Deploy this harness?",
+    "confirmRemoveTitle": "Remove this harness?",
+    "confirmDeployBody": "After confirm, fetch this tool's current default prompt, store it, and deploy it. Once.",
+    "confirmRemoveBody": "After confirm, take this tool's Keysmith prompt off the machine. The library copy stays.",
+    "genericError": "It did not finish."
   }
 }

@@ -7,6 +7,7 @@ pub mod desktop;
 pub mod diff;
 pub mod error;
 pub mod feedback;
+pub mod harness;
 pub mod lock;
 pub mod logging;
 pub mod models;
@@ -91,6 +92,8 @@ pub fn run() {
             commands::activate,
             commands::plan_deactivate,
             commands::deactivate,
+            commands::deploy_harness,
+            commands::remove_harness,
             commands::recover_tool,
             commands::confirm_recover,
             commands::doctor,

@@ -20,12 +20,15 @@ vi.mock("./api", () => ({
 }));
 
 describe("App smoke", () => {
-  it("mounts and lands on the tool page without crashing", async () => {
+  it("mounts on the harness page with deploy and remove only", async () => {
     const { App } = await import("./App");
     render(<App />);
     expect(screen.getByTestId("nav-claude")).toBeInTheDocument();
     expect(screen.getByTestId("nav-settings")).toBeInTheDocument();
-    // no marketing hero, straight into tool management
-    expect(screen.getByTestId("prompt-search")).toBeInTheDocument();
+    expect(screen.getByTestId("harness-deploy")).toBeInTheDocument();
+    expect(screen.getByTestId("harness-remove")).toBeInTheDocument();
+    expect(screen.queryByTestId("prompt-search")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("prompt-new")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("scope-bar")).not.toBeInTheDocument();
   });
 });

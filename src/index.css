@@ -146,6 +146,19 @@ select:disabled {
   animation: disclosure-expand 200ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+@keyframes harness-press {
+  from {
+    transform: scale(0.98);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+.harness-press {
+  animation: harness-press 100ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -159,7 +172,8 @@ select:disabled {
   .animate-page-in,
   .animate-dialog-in,
   .animate-panel-in,
-  .animate-disclosure {
+  .animate-disclosure,
+  .harness-press {
     animation: none !important;
   }
 }

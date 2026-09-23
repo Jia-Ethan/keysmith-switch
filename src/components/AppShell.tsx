@@ -9,6 +9,7 @@ import { ToolLogo } from "./ToolLogos";
 import keysmithIcon from "../assets/keysmith-icon.png";
 
 export type AppPage =
+  | { kind: "harness"; tool: ToolId }
   | { kind: "tool"; tool: ToolId }
   | { kind: "prompt-view"; tool: ToolId; promptId: string; scope: ScopeId; projectDir: string }
   | {
@@ -132,7 +133,7 @@ export function AppShell({
     };
   }, [moreOpen]);
 
-  const activeTool = page.kind === "tool" ? page.tool : null;
+  const activeTool = page.kind === "harness" || page.kind === "tool" ? page.tool : null;
   const visible = TOOL_IDS.slice(0, visibleCount);
   if (activeTool && !visible.includes(activeTool)) {
     visible[visible.length - 1] = activeTool;
@@ -141,7 +142,7 @@ export function AppShell({
 
   const selectTool = (tool: ToolId) => {
     setMoreOpen(false);
-    onNavigate({ kind: "tool", tool });
+    onNavigate({ kind: "harness", tool });
   };
 
   return (

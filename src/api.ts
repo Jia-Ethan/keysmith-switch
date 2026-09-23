@@ -155,6 +155,22 @@ export function deactivate(operationId: string): Promise<PlanResult> {
   return call("deactivate", { operationId });
 }
 
+export interface HarnessOutcome {
+  ok: boolean;
+  tool: ToolId;
+  action: "deploy" | "remove";
+  promptId: string | null;
+  error: string | null;
+}
+
+export function deployHarness(tool: ToolId): Promise<HarnessOutcome> {
+  return call("deploy_harness", { tool });
+}
+
+export function removeHarness(tool: ToolId): Promise<HarnessOutcome> {
+  return call("remove_harness", { tool });
+}
+
 export function recoverTool(input: {
   tool: ToolId;
   scope?: ScopeId;
