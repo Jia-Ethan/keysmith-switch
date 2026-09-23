@@ -348,5 +348,21 @@
     "deactivateFailed": "停用失敗",
     "recoverFailed": "還原失敗",
     "validation": "請先補全必填項"
+  },
+  "harness": {
+    "title": "Harness",
+    "lead": "把這個工具的 Keysmith 提示詞部署到本機，或從本機卸下。",
+    "deploy": "部署",
+    "remove": "解除安裝",
+    "busyDeploy": "正在部署",
+    "busyRemove": "正在解除安裝",
+    "done": "完成",
+    "failed": "失敗",
+    "retry": "重試",
+    "confirmDeployTitle": "部署這個 Harness？",
+    "confirmRemoveTitle": "解除安裝這個 Harness？",
+    "confirmDeployBody": "確認後拉取該工具目前的預設提示詞，寫入本機並部署。只此一次。",
+    "confirmRemoveBody": "確認後從本機卸下該工具的 Keysmith 提示詞。庫裡的原稿保留。",
+    "genericError": "沒有完成。"
   }
 }

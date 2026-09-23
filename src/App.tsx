@@ -14,6 +14,7 @@ import { useToasts } from "./hooks/useToasts";
 import { isTauriRuntime } from "./lib/runtime";
 import { AdvancedPage } from "./pages/AdvancedPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { HarnessPage } from "./pages/HarnessPage";
 import { ToolPage } from "./pages/ToolPage";
 import * as api from "./api";
 import type { FirstRunReport, PromptDetail } from "./types";
@@ -23,7 +24,7 @@ export function App() {
   useTheme();
   const settingsState = useSettings();
   const toast = useToasts();
-  const [page, setPage] = useState<AppPage>({ kind: "tool", tool: "claude" });
+  const [page, setPage] = useState<AppPage>({ kind: "harness", tool: "claude" });
   const [dirty, setDirty] = useState(false);
   const [startup, setStartup] = useState<FirstRunReport | null>(null);
   const [libraryEpoch, setLibraryEpoch] = useState(0);
@@ -31,7 +32,7 @@ export function App() {
   const advancedEnabled = settingsState.settings.advancedToolsEnabled;
   const visiblePage = useMemo<AppPage>(() => {
     if (page.kind === "advanced" && !advancedEnabled) {
-      return { kind: "tool", tool: "claude" };
+      return { kind: "harness", tool: "claude" };
     }
     return page;
   }, [advancedEnabled, page]);
@@ -111,6 +112,11 @@ export function App() {
               onRetry={() => void settingsState.reload()}
               retryLabel={t("common.retry")}
             />
+          </div>
+        ) : null}
+        {visiblePage.kind === "harness" ? (
+          <div className="min-h-0 flex-1">
+            <HarnessPage tool={visiblePage.tool} onDirtyChange={setDirty} />
           </div>
         ) : null}
         {visiblePage.kind === "tool" ? (

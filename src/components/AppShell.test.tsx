@@ -38,14 +38,14 @@ afterEach(() => {
 
 describe("AppShell tool navigation", () => {
   it("renders all four tool entries", () => {
-    renderShell({ kind: "tool", tool: "claude" });
+    renderShell({ kind: "harness", tool: "claude" });
     for (const tool of ["claude", "codex", "grok", "zcode"]) {
       expect(screen.getByTestId(`nav-${tool}`)).toBeInTheDocument();
     }
   });
 
   it("marks only the current tool as the active page", () => {
-    renderShell({ kind: "tool", tool: "codex" });
+    renderShell({ kind: "harness", tool: "codex" });
     expect(screen.getByTestId("nav-codex")).toHaveAttribute("aria-current", "page");
     expect(screen.getByTestId("nav-claude")).not.toHaveAttribute("aria-current");
     expect(screen.getByTestId("nav-grok")).not.toHaveAttribute("aria-current");
@@ -53,13 +53,13 @@ describe("AppShell tool navigation", () => {
   });
 
   it("routes tool clicks through onNavigate", () => {
-    const { onNavigate } = renderShell({ kind: "tool", tool: "claude" });
+    const { onNavigate } = renderShell({ kind: "harness", tool: "claude" });
     fireEvent.click(screen.getByTestId("nav-zcode"));
-    expect(onNavigate).toHaveBeenCalledWith({ kind: "tool", tool: "zcode" });
+    expect(onNavigate).toHaveBeenCalledWith({ kind: "harness", tool: "zcode" });
   });
 
   it("shows a gear settings control and hides Advanced Tools by default", () => {
-    renderShell({ kind: "tool", tool: "claude" });
+    renderShell({ kind: "harness", tool: "claude" });
     const settings = screen.getByTestId("nav-settings");
     expect(settings).toBeInTheDocument();
     expect(settings.querySelector("circle")).toBeInTheDocument();
@@ -68,7 +68,7 @@ describe("AppShell tool navigation", () => {
   });
 
   it("shows Advanced Tools only once enabled in settings", () => {
-    renderShell({ kind: "tool", tool: "claude" }, true);
+    renderShell({ kind: "harness", tool: "claude" }, true);
     expect(screen.getByTestId("nav-advanced")).toBeInTheDocument();
   });
 
@@ -94,13 +94,13 @@ describe("AppShell tool navigation", () => {
       },
     );
 
-    const { onNavigate } = renderShell({ kind: "tool", tool: "claude" });
+    const { onNavigate } = renderShell({ kind: "harness", tool: "claude" });
     TestResizeObserver.instances[0]?.trigger();
 
     fireEvent.click(screen.getByTestId("nav-more"));
     expect(screen.getByRole("menu")).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("nav-overflow-zcode"));
-    expect(onNavigate).toHaveBeenCalledWith({ kind: "tool", tool: "zcode" });
+    expect(onNavigate).toHaveBeenCalledWith({ kind: "harness", tool: "zcode" });
   });
 });
 

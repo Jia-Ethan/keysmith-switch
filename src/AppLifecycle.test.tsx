@@ -46,9 +46,9 @@ vi.mock("./hooks/useSettings", () => ({
 }));
 
 vi.mock("./hooks/useTheme", () => ({ useTheme: vi.fn() }));
-vi.mock("./pages/ToolPage", () => ({
-  ToolPage: ({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) => (
-    <button type="button" onClick={() => onDirtyChange(true)}>make dirty</button>
+vi.mock("./pages/HarnessPage", () => ({
+  HarnessPage: ({ onDirtyChange }: { onDirtyChange?: (dirty: boolean) => void }) => (
+    <button type="button" onClick={() => onDirtyChange?.(true)}>make dirty</button>
   ),
 }));
 vi.mock("./components/AppShell", () => ({
