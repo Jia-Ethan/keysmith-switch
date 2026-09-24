@@ -126,8 +126,13 @@ async fn deploy_then_remove_uses_user_scope_and_keeps_the_library() {
     assert!(outcome.ok, "{outcome:?}");
     assert_eq!(outcome.action, HarnessAction::Deploy);
     let prompt_id = outcome.prompt_id.expect("stored prompt");
-    let deployed = harness_state(&store, ToolKind::Claude, &opts).await.unwrap();
-    assert!(deployed.deployed, "deploy must be visible on the next read: {deployed:?}");
+    let deployed = harness_state(&store, ToolKind::Claude, &opts)
+        .await
+        .unwrap();
+    assert!(
+        deployed.deployed,
+        "deploy must be visible on the next read: {deployed:?}"
+    );
     assert!(deployed.error.is_none());
 
     let prompts = store
@@ -150,8 +155,13 @@ async fn deploy_then_remove_uses_user_scope_and_keeps_the_library() {
         "remove must not wipe the library"
     );
     let _ = Scope::User;
-    let cleared = harness_state(&store, ToolKind::Claude, &opts).await.unwrap();
-    assert!(!cleared.deployed, "remove must leave the machine undeployed: {cleared:?}");
+    let cleared = harness_state(&store, ToolKind::Claude, &opts)
+        .await
+        .unwrap();
+    assert!(
+        !cleared.deployed,
+        "remove must leave the machine undeployed: {cleared:?}"
+    );
     assert!(cleared.error.is_none());
 }
 

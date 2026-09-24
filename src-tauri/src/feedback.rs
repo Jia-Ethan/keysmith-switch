@@ -137,7 +137,12 @@ fn gh_candidates() -> Vec<PathBuf> {
             paths.push(home.join(relative));
         }
     }
-    for prefix in ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/opt/local/bin"] {
+    for prefix in [
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/opt/local/bin",
+    ] {
         paths.push(PathBuf::from(prefix).join("gh"));
     }
     paths
