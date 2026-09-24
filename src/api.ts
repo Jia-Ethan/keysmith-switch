@@ -311,10 +311,6 @@ export function logFrontendError(message: string, stack?: string): Promise<OkRes
   return call("log_frontend_error", { message, stack });
 }
 
-export function hideToTray(): Promise<OkResult> {
-  return call("hide_to_tray", {});
-}
-
 export function showMainWindow(): Promise<OkResult> {
   return call("show_main_window", {});
 }

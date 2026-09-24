@@ -91,7 +91,7 @@ GitHub-verified annotated tag `v0.1.3` 指向发布源码 commit。source releas
 
 2026-08-24，界面可读性与 macOS 菜单栏图标优化已提交为 `bd6bf7f57333de34c5570b61f882d73a6336eb4e` 并推送至 `origin/main`。本机 `/Applications/Keysmith Switch.app` 随后从稳定版 `v0.1.3` 替换为该提交构建的 `v0.1.4-rc.1` Preview：
 
-- 前端 19 files / 92 tests、生产构建、Rust tray template 定向测试、`cargo check --offline` 与 `git diff --check` 通过。
+- 前端 19 files / 92 tests、生产构建、`cargo check --offline` 与 `git diff --check` 通过。
 - 最终 bundle 为 arm64、ad-hoc 签名；四个 sidecar 的版本检查、隔离 preview smoke、`codesign --verify --deep --strict` 和数据库 `quick_check` 通过，应用成功启动且无新增崩溃报告。
 - `v0.1.3` 应用和升级前数据库已保存在 `~/Library/Application Support/Keysmith Switch/Upgrade Backups/`，用于本机回滚。
 - 这次替换不是 `v0.1.3 → v0.1.4-rc.1` 的应用内 updater 验收，也没有创建 Release、发布 RC 资产或更新 beta/stable feed。当时公开稳定版仍是 `v0.1.3`。2026-09-22 起公开稳定版是 `v0.1.4`。

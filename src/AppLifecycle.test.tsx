@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppPage } from "./components/AppShell";
 
 const eventHandlers = new Map<string, () => void>();
-const hideToTray = vi.fn();
 const showMainWindow = vi.fn();
 const quitApp = vi.fn();
 let callbackId = 0;
@@ -23,7 +22,6 @@ vi.mock("./api", () => ({
     recovery: null,
     sidecar: { pythonRequired: false, tools: [] },
   }),
-  hideToTray: (...args: unknown[]) => hideToTray(...args),
   showMainWindow: (...args: unknown[]) => showMainWindow(...args),
   quitApp: (...args: unknown[]) => quitApp(...args),
   checkAppUpdate: vi.fn(),
@@ -58,7 +56,6 @@ vi.mock("./components/AppShell", () => ({
 describe("desktop lifecycle guards", () => {
   beforeEach(() => {
     eventHandlers.clear();
-    hideToTray.mockReset().mockResolvedValue({ ok: true });
     showMainWindow.mockReset().mockResolvedValue({ ok: true });
     quitApp.mockReset().mockResolvedValue({ ok: true });
     Object.defineProperty(window, "__TAURI_INTERNALS__", {
@@ -85,7 +82,7 @@ describe("desktop lifecycle guards", () => {
     });
   });
 
-  it("restores a close-to-tray window when a dirty draft is kept", async () => {
+  it("keeps the window open when a dirty draft is kept", async () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     const { App } = await import("./App");
     render(<App />);
@@ -94,8 +91,17 @@ describe("desktop lifecycle guards", () => {
     act(() => eventHandlers.get("window-close-requested")?.());
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(showMainWindow).toHaveBeenCalledTimes(1);
-    expect(hideToTray).not.toHaveBeenCalled();
+    expect(quitApp).not.toHaveBeenCalled();
     confirm.mockRestore();
+  });
+
+  it("quits on close with no draft open", async () => {
+    const { App } = await import("./App");
+    render(<App />);
+    await waitFor(() => expect(eventHandlers.has("window-close-requested")).toBe(true));
+    act(() => eventHandlers.get("window-close-requested")?.());
+    expect(quitApp).toHaveBeenCalledTimes(1);
+    expect(showMainWindow).not.toHaveBeenCalled();
   });
 
   it("quits only after a dirty draft is confirmed", async () => {

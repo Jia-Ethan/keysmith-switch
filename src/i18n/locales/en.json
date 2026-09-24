@@ -190,12 +190,6 @@
     "defaultClaudeScopeHint": "Scope preselected when Claude Code opens. Other tools support user only.",
     "recentProjectsHint": "Directories chosen for Claude project / local scope are recorded here.",
     "endpointOverrideHint": "Set by a local fixture. Read-only in the UI.",
-    "closeToTray": "Close window to tray",
-    "closeToTrayHint": "Hiding the main window goes to the tray. Use Quit Keysmith Switch in the tray menu to exit.",
-    "autoLaunch": "Start at login",
-    "autoLaunchHint": "Launch after sign-in. Off by default.",
-    "silentStart": "Silent start",
-    "silentStartHint": "Start in the tray only.",
     "autoCheck": "Check for updates on launch",
     "tab": {
       "general": "General",
@@ -352,6 +346,7 @@
   "harness": {
     "title": "Harness",
     "lead": "One deploy for the whole machine. Not a project.",
+    "refresh": "Refresh machine status",
     "reading": "Reading this machine",
     "deployed": "Deployed",
     "undeployed": "Not deployed",

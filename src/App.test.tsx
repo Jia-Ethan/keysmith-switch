@@ -16,7 +16,6 @@ vi.mock("./api", () => ({
   getHarnessState: vi.fn().mockResolvedValue({ tool: "claude", deployed: false, error: null }),
   logFrontendError: vi.fn(),
   showMainWindow: vi.fn(),
-  hideToTray: vi.fn(),
   quitApp: vi.fn(),
 }));
 

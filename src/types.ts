@@ -162,9 +162,6 @@ export interface Settings {
   defaultClaudeScope: ScopeId;
   recentProjectDirs: string[];
   updaterEndpointOverride: string | null;
-  closeToTray: boolean;
-  autoLaunch: boolean;
-  silentStart: boolean;
   autoCheckUpdates: boolean;
   theme: ThemeMode;
   firstRunCompleted: boolean;
@@ -369,9 +366,6 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultClaudeScope: "user",
   recentProjectDirs: [],
   updaterEndpointOverride: null,
-  closeToTray: true,
-  autoLaunch: false,
-  silentStart: false,
   autoCheckUpdates: true,
   theme: "system",
   firstRunCompleted: false,

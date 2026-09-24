@@ -14,7 +14,7 @@
 | 设置横向标签 + About 子页 | 设置横向标签：通用 / 工具 / 数据与备份 / 更新 / 高级 / 关于 |
 | 官方 CLI 安装行 | Claude / Codex 确认后 argv 安装；Grok / ZCode 只展示来源、命令、目标并打开官网 |
 | 全局 Update Provider | 启动延迟检查，确认后下载，禁止静默安装 |
-| 托盘 / 开机启动 / 静默启动 / 关窗进托盘 | 同结构，菜单含「退出 Keysmith Switch」 |
+| 托盘 / 开机启动 / 静默启动 / 关窗进托盘 | **不做**：关闭窗口即退出，没有托盘图标，也没有开机启动与静默启动 |
 
 ## 组件映射
 
@@ -32,11 +32,11 @@
 | `src/components/FirstRunNoticeDialog.tsx` | `src/components/FirstRunDialog.tsx` | 首次扫描导入预览，勾选导入，绝不自动激活 |
 | `src/components/settings/SettingsPage.tsx` 顶部 Tabs | `src/pages/SettingsPage.tsx` | 横向标签，不用左侧大导航 |
 | `src/components/settings/AboutSection.tsx` | `src/pages/AboutPage.tsx`（设置 > 关于） | 三层：应用 / 内置适配器 / 官方工具 |
-| `src/components/settings/WindowSettings.tsx` | 设置 > 通用 | 关窗进托盘、开机启动、静默启动 |
+| `src/components/settings/WindowSettings.tsx` | 设置 > 通用 | 未采用：该页只剩界面语言（页内下拉）与主题 |
 | `src/contexts/UpdateContext` / `UpdateBadge` | `src/components/UpdateProvider.tsx` | 全局延迟检查、非打扰状态、确认后下载 |
-| `src-tauri/src/lib.rs` CloseRequested / 单实例 / 窗口状态 | `src-tauri/src/lib.rs` + `desktop.rs` | 关窗进托盘、单实例聚焦、位置恢复 |
-| `src-tauri/src/tray.rs` | `src-tauri/src/desktop.rs` | 精简菜单：显示主窗口 / 检查更新 / 退出 |
-| `src-tauri/src/auto_launch.rs` | `src-tauri/src/auto_launch.rs` | **MIT 改编**：应用名改为 Keysmith Switch |
+| `src-tauri/src/lib.rs` CloseRequested / 单实例 / 窗口状态 | `src-tauri/src/lib.rs` + `desktop.rs` | 关窗即退出（草稿未保存时先确认）、单实例聚焦、位置恢复 |
+| `src-tauri/src/tray.rs` | — | 未采用：托盘整块移除，包括菜单栏图标与「隐藏到托盘」 |
+| `src-tauri/src/auto_launch.rs` | — | 未采用：开机启动与静默启动一并移除 |
 | `.github/workflows/ci.yml` `preview-release.yml` `release.yml` | `.github/workflows/` | CI 自动验证；开发候选与正式发布按职责分离，发布 Secrets 只由 Actions 读取 |
 | DMG 背景、Applications 拖放、NSIS currentUser、WebView2、多尺寸 ICO | `src-tauri/tauri.*.conf.json` + `scripts/` | 发布结构与跨平台安装体验 |
 

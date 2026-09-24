@@ -1,5 +1,4 @@
 pub mod adapter;
-pub mod auto_launch;
 pub mod commands;
 pub mod data;
 pub mod db;
@@ -36,44 +35,18 @@ pub fn run() {
         }))
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                // Closing the window quits. The frontend gets one chance to veto
+                // when an unsaved draft would be lost, so the close is held here
+                // until it answers.
                 api.prevent_close();
-                let close_to_tray = window
-                    .try_state::<commands::AppState>()
-                    .and_then(|state| state.store.get_settings().ok())
-                    .map(|settings| settings.close_to_tray)
-                    .unwrap_or(true);
-                if close_to_tray {
-                    let _ = window.app_handle().emit_to_frontend_close();
-                } else {
-                    desktop::request_quit(window.app_handle());
-                }
+                let _ = window.app_handle().emit_to_frontend_close();
             }
         })
         .setup(|app| {
             let state = commands::AppState::open().map_err(|error| error.to_string())?;
             let _ = logging::init(state.store.paths());
-            let silent = state
-                .store
-                .get_settings()
-                .map(|settings| settings.silent_start)
-                .unwrap_or(false);
-            let auto = state
-                .store
-                .get_settings()
-                .map(|settings| settings.auto_launch)
-                .unwrap_or(false);
             app.manage(state);
-            if let Err(error) = desktop::create_tray(app.handle()) {
-                let _ = logging::write_line("tray", &error.to_string());
-            }
-            if auto {
-                if let Err(error) = auto_launch::enable_auto_launch() {
-                    let _ = logging::write_line("auto-launch", &error.to_string());
-                }
-            }
-            if !silent {
-                desktop::show_main(app.handle());
-            }
+            desktop::show_main(app.handle());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -126,7 +99,6 @@ pub fn run() {
             commands::get_data_dirs,
             commands::acknowledge_recovery,
             commands::log_frontend_error,
-            commands::hide_to_tray,
             commands::show_main_window,
             commands::quit_app,
             commands::mark_first_run_done,

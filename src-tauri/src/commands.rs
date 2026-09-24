@@ -703,40 +703,21 @@ pub fn update_settings(
     default_claude_scope: Option<Scope>,
     recent_project_dirs: Option<Vec<String>>,
     updater_endpoint_override: Option<Option<String>>,
-    close_to_tray: Option<bool>,
-    auto_launch: Option<bool>,
-    silent_start: Option<bool>,
     auto_check_updates: Option<bool>,
     theme: Option<String>,
     first_run_completed: Option<bool>,
 ) -> Result<Settings> {
-    let previous = state.store.get_settings()?;
-    let requested_auto_launch = auto_launch.filter(|enabled| *enabled != previous.auto_launch);
-    if let Some(enabled) = requested_auto_launch {
-        crate::auto_launch::apply_auto_launch(enabled)?;
-    }
-    let settings = match state.store.update_settings(SettingsPatch {
+    let settings = state.store.update_settings(SettingsPatch {
         language,
         update_channel,
         advanced_tools_enabled,
         default_claude_scope,
         recent_project_dirs,
         updater_endpoint_override,
-        close_to_tray,
-        auto_launch,
-        silent_start,
         auto_check_updates,
         theme,
         first_run_completed,
-    }) {
-        Ok(settings) => settings,
-        Err(error) => {
-            if requested_auto_launch.is_some() {
-                let _ = crate::auto_launch::apply_auto_launch(previous.auto_launch);
-            }
-            return Err(error);
-        }
-    };
+    })?;
     Ok(settings)
 }
 
@@ -1794,12 +1775,6 @@ pub fn acknowledge_recovery(state: State<'_, AppState>) -> Result<serde_json::Va
 #[tauri::command(rename_all = "camelCase")]
 pub fn log_frontend_error(message: String, stack: Option<String>) -> Result<serde_json::Value> {
     crate::logging::frontend_error(&message, stack.as_deref())?;
-    Ok(serde_json::json!({ "ok": true }))
-}
-
-#[tauri::command(rename_all = "camelCase")]
-pub fn hide_to_tray(app: tauri::AppHandle) -> Result<serde_json::Value> {
-    crate::desktop::hide_to_tray(&app);
     Ok(serde_json::json!({ "ok": true }))
 }
 
