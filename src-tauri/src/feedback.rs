@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
 
@@ -102,8 +102,116 @@ fn fallback(title: &str, body: &str, reason: &'static str) -> FeedbackResult {
     }
 }
 
+/// A GUI launch inherits a short PATH. The user's terminal sees `gh` through
+/// the login shell, Homebrew, or a version manager. Look there before saying
+/// the CLI is missing.
+fn gh_program() -> Option<PathBuf> {
+    if let Some(path) = executable_on_path("gh") {
+        return Some(path);
+    }
+    for candidate in gh_candidates() {
+        if is_executable(&candidate) {
+            return Some(candidate);
+        }
+    }
+    login_shell_which("gh")
+}
+
+fn executable_on_path(name: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path).find_map(|dir| {
+        let candidate = dir.join(name);
+        is_executable(&candidate).then_some(candidate)
+    })
+}
+
+fn gh_candidates() -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    if let Some(home) = dirs::home_dir() {
+        for relative in [
+            ".local/bin/gh",
+            "bin/gh",
+            ".ghcup/bin/gh",
+            ".nix-profile/bin/gh",
+        ] {
+            paths.push(home.join(relative));
+        }
+    }
+    for prefix in ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/opt/local/bin"] {
+        paths.push(PathBuf::from(prefix).join("gh"));
+    }
+    paths
+}
+
+fn is_executable(path: &Path) -> bool {
+    if !path.is_file() {
+        return false;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        return std::fs::metadata(path)
+            .map(|meta| meta.permissions().mode() & 0o111 != 0)
+            .unwrap_or(false);
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        true
+    }
+}
+
+fn login_shell_which(name: &str) -> Option<PathBuf> {
+    let shell = std::env::var_os("SHELL")?;
+    let shell_path = PathBuf::from(&shell);
+    if !is_executable(&shell_path) {
+        return None;
+    }
+    let output = std::process::Command::new(&shell_path)
+        .args(["-lc", &format!("command -v {name}")])
+        .env("GH_PROMPT_DISABLED", "1")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    let found = text.lines().find_map(|line| {
+        let trimmed = line.trim();
+        if trimmed.starts_with('/') && !trimmed.contains('\0') {
+            Some(PathBuf::from(trimmed))
+        } else {
+            None
+        }
+    })?;
+    is_executable(&found).then_some(found)
+}
+
+fn command_for(program: &Path) -> Command {
+    let mut command = Command::new(program);
+    if let Some(dir) = program.parent() {
+        if let Some(joined) = prepend_path(dir) {
+            command.env("PATH", joined);
+        }
+    }
+    command
+}
+
+fn prepend_path(dir: &Path) -> Option<std::ffi::OsString> {
+    let current = std::env::var_os("PATH").unwrap_or_default();
+    let mut parts = vec![dir.to_path_buf()];
+    parts.extend(std::env::split_paths(&current));
+    std::env::join_paths(parts).ok()
+}
+
 async fn run_gh(args: &[&str], body: Option<&str>) -> std::io::Result<std::process::Output> {
-    let mut child = Command::new("gh")
+    let program = gh_program().ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::NotFound, "GitHub CLI was not found")
+    })?;
+    let mut child = command_for(&program)
         .args(args)
         .env("GH_PROMPT_DISABLED", "1")
         .stdin(if body.is_some() {
@@ -135,7 +243,7 @@ pub async fn submit_feedback(input: FeedbackInput) -> Result<FeedbackResult> {
     if !input.screenshots.is_empty() {
         return Ok(fallback(&title, &body, "screenshotsManual"));
     }
-    if which::which("gh").is_err() {
+    if gh_program().is_none() {
         return Ok(fallback(&title, &body, "ghMissing"));
     }
     let auth = run_gh(&["auth", "status", "--hostname", "github.com"], None).await;
@@ -248,5 +356,25 @@ mod tests {
         assert!(prepare(&input).is_err());
         input.screenshots = vec!["relative.jpg".into()];
         assert!(prepare(&input).is_err());
+    }
+
+    #[test]
+    fn a_short_gui_path_still_finds_gh_outside_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let gh = dir.path().join("gh");
+        std::fs::write(&gh, b"#!/bin/sh\nexit 0\n").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&gh, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let previous = std::env::var_os("PATH");
+        std::env::set_var("PATH", "/usr/bin:/bin");
+        let found = executable_on_path("gh");
+        assert!(found.is_none() || found.as_deref() != Some(gh.as_path()));
+        assert!(is_executable(&gh));
+        if let Some(previous) = previous {
+            std::env::set_var("PATH", previous);
+        }
     }
 }

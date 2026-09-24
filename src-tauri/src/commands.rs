@@ -10,7 +10,7 @@ use crate::adapter::process::{find_vendored_script, resolve_cli};
 use crate::adapter::{list_tools as adapter_list_tools, AdapterOptions, Envelope};
 use crate::db::Store;
 use crate::error::{Error, Result};
-use crate::harness::{self, HarnessOutcome};
+use crate::harness::{self, HarnessOutcome, HarnessState};
 use crate::models::{
     CreatePromptInput, PlanActivateInput, PlanDeactivateInput, PromptSort, Scope, Settings,
     SettingsPatch, ToolKind, ToolStatus, UpdatePromptInput, APP_VERSION,
@@ -590,6 +590,11 @@ pub async fn plan_deactivate(
 pub async fn deactivate(state: State<'_, AppState>, operation_id: String) -> Result<UiPlanResult> {
     let result = ops::confirm_deactivate(&state.store, &operation_id, &opts()).await?;
     Ok(map_plan(result))
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn harness_state(state: State<'_, AppState>, tool: String) -> Result<HarnessState> {
+    harness::harness_state(&state.store, parse_tool(&tool)?, &opts()).await
 }
 
 #[tauri::command(rename_all = "camelCase")]

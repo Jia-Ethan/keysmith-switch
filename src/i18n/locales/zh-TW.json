@@ -323,8 +323,8 @@
     "ghMissing": "尚未安裝 GitHub CLI。草稿已保留，請在瀏覽器中完成提交。",
     "notAuthenticated": "GitHub CLI 尚未登入。草稿已保留，請在瀏覽器中完成提交。",
     "noPermission": "目前 GitHub 帳號沒有此儲存庫的推送權限。草稿已保留，請在瀏覽器中完成提交。",
-    "screenshotsManual": "截圖須透過瀏覽器提交。尚未建立 issue，草稿已保留。",
-    "manualScreenshot": "請在 GitHub 頁面檢查並手動加入截圖後再發布；截圖不會自動上傳。",
+    "screenshotsManual": "截圖暫時不能附到 issue 上，要到瀏覽器裡補。草稿已保留，尚未建立 issue。",
+    "manualScreenshot": "在瀏覽器裡補上截圖後再發布。這不是沒偵測到 GitHub CLI。",
     "createFailed": "GitHub CLI 建立失敗。草稿已保留，請在瀏覽器中完成提交。"
   },
   "advanced": {
@@ -351,7 +351,10 @@
   },
   "harness": {
     "title": "Harness",
-    "lead": "把這個工具的 Keysmith 提示詞部署到本機，或從本機卸下。",
+    "lead": "整機部署一次。不是某個專案。",
+    "reading": "正在讀取本機狀態",
+    "deployed": "已部署",
+    "undeployed": "未部署",
     "deploy": "部署",
     "remove": "解除安裝",
     "busyDeploy": "正在部署",

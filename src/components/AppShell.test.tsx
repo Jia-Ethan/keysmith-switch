@@ -63,7 +63,8 @@ describe("AppShell tool navigation", () => {
     const settings = screen.getByTestId("nav-settings");
     expect(settings).toBeInTheDocument();
     expect(settings.querySelector("circle")).toBeInTheDocument();
-    expect(settings.querySelector("path")?.getAttribute("d")).toContain("M8 1.6");
+    expect(settings.querySelector("path")?.getAttribute("d")).toContain("M8 1.7");
+    expect(settings.querySelector("path")?.getAttribute("d")).not.toContain("M8 1.6");
     expect(screen.queryByTestId("nav-advanced")).not.toBeInTheDocument();
   });
 

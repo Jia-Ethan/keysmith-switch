@@ -323,8 +323,8 @@
     "ghMissing": "GitHub CLI is not installed. Your draft is preserved; finish in the browser.",
     "notAuthenticated": "GitHub CLI is not signed in. Your draft is preserved; finish in the browser.",
     "noPermission": "This GitHub account cannot push to the repository. Your draft is preserved; finish in the browser.",
-    "screenshotsManual": "Screenshots require the browser. No issue was created; your draft is preserved.",
-    "manualScreenshot": "Review and attach your screenshots on GitHub before submitting. They are not uploaded automatically.",
+    "screenshotsManual": "Screenshots cannot be attached to the issue yet. Add them in the browser. Your draft is preserved; no issue was created.",
+    "manualScreenshot": "Add the screenshots in the browser before publishing. This is not a missing GitHub CLI.",
     "createFailed": "GitHub CLI could not create the issue. Your draft is preserved; finish in the browser."
   },
   "advanced": {
@@ -351,7 +351,10 @@
   },
   "harness": {
     "title": "Harness",
-    "lead": "Deploy this tool's Keysmith prompt onto this machine, or take it off.",
+    "lead": "One deploy for the whole machine. Not a project.",
+    "reading": "Reading this machine",
+    "deployed": "Deployed",
+    "undeployed": "Not deployed",
     "deploy": "Deploy",
     "remove": "Remove",
     "busyDeploy": "Deploying",
