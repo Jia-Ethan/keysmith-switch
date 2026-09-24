@@ -67,6 +67,9 @@
 | `activate` | `{ operationId }` | `{ operationId, envelope }` |
 | `plan_deactivate` | `{ promptId?, tool, scope, projectDir? }` | `{ operationId, envelope }` |
 | `deactivate` | `{ operationId }` | `{ operationId, envelope }` |
+| `harness_state` | `{ tool }` | `{ tool, deployed, error }` |
+| `deploy_harness` | `{ tool }` | `HarnessOutcome` |
+| `remove_harness` | `{ tool }` | `HarnessOutcome` |
 | `recover_tool` | `{ tool, scope?, projectDir? }` | `{ operationId, envelope }` |
 | `doctor` | `{ tool }` | `Envelope` |
 | `list_activations` | `{ tool }` | `{ activations: Activation[] }` |

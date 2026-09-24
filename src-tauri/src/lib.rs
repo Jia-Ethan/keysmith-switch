@@ -92,6 +92,7 @@ pub fn run() {
             commands::activate,
             commands::plan_deactivate,
             commands::deactivate,
+            commands::harness_state,
             commands::deploy_harness,
             commands::remove_harness,
             commands::recover_tool,

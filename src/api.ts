@@ -163,6 +163,16 @@ export interface HarnessOutcome {
   error: string | null;
 }
 
+export interface HarnessState {
+  tool: ToolId;
+  deployed: boolean;
+  error: string | null;
+}
+
+export function getHarnessState(tool: ToolId): Promise<HarnessState> {
+  return call("harness_state", { tool });
+}
+
 export function deployHarness(tool: ToolId): Promise<HarnessOutcome> {
   return call("deploy_harness", { tool });
 }

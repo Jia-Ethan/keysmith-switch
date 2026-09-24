@@ -46,8 +46,8 @@ export function IconClose(props: IconProps) {
 export function IconSettings(props: IconProps) {
   return (
     <Svg {...props}>
-      <circle cx="8" cy="8" r="2.1" />
-      <path d="M8 1.6v1.6M8 12.8v1.6M3.5 3.5l1.15 1.15M11.35 11.35l1.15 1.15M1.6 8h1.6M12.8 8h1.6M3.5 12.5l1.15-1.15M11.35 4.65 12.5 3.5" />
+      <circle cx="8" cy="8" r="2" />
+      <path d="M8 1.7v1.55M8 12.75v1.55M4.55 2.85l.78 1.35M10.67 11.8l.78 1.35M2.85 4.55l1.35.78M11.8 10.67l1.35.78M1.7 8h1.55M12.75 8h1.55M2.85 11.45l1.35-.78M11.8 5.33l1.35-.78M4.55 13.15l.78-1.35M10.67 4.2l.78-1.35" />
     </Svg>
   );
 }

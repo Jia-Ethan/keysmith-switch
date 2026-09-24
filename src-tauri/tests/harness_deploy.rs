@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use keysmith_switch_lib::adapter::AdapterOptions;
 use keysmith_switch_lib::db::Store;
 use keysmith_switch_lib::harness::{
-    accept_prompt_body, deploy_harness_with, harness_source, remove_harness, store_harness_prompt,
-    HarnessAction, MAX_PROMPT_BYTES,
+    accept_prompt_body, deploy_harness_with, harness_source, harness_state, remove_harness,
+    store_harness_prompt, HarnessAction, MAX_PROMPT_BYTES,
 };
 use keysmith_switch_lib::models::{PromptSort, Scope, ToolKind, ToolStatus};
 use keysmith_switch_lib::paths::AppPaths;
@@ -126,6 +126,14 @@ async fn deploy_then_remove_uses_user_scope_and_keeps_the_library() {
     assert!(outcome.ok, "{outcome:?}");
     assert_eq!(outcome.action, HarnessAction::Deploy);
     let prompt_id = outcome.prompt_id.expect("stored prompt");
+    let deployed = harness_state(&store, ToolKind::Claude, &opts)
+        .await
+        .unwrap();
+    assert!(
+        deployed.deployed,
+        "deploy must be visible on the next read: {deployed:?}"
+    );
+    assert!(deployed.error.is_none());
 
     let prompts = store
         .list_prompts(ToolKind::Claude, None, None, PromptSort::Updated)
@@ -147,6 +155,14 @@ async fn deploy_then_remove_uses_user_scope_and_keeps_the_library() {
         "remove must not wipe the library"
     );
     let _ = Scope::User;
+    let cleared = harness_state(&store, ToolKind::Claude, &opts)
+        .await
+        .unwrap();
+    assert!(
+        !cleared.deployed,
+        "remove must leave the machine undeployed: {cleared:?}"
+    );
+    assert!(cleared.error.is_none());
 }
 
 #[tokio::test]

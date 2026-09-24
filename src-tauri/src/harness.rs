@@ -15,6 +15,7 @@ use crate::db::Store;
 use crate::error::{Error, Result};
 use crate::models::{
     CreatePromptInput, PlanActivateInput, PlanDeactivateInput, PromptSort, Scope, ToolKind,
+    ToolStatus,
 };
 use crate::ops::{self, confirm_activate, confirm_deactivate, plan_activate, plan_deactivate};
 
@@ -74,6 +75,42 @@ pub struct HarnessOutcome {
     pub action: HarnessAction,
     pub prompt_id: Option<String>,
     pub error: Option<String>,
+}
+
+/// Machine state for one tool. `deployed` is the only fact the first screen
+/// uses to choose between the deploy button and the remove button.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HarnessState {
+    pub tool: ToolKind,
+    pub deployed: bool,
+    pub error: Option<String>,
+}
+
+pub async fn harness_state(
+    store: &Store,
+    tool: ToolKind,
+    opts: &AdapterOptions,
+) -> Result<HarnessState> {
+    if let Some(reason) = tool.unavailable_reason() {
+        return Ok(HarnessState {
+            tool,
+            deployed: false,
+            error: Some(reason.to_string()),
+        });
+    }
+    match ops::tool_status(store, tool, Scope::User, None, opts).await {
+        Ok(envelope) => Ok(HarnessState {
+            tool,
+            deployed: envelope.status == ToolStatus::Active,
+            error: None,
+        }),
+        Err(error) => Ok(HarnessState {
+            tool,
+            deployed: false,
+            error: Some(error.to_string()),
+        }),
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

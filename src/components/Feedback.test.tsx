@@ -43,7 +43,7 @@ describe("Feedback", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add screenshot" }));
     expect(await screen.findByText("screenshot.png")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Submit to GitHub" }));
-    expect(await screen.findByText(/They are not uploaded automatically/)).toBeInTheDocument();
+    expect(await screen.findByText(/not a missing GitHub CLI/)).toBeInTheDocument();
     expect(submitFeedback).toHaveBeenCalledWith({ kind: "bug", description: "A button fails", solution: "", contact: "", screenshots: ["/tmp/screenshot.png"] });
     fireEvent.click(screen.getByRole("button", { name: "Open prefilled issue" }));
     expect(openExternal).toHaveBeenCalledTimes(1);

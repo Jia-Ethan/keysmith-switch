@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import * as api from "../api";
@@ -6,49 +6,30 @@ import { ErrorBanner } from "../components/ErrorBanner";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Feedback } from "../components/Feedback";
 import { useUpdateOptional } from "../components/UpdateProvider";
-import { IconAlert, IconDownload, IconExternal, IconMonitor, IconMoon, IconRefresh, IconSun, IconTrash } from "../components/icons";
+import { IconDownload, IconExternal, IconMonitor, IconMoon, IconRefresh, IconSun } from "../components/icons";
 import { ToolLogo } from "../components/ToolLogos";
-import {
-  Button,
-  Checkbox,
-  Input,
-  Mono,
-  Segmented,
-  Select,
-  SettingRow,
-  SectionLabel,
-  cx,
-} from "../components/ui";
+import { Button, Checkbox, Mono, Segmented, Select, SettingRow, SectionLabel, cx } from "../components/ui";
 import { useTheme, type ThemeMode } from "../hooks/useTheme";
 import type { ToastApi } from "../hooks/useToasts";
 import { formatBytes } from "../lib/format";
-import { toastSafeMessage } from "../lib/redact";
-import { isTauriRuntime, openExternal, pickFiles, pickSavePath } from "../lib/runtime";
-import type {
-  AboutInfo,
-  BackupEntry,
-  ClearPlan,
-  DataDirs,
-  Language,
-  OfficialAction,
-  OfficialPlan,
-  OfficialProduct,
-  OfficialProductId,
-  ScopeId,
-  Settings,
-  SettingsPatch,
-  ToolId,
-} from "../types";
-import { TOOL_IDS, PUBLIC_RELEASE_PAGE } from "../types";
+import { openExternal } from "../lib/runtime";
+import type { AboutInfo, Language, Settings, SettingsPatch, ToolId } from "../types";
+import { PUBLIC_RELEASE_PAGE } from "../types";
 
-type TabId = "general" | "tools" | "data" | "about";
+type TabId = "general" | "tools" | "about";
 
-const TABS: TabId[] = ["general", "tools", "data", "about"];
+const TABS: TabId[] = ["general", "tools", "about"];
+
+const KEYSMITHS: { tool: ToolId; name: string; repo: string }[] = [
+  { tool: "claude", name: "Claude Keysmith", repo: "https://github.com/Jia-Ethan/claude-keysmith" },
+  { tool: "codex", name: "Codex Keysmith", repo: "https://github.com/Jia-Ethan/codex-keysmith" },
+  { tool: "grok", name: "Grok Keysmith", repo: "https://github.com/Jia-Ethan/grok-keysmith" },
+  { tool: "zcode", name: "Zcode Keysmith", repo: "https://github.com/Jia-Ethan/zcode-keysmith" },
+];
 
 export function SettingsPage({
   settings,
   onSave,
-  onDataChanged,
   toast,
   initialTab = "general",
 }: {
@@ -67,136 +48,32 @@ export function SettingsPage({
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<TabId>("general");
   const [about, setAbout] = useState<AboutInfo | null>(null);
-  const [toolsLoading, setToolsLoading] = useState(true);
-  const [toolsError, setToolsError] = useState<string | null>(null);
-  const [officialPlan, setOfficialPlan] = useState<OfficialPlan | null>(null);
-  const [officialConfirmed, setOfficialConfirmed] = useState(false);
-  const [officialBusy, setOfficialBusy] = useState(false);
-  const [cancelPending, setCancelPending] = useState(false);
-  const [officialElapsed, setOfficialElapsed] = useState(0);
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
   const updateInstallPending = useRef(false);
-  const [dirs, setDirs] = useState<DataDirs | null>(null);
-  const [backups, setBackups] = useState<BackupEntry[]>([]);
-  const [backupsLoading, setBackupsLoading] = useState(true);
-  const [backupsError, setBackupsError] = useState(false);
-  const [clearPlan, setClearPlan] = useState<ClearPlan | null>(null);
-  const [clearPhrase, setClearPhrase] = useState("");
-  const [clearConfirm, setClearConfirm] = useState(false);
-  const [importTool, setImportTool] = useState<ToolId>("claude");
-  const [pendingRestore, setPendingRestore] = useState<{
-    path: string;
-    source: "backup" | "zip-restore" | "zip-import";
-    label: string;
-  } | null>(null);
 
   useEffect(() => {
     if (TABS.includes(initialTab as TabId)) setTab(initialTab as TabId);
+    else if (initialTab === "data") setTab("general");
   }, [initialTab]);
 
   useEffect(() => {
     setUpdateDialogOpen(false);
   }, [updater?.update?.latestVersion]);
 
-  const loadTools = useCallback(async () => {
-    setToolsLoading(true);
-    setToolsError(null);
-    try {
-      setAbout(await api.getAbout());
-    } catch (err) {
-      setAbout(null);
-      setToolsError(toastSafeMessage(err) || t("settings.toolsLoadFailed"));
-    } finally {
-      setToolsLoading(false);
-    }
-  }, [t]);
-
-  const loadBackups = async () => {
-    setBackupsLoading(true);
-    setBackupsError(false);
-    try {
-      const result = await api.listBackups();
-      setBackups(result.backups ?? []);
-    } catch {
-      setBackups([]);
-      setBackupsError(true);
-    } finally {
-      setBackupsLoading(false);
-    }
-  };
-
   useEffect(() => {
-    void loadTools();
-    void api.getDataDirs().then(setDirs).catch(() => setDirs(null));
-    void loadBackups();
-  }, [loadTools]);
-
-  useEffect(() => {
-    if (!isTauriRuntime()) return;
     let cancelled = false;
-    let unlisten: (() => void) | undefined;
-    void import("@tauri-apps/api/event").then(({ listen }) => {
-      if (cancelled) return;
-      void listen<{ elapsedSeconds?: number }>("official-action-progress", (event) => {
-        setOfficialElapsed(Math.max(0, event.payload.elapsedSeconds ?? 0));
-      }).then((next) => {
-        if (cancelled) next();
-        else unlisten = next;
+    void api
+      .getAbout()
+      .then((info) => {
+        if (!cancelled) setAbout(info);
+      })
+      .catch(() => {
+        if (!cancelled) setAbout(null);
       });
-    }).catch(() => undefined);
     return () => {
       cancelled = true;
-      unlisten?.();
     };
   }, []);
-
-  const previewOfficial = async (product: OfficialProductId, action: OfficialAction) => {
-    setOfficialBusy(true);
-    setOfficialConfirmed(false);
-    try {
-      setOfficialPlan(await api.planOfficialAction(product, action));
-    } catch (err) {
-      toast.err(err);
-      setOfficialPlan(null);
-    } finally {
-      setOfficialBusy(false);
-    }
-  };
-
-  const runOfficial = async () => {
-    if (!officialPlan || !officialConfirmed) return;
-    setOfficialBusy(true);
-    setOfficialElapsed(0);
-    try {
-      const result = await api.confirmOfficialAction(officialPlan.planId);
-      if (!result.ok) {
-        toast.err(result.error || t("about.officialBlocked"));
-        return;
-      }
-      toast.ok(t("common.success"));
-      setOfficialPlan(null);
-      setOfficialConfirmed(false);
-      await loadTools();
-    } catch (err) {
-      toast.err(err);
-    } finally {
-      setOfficialBusy(false);
-      setOfficialElapsed(0);
-    }
-  };
-
-  const cancelOfficial = async () => {
-    if (cancelPending) return;
-    setCancelPending(true);
-    try {
-      const result = await api.cancelOfficialAction();
-      if (!result.cancelled) toast.info(t("about.cancelOfficialUnavailable"));
-    } catch (err) {
-      toast.err(err);
-    } finally {
-      setCancelPending(false);
-    }
-  };
 
   const installUpdate = async () => {
     if (
@@ -228,17 +105,6 @@ export function SettingsPage({
     try {
       await onSave(next);
       toast.ok(t("settings.saved"));
-    } catch (err) {
-      toast.err(err);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const runDataAction = async (action: () => Promise<void>) => {
-    setBusy(true);
-    try {
-      await action();
     } catch (err) {
       toast.err(err);
     } finally {
@@ -334,7 +200,7 @@ export function SettingsPage({
                     void patch({ theme: value });
                   }}
                   options={[
-                    { value: "light" as ThemeMode, label: <><IconSun size={14} />{t("settings.themeLight")}</> },
+                    { value: "light" as ThemeMode, label: <><IconSun size={14} data-testid="theme-sun" />{t("settings.themeLight")}</> },
                     { value: "dark" as ThemeMode, label: <><IconMoon size={14} />{t("settings.themeDark")}</> },
                     { value: "system" as ThemeMode, label: <><IconMonitor size={14} />{t("settings.themeSystem")}</> },
                   ]}
@@ -352,331 +218,31 @@ export function SettingsPage({
                 />
               }
             />
-            <SettingRow
-              label={t("settings.autoLaunch")}
-              control={
-                <Checkbox
-                  aria-label={t("settings.autoLaunch")}
-                  checked={settings.autoLaunch}
-                  disabled={busy}
-                  onChange={(event) => void patch({ autoLaunch: event.target.checked })}
-                />
-              }
-            />
-            <SettingRow
-              label={t("settings.silentStart")}
-              control={
-                <Checkbox
-                  aria-label={t("settings.silentStart")}
-                  checked={settings.silentStart}
-                  disabled={busy}
-                  onChange={(event) => void patch({ silentStart: event.target.checked })}
-                />
-              }
-            />
-            <SettingRow
-              label={t("settings.defaultClaudeScope")}
-              control={
-                <Select
-                  aria-label={t("settings.defaultClaudeScope")}
-                  value={settings.defaultClaudeScope}
-                  disabled={busy}
-                  onChange={(event) => void patch({ defaultClaudeScope: event.target.value as ScopeId })}
-                >
-                  <option value="user">{t("scope.user")}</option>
-                  <option value="project">{t("scope.project")}</option>
-                  <option value="local">{t("scope.local")}</option>
-                </Select>
-              }
-            />
           </div>
         ) : null}
 
         {tab === "tools" ? (
-          toolsLoading ? (
-            <div className="flex min-h-[220px] items-center justify-center text-sm text-muted-foreground" role="status">
-              <span className="mr-2 h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary/25 border-t-primary" aria-hidden="true" />
-              {t("common.loading")}
-            </div>
-          ) : toolsError ? (
-            <div className="p-4">
-              <ErrorBanner
-                message={toolsError}
-                onRetry={() => void loadTools()}
-                retryLabel={t("common.retry")}
-              />
-            </div>
-          ) : about ? (
-            <div className="flex flex-col gap-5 p-4 sm:p-5">
-              <section aria-label={t("about.adapters")}>
-                <SectionLabel>{t("about.adapters")}</SectionLabel>
-                <div className="mt-2 overflow-hidden rounded-2xl border border-border">
-                  {about.adapters.length > 0 ? (
-                    about.adapters.map((item) => (
-                      <div
-                        key={item.tool}
-                        className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border bg-background/35 px-3 py-2.5 last:border-b-0"
-                      >
-                        <ToolLogo tool={item.tool} size={20} />
-                        <span className="min-w-[72px] text-[15px] font-medium capitalize text-foreground">
-                          {item.tool}
-                        </span>
-                        <Mono className="text-foreground">{item.version}</Mono>
-                        {item.path ? (
-                          <Mono className="ml-auto max-w-full truncate">
-                            <span title={item.path}>{item.path}</span>
-                          </Mono>
-                        ) : null}
-                      </div>
-                    ))
-                  ) : (
-                    <p className="px-3 py-4 text-center text-sm text-muted-foreground" data-testid="settings-adapters-empty">
-                      {t("common.none")}
-                    </p>
-                  )}
-                </div>
-              </section>
-
-              <section aria-label={t("about.official")}>
-                <SectionLabel>{t("about.official")}</SectionLabel>
-                <div className="mt-2 flex flex-col gap-2">
-                  {about.official.length > 0 ? (
-                    about.official.map((product) => (
-                      <OfficialToolRow
-                        key={product.product}
-                        product={product}
-                        busy={officialBusy}
-                        onPlan={previewOfficial}
-                      />
-                    ))
-                  ) : (
-                    <p className="rounded-2xl border border-border px-3 py-4 text-center text-sm text-muted-foreground" data-testid="settings-official-empty">
-                      {t("common.none")}
-                    </p>
-                  )}
-                </div>
-
-                {officialPlan ? (
-                  <div className="mt-3 rounded-2xl border border-border bg-background/45 p-3 text-[14px]" data-testid="official-plan">
-                    <p className="font-medium text-foreground">
-                      {officialPlan.product} · {officialPlan.action === "install" ? t("about.officialInstall") : t("about.officialUpdate")}
-                    </p>
-                    {officialPlan.blockers.length > 0 ? (
-                      <div className="mt-2 flex items-start gap-2 rounded-xl border border-destructive/40 bg-destructive/10 px-2.5 py-2 text-destructive">
-                        <IconAlert size={14} className="mt-px shrink-0" />
-                        <ul className="min-w-0 list-inside list-disc">
-                          {officialPlan.blockers.map((item, index) => <li key={index}>{item}</li>)}
-                        </ul>
-                      </div>
-                    ) : (
-                      <div className="mt-3 flex flex-wrap items-center gap-2">
-                        <Checkbox
-                          checked={officialConfirmed}
-                          data-testid="confirm-official"
-                          label={t("about.confirmOfficial")}
-                          disabled={officialBusy}
-                          onChange={(event) => setOfficialConfirmed(event.target.checked)}
-                        />
-                        {officialBusy ? (
-                          <Button
-                            size="sm"
-                            className="ml-auto"
-                            data-testid="cancel-official"
-                            disabled={cancelPending}
-                            onClick={() => void cancelOfficial()}
-                          >
-                            {cancelPending ? t("common.busy") : t("about.cancelOfficial")}
-                          </Button>
-                        ) : (
-                          <Button
-                            size="sm"
-                            variant="primary"
-                            className="ml-auto"
-                            data-testid="run-official"
-                            disabled={!officialConfirmed}
-                            onClick={() => void runOfficial()}
-                          >
-                            {t("about.runOfficial")}
-                          </Button>
-                        )}
-                        {officialBusy ? (
-                          <span className="text-muted-foreground">
-                            {t("about.officialRunning", { seconds: officialElapsed })}
-                          </span>
-                        ) : null}
-                      </div>
-                    )}
-                  </div>
-                ) : null}
-              </section>
-
-              <div className="border-t border-border pt-4">
-                <SettingRow
-                  label={t("settings.advancedTools")}
-                  control={
-                    <Checkbox
-                      aria-label={t("settings.advancedTools")}
-                      checked={settings.advancedToolsEnabled}
-                      disabled={busy}
-                      onChange={(event) => void patch({ advancedToolsEnabled: event.target.checked })}
-                    />
-                  }
-                />
-              </div>
-            </div>
-          ) : null
-        ) : null}
-
-        {tab === "data" ? (
-          <div className="flex flex-col gap-5 p-4 sm:p-5">
-            <div className="flex flex-wrap gap-2 rounded-2xl border border-border bg-background/45 p-3">
-              <Select
-                aria-label={t("data.importTarget")}
-                value={importTool}
-                disabled={busy}
-                onChange={(event) => setImportTool(event.target.value as ToolId)}
+          <div className="flex flex-col gap-2 p-4 sm:p-5" data-testid="settings-keysmiths">
+            {KEYSMITHS.map((item) => (
+              <article
+                key={item.tool}
+                data-testid={`keysmith-${item.tool}`}
+                className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl border border-border bg-background/35 px-3 py-2.5"
               >
-                {TOOL_IDS.map((tool) => (
-                  <option key={tool} value={tool}>
-                    {t(`nav.${tool}`)}
-                  </option>
-                ))}
-              </Select>
-              <Button
-                disabled={busy}
-                onClick={() => {
-                  void (async () => {
-                    try {
-                      const files = await pickFiles([{ name: "Markdown", extensions: ["md"] }]);
-                      if (!files.length) return;
-                      await runDataAction(async () => {
-                        const result = await api.importMarkdownFiles(importTool, files);
-                        if (result.errors.length) toast.err(result.errors.join("; "));
-                        if (result.imported > 0) {
-                          toast.ok(t("data.importedCount", { count: result.imported }));
-                          await onDataChanged?.();
-                        } else if (result.errors.length === 0) {
-                          toast.info(t("data.nothingImported"));
-                        }
-                      });
-                    } catch (err) {
-                      toast.err(err);
-                    }
-                  })();
-                }}
-              >
-                {t("data.importMarkdown")}
-              </Button>
-              <Button
-                disabled={busy}
-                onClick={() => {
-                  void (async () => {
-                    try {
-                      const files = await pickFiles([{ name: "ZIP", extensions: ["zip"] }]);
-                      if (!files[0]) return;
-                      await runDataAction(async () => {
-                        const inspection = await api.inspectZipArchive(files[0]);
-                        setPendingRestore({
-                          path: files[0],
-                          source: inspection.mode === "restore" ? "zip-restore" : "zip-import",
-                          label: files[0].split(/[\\/]/).pop() || files[0],
-                        });
-                      });
-                    } catch (err) {
-                      toast.err(err);
-                    }
-                  })();
-                }}
-              >
-                {t("data.importZip")}
-              </Button>
-              <Button
-                disabled={busy}
-                onClick={() => {
-                  void (async () => {
-                    try {
-                      const path = await pickSavePath("keysmith-switch-export.zip");
-                      if (!path) return;
-                      await runDataAction(async () => {
-                        await api.exportZipArchive(path);
-                        toast.ok(t("data.exported"));
-                      });
-                    } catch (err) {
-                      toast.err(err);
-                    }
-                  })();
-                }}
-              >
-                {t("data.exportZip")}
-              </Button>
-              <Button
-                disabled={busy}
-                onClick={() => {
-                  void runDataAction(async () => {
-                    const entry = await api.createBackup();
-                    setBackups((current) => [entry, ...current]);
-                    toast.ok(t("data.backupCreated"));
-                  });
-                }}
-              >
-                {t("data.backupNow")}
-              </Button>
-              {dirs ? (
-                <>
-                  <Button onClick={() => void openExternal(`file://${dirs.home}`)}>{t("data.openHome")}</Button>
-                  <Button onClick={() => void openExternal(`file://${dirs.logs}`)}>{t("data.openLogs")}</Button>
-                </>
-              ) : null}
-            </div>
-            {backupsLoading ? (
-              <div className="flex min-h-[120px] items-center justify-center rounded-2xl border border-border text-sm text-muted-foreground" role="status" data-testid="data-backups-loading">
-                <span className="mr-2 h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary/25 border-t-primary" aria-hidden="true" />
-                {t("common.loading")}
-              </div>
-            ) : backupsError ? (
-              <ErrorBanner
-                message={t("data.backupsLoadFailed")}
-                onRetry={() => void loadBackups()}
-                retryLabel={t("common.retry")}
-              />
-            ) : backups.length > 0 ? (
-              <ul className="overflow-hidden rounded-2xl border border-border text-[15px]">
-                {backups.map((item) => (
-                  <li key={item.id} className="flex items-center gap-2 border-b border-border px-3 py-2.5 last:border-b-0">
-                    <span className="min-w-0 flex-1 truncate">{item.id}</span>
-                    <Button
-                      size="sm"
-                      disabled={busy}
-                      onClick={() => {
-                        setPendingRestore({ path: item.path, source: "backup", label: item.id });
-                      }}
-                    >
-                      {t("data.restore")}
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="rounded-2xl border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground" data-testid="data-backups-empty">
-                {t("data.noBackups")}
-              </p>
-            )}
-            <Button
-              variant="danger"
-              className="self-start"
-              disabled={busy}
-              onClick={() => {
-                void runDataAction(async () => {
-                  const plan = await api.planClearAllData();
-                  setClearPlan(plan);
-                  setClearPhrase("");
-                  setClearConfirm(false);
-                });
-              }}
-            >
-              <IconTrash />
-              {t("data.clearAll")}
-            </Button>
+                <ToolLogo tool={item.tool} size={20} />
+                <h2 className="min-w-[9rem] text-[15px] font-medium text-foreground">{item.name}</h2>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="ml-auto"
+                  data-testid={`keysmith-repo-${item.tool}`}
+                  onClick={() => void openExternal(item.repo)}
+                >
+                  <IconExternal />
+                  {item.repo.replace("https://github.com/", "")}
+                </Button>
+              </article>
+            ))}
           </div>
         ) : null}
 
@@ -884,158 +450,6 @@ export function SettingsPage({
           {updater?.error ? <ErrorBanner message={updater.error} /> : null}
         </div>
       </ConfirmDialog>
-
-      <ConfirmDialog
-        open={Boolean(clearPlan)}
-        title={t("data.clearAll")}
-        description={t("data.clearAllHint")}
-        danger
-        confirmLabel={busy ? t("common.busy") : t("data.clearConfirm")}
-        cancelLabel={t("common.cancel")}
-        closeLabel={t("common.close")}
-        busy={busy}
-        confirmDisabled={busy || clearPhrase !== clearPlan?.confirmPhrase || !clearConfirm}
-        confirmTestId="clear-all-confirm"
-        onClose={() => {
-          if (!busy) setClearPlan(null);
-        }}
-        onConfirm={() => {
-          if (!clearPlan) return;
-          void runDataAction(async () => {
-            await api.clearAllData(clearPhrase);
-            toast.ok(t("data.cleared"));
-            setClearPlan(null);
-            try {
-              await onDataChanged?.();
-            } catch (err) {
-              toast.err(err);
-            }
-          });
-        }}
-      >
-        {clearPlan ? (
-          <div className="space-y-2 text-sm">
-            {clearPlan.categories.map((item) => (
-              <p key={item.name}>
-                <span className="font-medium">{item.name}</span> · <Mono>{item.path}</Mono>
-              </p>
-            ))}
-            <Input
-              value={clearPhrase}
-              placeholder={clearPlan.confirmPhrase}
-              onChange={(event) => setClearPhrase(event.target.value)}
-            />
-            <Checkbox
-              label={t("data.clearSecond")}
-              checked={clearConfirm}
-              onChange={(event) => setClearConfirm(event.target.checked)}
-            />
-          </div>
-        ) : null}
-      </ConfirmDialog>
-
-      <ConfirmDialog
-        open={Boolean(pendingRestore)}
-        title={pendingRestore?.source === "zip-import" ? t("data.importLegacyTitle") : t("data.restoreTitle")}
-        description={pendingRestore?.source === "zip-import" ? t("data.importLegacyHint") : t("data.restoreHint")}
-        danger={pendingRestore?.source !== "zip-import"}
-        confirmLabel={busy ? t("common.busy") : pendingRestore?.source === "zip-import" ? t("data.importZip") : t("data.restore")}
-        cancelLabel={t("common.cancel")}
-        closeLabel={t("common.close")}
-        busy={busy}
-        confirmDisabled={busy}
-        confirmTestId="restore-backup-confirm"
-        onClose={() => {
-          if (!busy) setPendingRestore(null);
-        }}
-        onConfirm={() => {
-          if (!pendingRestore) return;
-          const request = pendingRestore;
-          void runDataAction(async () => {
-            const result = request.source === "backup"
-              ? await api.restoreBackup(request.path)
-              : await api.importZipArchive(request.path);
-            if (result.errors.length) toast.err(result.errors.join("; "));
-            toast.ok(t("data.archiveAppliedCount", { count: result.imported }));
-            setPendingRestore(null);
-            try {
-              await onDataChanged?.();
-            } catch (err) {
-              toast.err(err);
-            }
-          });
-        }}
-      >
-        {pendingRestore ? (
-          <div className="space-y-2 text-sm">
-            <p className="font-medium text-foreground">{pendingRestore.label}</p>
-            <p className="text-muted-foreground">
-              {pendingRestore.source === "zip-import" ? t("data.importLegacyScope") : t("data.restoreScope")}
-            </p>
-          </div>
-        ) : null}
-      </ConfirmDialog>
     </div>
-  );
-}
-
-function OfficialToolRow({
-  product,
-  busy,
-  onPlan,
-}: {
-  product: OfficialProduct;
-  busy: boolean;
-  onPlan: (product: OfficialProductId, action: OfficialAction) => void;
-}) {
-  const { t } = useTranslation();
-  const action: OfficialAction = product.installed ? "update" : "install";
-  const blocked = !product.available;
-
-  return (
-    <article className="rounded-2xl border border-border bg-background/35 px-3 py-2.5">
-      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-        <ToolLogo tool={product.product} size={20} />
-        <h3 className="text-[17px] font-medium capitalize text-foreground">{product.product}</h3>
-        <span
-          className={cx(
-            "inline-flex items-center rounded-lg border px-2 py-0.5 text-[13px] font-medium",
-            product.installed
-              ? "border-primary/30 bg-primary/10 text-primary"
-              : "border-border bg-muted text-muted-foreground",
-          )}
-        >
-          {product.installed ? t("about.installed") : t("about.notInstalled")}
-        </span>
-        <Mono className="text-foreground">
-          {product.currentVersion ?? "—"} → {product.latestVersion ?? "—"}
-        </Mono>
-        {!blocked ? (
-          <Button
-            size="sm"
-            className="ml-auto"
-            disabled={busy}
-            data-testid={`official-plan-${product.product}`}
-            onClick={() => onPlan(product.product, action)}
-          >
-            {t(action === "install" ? "about.officialInstall" : "about.officialUpdate")}
-          </Button>
-        ) : null}
-      </div>
-      {product.unavailableReason ? (
-        <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[14px] text-amber-600 dark:text-amber-500">
-          <p className="flex min-w-0 items-start gap-1.5">
-            <IconAlert size={12} className="mt-px shrink-0" />
-            <span className="min-w-0">{product.product === "zcode" && !product.installed ? t("about.officialInstallManually") : product.product === "grok" ? t("about.officialAutomaticInstallUnavailable") : product.unavailableReason}</span>
-          </p>
-          {product.product === "zcode" && !product.installed ? (
-            <Button size="sm" variant="ghost" onClick={() => void openExternal(product.source)}>
-              <IconExternal />
-              {t("about.openOfficialInstaller")}
-            </Button>
-          ) : null}
-        </div>
-      ) : null}
-    </article>
   );
 }
