@@ -4,6 +4,13 @@ import * as api from "../api";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { HarnessAction, useHarnessPhase } from "../components/HarnessAction";
 import { ToolLogo } from "../components/ToolLogos";
+import { IconButton } from "../components/ui";
+import { IconRefresh } from "../components/icons";
+import {
+  applyHarnessOutcome,
+  loadHarnessStatus,
+  useHarnessStatus,
+} from "../lib/harnessState";
 import type { ToolId } from "../types";
 
 type Machine = "unknown" | "deployed" | "undeployed";
@@ -18,35 +25,40 @@ export function HarnessPage({
 }) {
   const { t } = useTranslation();
   const action = useHarnessPhase();
-  const [machine, setMachine] = useState<Machine>("unknown");
-  const [statusError, setStatusError] = useState<string | null>(null);
+  const entry = useHarnessStatus(tool);
   const [pending, setPending] = useState<Pending>(null);
   const [busy, setBusy] = useState(false);
+  const [reading, setReading] = useState(false);
+
+  const machine: Machine = entry ? entry.machine : "unknown";
+  const statusError = entry?.error ?? null;
 
   useEffect(() => {
     onDirtyChange?.(busy || pending !== null);
   }, [busy, onDirtyChange, pending]);
 
+  // Reads the machine once per run per tool. Switching tools and coming back
+  // reuses the remembered result instead of reading again.
   useEffect(() => {
     let cancelled = false;
-    setMachine("unknown");
-    setStatusError(null);
-    void api
-      .getHarnessState(tool)
-      .then((state) => {
-        if (cancelled) return;
-        setMachine(state.deployed ? "deployed" : "undeployed");
-        setStatusError(state.error);
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return;
-        setMachine("undeployed");
-        setStatusError(error instanceof Error ? error.message : t("harness.genericError"));
-      });
+    if (entry) return undefined;
+    setReading(true);
+    void loadHarnessStatus(tool).finally(() => {
+      if (!cancelled) setReading(false);
+    });
     return () => {
       cancelled = true;
     };
-  }, [t, tool]);
+  }, [entry, tool]);
+
+  const refresh = async () => {
+    setReading(true);
+    try {
+      await loadHarnessStatus(tool, true);
+    } finally {
+      setReading(false);
+    }
+  };
 
   const run = async (next: Exclude<Pending, null>) => {
     action.begin();
@@ -54,8 +66,7 @@ export function HarnessPage({
     try {
       const outcome = next === "deploy" ? await api.deployHarness(tool) : await api.removeHarness(tool);
       if (outcome.ok) {
-        setMachine(next === "deploy" ? "deployed" : "undeployed");
-        setStatusError(null);
+        applyHarnessOutcome(tool, next);
         action.succeed();
       } else {
         action.fail(outcome.error || t("harness.genericError"));
@@ -90,47 +101,64 @@ export function HarnessPage({
     <section
       data-testid="harness-page"
       data-machine={machine}
-      className="flex h-full min-h-0 w-full items-start justify-center overflow-auto px-6 py-10"
+      className="flex h-full min-h-0 w-full items-start justify-center overflow-auto px-6 py-12"
     >
-      <div className="flex w-full max-w-2xl flex-col gap-5 rounded-2xl border border-border bg-card px-6 py-6 shadow-[0_16px_50px_hsl(var(--foreground)/0.04)]">
-        <header className="flex items-center gap-3">
-          <ToolLogo tool={tool} size={32} />
-          <div className="min-w-0">
-            <h1 className="text-[17px] font-semibold text-foreground">{t(`nav.${tool}`)}</h1>
-            <p className="text-[13px] leading-5 text-muted-foreground">{t("harness.lead")}</p>
+      <div className="flex w-full max-w-xl flex-col rounded-2xl border border-border bg-card shadow-[0_1px_3px_hsl(var(--shadow)/0.04)]">
+        <header className="flex items-start gap-3.5 px-6 pt-6">
+          <ToolLogo tool={tool} size={34} />
+          <div className="min-w-0 flex-1">
+            <h1 className="text-[19px] font-semibold tracking-[-0.01em] text-foreground">
+              {t(`nav.${tool}`)}
+            </h1>
+            <p className="mt-0.5 text-[13px] leading-5 text-muted-foreground">{t("harness.lead")}</p>
           </div>
+          <IconButton
+            label={t("harness.refresh")}
+            title={t("harness.refresh")}
+            data-testid="harness-refresh"
+            disabled={reading || busy}
+            onClick={() => void refresh()}
+          >
+            <IconRefresh className={reading ? "harness-spin" : undefined} />
+          </IconButton>
         </header>
-        <div className="flex min-h-8 flex-wrap items-center gap-3">
+
+        <div className="flex min-h-[3.25rem] flex-wrap items-center gap-3 px-6 pb-6 pt-5">
           {machine === "unknown" && !failed ? (
-            <p data-testid="harness-status" className="text-[13px] leading-5 text-muted-foreground">
+            <p
+              data-testid="harness-status"
+              data-reading={reading || undefined}
+              className="inline-flex h-8 items-center gap-2 text-[13px] leading-5 text-muted-foreground"
+            >
+              <span className="harness-spinner" aria-hidden="true" />
               {statusText}
             </p>
           ) : (
-            <HarnessAction
-              testId={removing ? "harness-remove" : "harness-deploy"}
-              reasonTestId="harness-reason"
-              label={removing ? t("harness.remove") : t("harness.deploy")}
-              busyLabel={removing ? t("harness.busyRemove") : t("harness.busyDeploy")}
-              successLabel={t("harness.done")}
-              retryLabel={t("harness.retry")}
-              phase={action.phase}
-              reason={null}
-              danger={removing}
-              onRun={() => setPending(removing ? "remove" : "deploy")}
-            />
+            <>
+              <HarnessAction
+                testId={removing ? "harness-remove" : "harness-deploy"}
+                reasonTestId="harness-reason"
+                label={removing ? t("harness.remove") : t("harness.deploy")}
+                busyLabel={removing ? t("harness.busyRemove") : t("harness.busyDeploy")}
+                successLabel={t("harness.done")}
+                retryLabel={t("harness.retry")}
+                phase={action.phase}
+                reason={null}
+                danger={removing}
+                onRun={() => setPending(removing ? "remove" : "deploy")}
+              />
+              <p
+                data-testid="harness-status"
+                className={
+                  failed || statusError
+                    ? "min-w-0 text-[13px] leading-5 text-destructive"
+                    : "min-w-0 text-[13px] leading-5 text-muted-foreground"
+                }
+              >
+                {statusText}
+              </p>
+            </>
           )}
-          {machine !== "unknown" || failed ? (
-            <p
-              data-testid="harness-status"
-              className={
-                failed || statusError
-                  ? "min-w-0 text-[13px] leading-5 text-destructive"
-                  : "min-w-0 text-[13px] leading-5 text-muted-foreground"
-              }
-            >
-              {statusText}
-            </p>
-          ) : null}
         </div>
       </div>
       <ConfirmDialog

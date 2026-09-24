@@ -28,9 +28,9 @@ const NAV_PADDING_PX = 8;
 const NAV_ITEM_FALLBACK_WIDTH = 88;
 const NAV_MORE_FALLBACK_WIDTH = 48;
 const NAV_BUTTON_CLASS =
-  "inline-flex h-10 items-center gap-2 rounded-xl px-3 text-[15px] font-medium transition-colors";
+  "inline-flex h-8 items-center gap-2 rounded-lg px-3 text-[14px] font-medium transition-colors";
 const NAV_MORE_CLASS =
-  "inline-flex h-10 items-center justify-center rounded-xl px-3 transition-colors";
+  "inline-flex h-8 items-center justify-center rounded-lg px-3 transition-colors";
 
 /** Pack tool buttons into the centered nav slot, reserving space for overflow. */
 export function countVisibleNavItems(
@@ -147,10 +147,10 @@ export function AppShell({
 
   return (
     <div className="keysmith-surface flex h-full flex-col">
-      <header className="flex h-16 shrink-0 items-center gap-3 border-b border-border bg-card px-4 sm:px-5">
+      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-card/80 px-4 backdrop-blur sm:px-5">
         <div className="flex shrink-0 items-center gap-2.5">
-          <img src={keysmithIcon} alt="" className="h-7 w-7 shrink-0" aria-hidden="true" />
-          <div className="whitespace-nowrap text-[16px] font-semibold tracking-tight text-foreground">
+          <img src={keysmithIcon} alt="" className="h-6 w-6 shrink-0" aria-hidden="true" />
+          <div className="whitespace-nowrap text-[15px] font-semibold tracking-[-0.01em] text-foreground">
             {t("app.name")}
           </div>
         </div>
@@ -172,7 +172,7 @@ export function AppShell({
             </span>
           </div>
           <nav
-            className="flex items-center gap-1 rounded-2xl bg-muted p-1"
+            className="flex items-center gap-0.5 rounded-lg border border-border bg-muted/60 p-0.5"
             aria-label={t("nav.toolsLabel")}
           >
             {visible.map((tool) => {
@@ -189,8 +189,8 @@ export function AppShell({
                     NAV_BUTTON_CLASS,
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                     active
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground hover:bg-background/50",
+                      ? "bg-card text-foreground shadow-[0_1px_2px_hsl(var(--shadow)/0.06)]"
+                      : "text-muted-foreground hover:text-foreground hover:bg-card/60",
                   )}
                 >
                   <ToolLogo tool={tool} size={20} />
@@ -268,7 +268,7 @@ export function AppShell({
       </header>
 
       <main className="min-h-0 flex-1 overflow-hidden">
-        <div className="mx-auto flex h-full max-w-[1440px] flex-col p-4">{children}</div>
+        <div className="mx-auto flex h-full max-w-[1440px] flex-col p-3 sm:p-4">{children}</div>
       </main>
     </div>
   );

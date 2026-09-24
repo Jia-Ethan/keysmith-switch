@@ -737,15 +737,6 @@ impl Store {
         if let Some(endpoint) = patch.updater_endpoint_override {
             settings.updater_endpoint_override = endpoint;
         }
-        if let Some(value) = patch.close_to_tray {
-            settings.close_to_tray = value;
-        }
-        if let Some(value) = patch.auto_launch {
-            settings.auto_launch = value;
-        }
-        if let Some(value) = patch.silent_start {
-            settings.silent_start = value;
-        }
         if let Some(value) = patch.auto_check_updates {
             settings.auto_check_updates = value;
         }
@@ -1081,9 +1072,6 @@ fn write_settings(conn: &Connection, settings: &Settings) -> Result<()> {
                 .clone()
                 .unwrap_or_default(),
         ),
-        ("closeToTray", settings.close_to_tray.to_string()),
-        ("autoLaunch", settings.auto_launch.to_string()),
-        ("silentStart", settings.silent_start.to_string()),
         ("autoCheckUpdates", settings.auto_check_updates.to_string()),
         ("theme", settings.theme.clone()),
         (
@@ -1125,9 +1113,6 @@ fn apply_setting(settings: &mut Settings, key: &str, value: &str) {
                 Some(value.to_string())
             };
         }
-        "closeToTray" => settings.close_to_tray = truthy(value),
-        "autoLaunch" => settings.auto_launch = truthy(value),
-        "silentStart" => settings.silent_start = truthy(value),
         "autoCheckUpdates" => settings.auto_check_updates = truthy(value),
         "theme" => {
             if matches!(value, "light" | "dark" | "system") {

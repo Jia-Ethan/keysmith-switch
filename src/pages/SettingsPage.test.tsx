@@ -390,7 +390,7 @@ describe("SettingsPage data safety", () => {
     expect(screen.queryByText(/npm is required|\/app\//)).not.toBeInTheDocument();
   });
 
-  it("keeps general to language, theme, and close-to-tray", () => {
+  it("keeps general to language and theme, with no tray or launch settings", () => {
     render(
       <SettingsPage
         settings={DEFAULT_SETTINGS}
@@ -402,13 +402,44 @@ describe("SettingsPage data safety", () => {
 
     expect(screen.getByLabelText("界面语言")).toBeInTheDocument();
     expect(screen.getByLabelText("主题")).toBeInTheDocument();
-    expect(screen.getByLabelText("关闭窗口进入托盘")).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "浅色" }).querySelector("circle")).toBeInTheDocument();
     expect(screen.getByTestId("theme-sun")).toBeInTheDocument();
+    expect(screen.queryByLabelText("关闭窗口进入托盘")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("开机启动")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("静默启动")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Claude 默认范围")).not.toBeInTheDocument();
     expect(screen.queryByTestId("settings-nav-data")).not.toBeInTheDocument();
+  });
+
+  it("opens the language list inside the page, not as a system overlay", async () => {
+    const onSave = vi.fn().mockResolvedValue(DEFAULT_SETTINGS);
+    render(
+      <SettingsPage settings={DEFAULT_SETTINGS} onSave={onSave} toast={toast} initialTab="general" />,
+    );
+
+    // The list does not exist until the trigger is used, and it is a listbox in
+    // the page rather than a native select the platform would paint itself.
+    expect(screen.queryByTestId("settings-language-menu")).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("settings-language"));
+    expect(screen.getByTestId("settings-language-menu")).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "简体中文" })).toHaveAttribute("aria-selected", "true");
+
+    fireEvent.click(screen.getByTestId("settings-language-en"));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ language: "en" }));
+    expect(screen.queryByTestId("settings-language-menu")).not.toBeInTheDocument();
+  });
+
+  it("closes the language list on Escape without saving", () => {
+    const onSave = vi.fn().mockResolvedValue(DEFAULT_SETTINGS);
+    render(
+      <SettingsPage settings={DEFAULT_SETTINGS} onSave={onSave} toast={toast} initialTab="general" />,
+    );
+
+    fireEvent.click(screen.getByTestId("settings-language"));
+    fireEvent.keyDown(screen.getByTestId("settings-language"), { key: "Escape" });
+    expect(screen.queryByTestId("settings-language-menu")).not.toBeInTheDocument();
+    expect(onSave).not.toHaveBeenCalled();
   });
 
 });

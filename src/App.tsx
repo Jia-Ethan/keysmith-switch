@@ -53,11 +53,13 @@ export function App() {
       void import("@tauri-apps/api/event").then(({ listen }) => {
         if (cancelled) return;
         void listen("window-close-requested", () => {
+          // Closing the window is quitting the app. The only thing that keeps it
+          // open is an unsaved draft the person chose not to discard.
           if (dirty && !window.confirm(t("unsaved.leave"))) {
             void api.showMainWindow();
             return;
           }
-          void api.hideToTray();
+          void api.quitApp();
         }).then((unlisten) => {
           if (cancelled) unlisten();
           else unlistenClose = unlisten;

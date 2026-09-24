@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { resetHarnessStatuses } from "../lib/harnessState";
 
 const deployHarness = vi.fn();
 const removeHarness = vi.fn();
@@ -13,6 +14,9 @@ vi.mock("../api", () => ({
 
 describe("HarnessPage", () => {
   beforeEach(() => {
+    // The store remembers for a whole app run, which in a test file means it
+    // would leak from one case into the next.
+    resetHarnessStatuses();
     deployHarness.mockReset();
     removeHarness.mockReset();
     getHarnessState.mockReset();

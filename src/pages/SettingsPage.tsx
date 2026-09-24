@@ -8,7 +8,8 @@ import { Feedback } from "../components/Feedback";
 import { useUpdateOptional } from "../components/UpdateProvider";
 import { IconDownload, IconExternal, IconMonitor, IconMoon, IconRefresh, IconSun } from "../components/icons";
 import { ToolLogo } from "../components/ToolLogos";
-import { Button, Checkbox, Mono, Segmented, Select, SettingRow, SectionLabel, cx } from "../components/ui";
+import { Button, Mono, Segmented, SettingRow, SectionLabel, cx } from "../components/ui";
+import { Dropdown } from "../components/Dropdown";
 import { useTheme, type ThemeMode } from "../hooks/useTheme";
 import type { ToastApi } from "../hooks/useToasts";
 import { formatBytes } from "../lib/format";
@@ -136,7 +137,7 @@ export function SettingsPage({
   return (
     <div className="mx-auto flex h-full min-h-0 w-full max-w-6xl flex-col gap-3">
       <div
-        className="flex shrink-0 gap-1 overflow-x-auto rounded-2xl border border-border bg-card p-1.5"
+        className="flex shrink-0 gap-0.5 overflow-x-auto rounded-lg border border-border bg-muted/60 p-0.5"
         role="tablist"
         aria-label={t("settings.title")}
       >
@@ -154,9 +155,11 @@ export function SettingsPage({
               onClick={() => selectTab(item)}
               onKeyDown={(event) => onTabKeyDown(event, item)}
               className={cx(
-                "h-10 shrink-0 rounded-xl px-3 text-[15px] font-medium transition-colors",
+                "h-8 shrink-0 rounded-lg px-3 text-[14px] font-medium transition-colors",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                active ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                active
+                  ? "bg-card text-foreground shadow-[0_1px_2px_hsl(var(--shadow)/0.06)]"
+                  : "text-muted-foreground hover:text-foreground",
               )}
             >
               {t(`settings.tab.${item}`)}
@@ -168,7 +171,7 @@ export function SettingsPage({
       <div
         id={`settings-panel-${tab}`}
         role="tabpanel"
-        className="min-h-0 flex-1 overflow-auto rounded-2xl border border-border bg-card shadow-[0_16px_50px_hsl(var(--foreground)/0.04)]"
+        className="min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-card shadow-[0_1px_3px_hsl(var(--shadow)/0.05)]"
         aria-busy={busy || undefined}
       >
         {tab === "general" ? (
@@ -176,16 +179,21 @@ export function SettingsPage({
             <SettingRow
               label={t("settings.language")}
               control={
-                <Select
-                  aria-label={t("settings.language")}
+                <Dropdown<Language>
+                  label={t("settings.language")}
+                  testId="settings-language"
+                  menuTestId="settings-language-menu"
+                  optionTestId={(value) => `settings-language-${value}`}
+                  className="w-[11.5rem]"
                   value={settings.language}
                   disabled={busy}
-                  onChange={(event) => void patch({ language: event.target.value as Language })}
-                >
-                  <option value="zh-CN">{t("settings.languageZhCN")}</option>
-                  <option value="zh-TW">{t("settings.languageZhTW")}</option>
-                  <option value="en">{t("settings.languageEn")}</option>
-                </Select>
+                  onChange={(value) => void patch({ language: value })}
+                  options={[
+                    { value: "zh-CN", label: t("settings.languageZhCN") },
+                    { value: "zh-TW", label: t("settings.languageZhTW") },
+                    { value: "en", label: t("settings.languageEn") },
+                  ]}
+                />
               }
             />
             <SettingRow
@@ -207,17 +215,6 @@ export function SettingsPage({
                 />
               }
             />
-            <SettingRow
-              label={t("settings.closeToTray")}
-              control={
-                <Checkbox
-                  aria-label={t("settings.closeToTray")}
-                  checked={settings.closeToTray}
-                  disabled={busy}
-                  onChange={(event) => void patch({ closeToTray: event.target.checked })}
-                />
-              }
-            />
           </div>
         ) : null}
 
@@ -227,10 +224,10 @@ export function SettingsPage({
               <article
                 key={item.tool}
                 data-testid={`keysmith-${item.tool}`}
-                className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl border border-border bg-background/35 px-3 py-2.5"
+                className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-border bg-background/35 px-3 py-2.5"
               >
                 <ToolLogo tool={item.tool} size={20} />
-                <h2 className="min-w-[9rem] text-[15px] font-medium text-foreground">{item.name}</h2>
+                <h2 className="min-w-[9rem] text-[14px] font-medium text-foreground">{item.name}</h2>
                 <Button
                   size="sm"
                   variant="ghost"
@@ -318,7 +315,7 @@ export function SettingsPage({
                             <summary className="cursor-pointer text-xs text-muted-foreground">
                               {t("about.updateDetails")}
                             </summary>
-                            <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 font-mono text-[11px] leading-snug text-muted-foreground">
+                            <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 font-mono text-[12px] leading-snug text-muted-foreground">
                               {updater.update.detail.message}
                             </pre>
                           </details>
@@ -425,7 +422,7 @@ export function SettingsPage({
           {updater?.update?.notes ? (
             <div>
               <SectionLabel>{t("about.notes")}</SectionLabel>
-              <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded-xl border border-border bg-muted/40 px-3 py-2 text-[13px] leading-snug text-foreground">
+              <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded-lg border border-border bg-muted/40 px-3 py-2 text-[13px] leading-snug text-foreground">
                 {updater.update.notes}
               </pre>
             </div>

@@ -190,12 +190,6 @@
     "defaultClaudeScopeHint": "打开 Claude Code 时默认选中的范围。其他工具只支持 user。",
     "recentProjectsHint": "在 Claude 的 project / local 范围选择目录后会记录在这里。",
     "endpointOverrideHint": "由本地 fixture 设置，界面只读。",
-    "closeToTray": "关闭窗口进入托盘",
-    "closeToTrayHint": "关闭主窗口时隐藏到托盘，而不是退出。退出请用托盘菜单「退出 Keysmith Switch」。",
-    "autoLaunch": "开机启动",
-    "autoLaunchHint": "登录系统后自动启动。默认关闭。",
-    "silentStart": "静默启动",
-    "silentStartHint": "启动后只出现在托盘，不显示主窗口。",
     "autoCheck": "启动后检查更新",
     "tab": {
       "general": "通用",
@@ -352,6 +346,7 @@
   "harness": {
     "title": "Harness",
     "lead": "整机部署一次。不是某个项目。",
+    "refresh": "刷新本机状态",
     "reading": "正在读取本机状态",
     "deployed": "已部署",
     "undeployed": "未部署",
