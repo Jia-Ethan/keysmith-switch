@@ -98,4 +98,13 @@ fn markdown_roundtrip_front_matter() {
     let parsed = parse_markdown(&rendered).unwrap();
     assert_eq!(parsed.front, front);
     assert_eq!(parsed.content, "body line\n");
+    for body in [
+        "no trailing newline",
+        "\nleading blank\n",
+        "\n\nmultiple blank lines\n",
+        "",
+    ] {
+        let parsed = parse_markdown(&render_markdown(&front, body)).unwrap();
+        assert_eq!(parsed.content, body);
+    }
 }

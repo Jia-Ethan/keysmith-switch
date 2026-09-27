@@ -1,10 +1,10 @@
 # Keysmith Switch
 
-本地提示词管理桌面工具，面向 Claude Code、Codex、Grok Build 与 ZCode。
+独立的 Agent 提示词管理与快速部署桌面工具。用户可以粘贴自己的提示词，选择目标 Agent 和范围，先审阅部署计划，再通过对应适配器执行写入。
 
-应用提供手动检查和“更新并重启”。安装包不使用 Apple Developer ID、公证或 Windows Authenticode；更新 payload 使用独立生产密钥签名，并在安装前由客户端验证。
+Switch 不绑定某一组官方提示词正文。提示词可以来自粘贴，或用户明确选择的本地 Markdown 文件；快速部署默认离线工作，不从其他 Keysmith 仓库的远程分支抓取内容。同一 Agent 的相同正文复用既有库条目；如果原条目标题或标签不同，返回并部署原条目，不会暗中改写其元数据。
 
-所有真实配置写入都经过四个随应用交付的 Keysmith sidecar（frozen，不需要用户安装 Python）。GUI 不直接改写 `CLAUDE.md`、`~/.codex`、`~/.grok` 或 `~/.zcode-keysmith`。
+所有真实配置写入都经过现有四个 Agent adapter。GUI 不直接改写目标 Agent 的配置文件；适配器负责目标格式，Switch 负责提示词库、版本、哈希校验、计划预览及操作记录。备份、漂移检测和恢复能力取决于当前 adapter。库中的 Markdown 带有元数据；交给 adapter 的临时文件只包含提示词正文，完成预览或执行后会清理。
 
 界面与发布结构参照 MIT 开源项目 [CC Switch](https://github.com/farion1231/cc-switch) 的桌面产品完成度，业务模型仍是 Keysmith Switch。映射与版权见 [`docs/CC_SWITCH_MAPPING.md`](docs/CC_SWITCH_MAPPING.md)。
 
@@ -78,16 +78,11 @@ GitHub Actions 的 `development-candidate` 工作流只用于开发候选验证�
 
 Bug、需求与破限建议统一提交至 [GitHub Discussions](https://github.com/Jia-Ethan/keysmith-switch/discussions/3)。请勿公开提交 token、完整配置、提示词正文或其他敏感信息。当前仓库尚未启用 Private Vulnerability Reporting，安全漏洞请勿在 Discussion 公开披露。
 
-## 内置 CLI
+## Agent adapter artifacts
 
-`third_party/keysmith/` 钉选审计版本，随应用原子更新：
+当前发行包仍包含四个 legacy adapter sidecar，用于兼容 Claude Code、Codex、Grok Build 与 ZCode 的目标配置协议。它们是执行实现，不是 Quick Deploy 的默认提示词来源；Quick Deploy 不会自动抓取这些仓库的提示词，也不要求用户安装对应的 Keysmith 仓库。
 
-| 工具 | 版本 | HEAD |
-| --- | --- | --- |
-| claude-keysmith | v7.2 | 7dbfa253 |
-| codex-keysmith | v0.6.0 | 33cf4049 |
-| grok-keysmith | v0.6.1 | 168f604a |
-| zcode-keysmith | 0.3.2（无 `v0.3.2` tag；不是 CLI Latest `v0.3.1`） | 7348b875 |
+`third_party/keysmith/` 中的版本锁只约束 legacy adapter artifact 的构建与审计。后续 Agent registry 会把这些 artifact 迁移到统一的 adapter manifest；用户提示词库和适配器供应链保持独立。
 
 ## 许可
 

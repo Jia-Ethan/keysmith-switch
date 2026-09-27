@@ -31,7 +31,12 @@ pub fn parse_markdown(text: &str) -> Result<MarkdownPrompt> {
         .or_else(|| rest.find("\n---\r\n"))
         .ok_or_else(|| Error::invalid("prompt markdown front matter is not closed"))?;
     let header = &rest[..end];
-    let body = rest[end + 5..].trim_start_matches('\n').to_string();
+    // The renderer adds exactly one separator newline after the closing
+    // delimiter. Strip that one, not the user's leading blank lines.
+    let body = rest[end + 5..]
+        .strip_prefix('\n')
+        .unwrap_or(&rest[end + 5..])
+        .to_string();
 
     let mut id = None;
     let mut tool = None;
@@ -103,9 +108,6 @@ pub fn render_markdown(front: &FrontMatter, content: &str) -> String {
     }
     out.push_str("---\n\n");
     out.push_str(content);
-    if !content.ends_with('\n') {
-        out.push('\n');
-    }
     out
 }
 

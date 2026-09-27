@@ -56,6 +56,7 @@
 | `list_prompts` | `{ tool, query?, tag?, sort? }` | `{ prompts: PromptSummary[] }` |
 | `get_prompt` | `{ id }` | `PromptDetail` |
 | `create_prompt` | `{ tool, title, content, tags }` | `PromptDetail` |
+| `create_pasted_prompt` | `{ tool, title, content }` | `PromptDetail`（新内容存入库并标记 `pasted`；同 Agent 同正文复用既有条目，返回其原有标题与标签） |
 | `update_prompt` | `{ id, title?, content?, tags? }` | `PromptDetail` |
 | `delete_prompt` | `{ id }` | `{ ok }` |
 | `copy_prompt` | `{ id, targetTool }` | `PromptDetail` |
@@ -68,7 +69,6 @@
 | `plan_deactivate` | `{ promptId?, tool, scope, projectDir? }` | `{ operationId, envelope }` |
 | `deactivate` | `{ operationId }` | `{ operationId, envelope }` |
 | `harness_state` | `{ tool }` | `{ tool, deployed, error }` |
-| `deploy_harness` | `{ tool }` | `HarnessOutcome` |
 | `remove_harness` | `{ tool }` | `HarnessOutcome` |
 | `recover_tool` | `{ tool, scope?, projectDir? }` | `{ operationId, envelope }` |
 | `doctor` | `{ tool }` | `Envelope` |

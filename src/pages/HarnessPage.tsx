@@ -1,182 +1,298 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import * as api from "../api";
 import { ConfirmDialog } from "../components/ConfirmDialog";
-import { HarnessAction, useHarnessPhase } from "../components/HarnessAction";
+import type { AppPage } from "../components/AppShell";
+import { MarkdownEditor } from "../components/MarkdownEditor";
+import { PlanPreview } from "../components/PlanPreview";
+import { ScopeBar } from "../components/ScopeBar";
 import { ToolLogo } from "../components/ToolLogos";
-import { IconButton } from "../components/ui";
 import { IconRefresh } from "../components/icons";
-import {
-  applyHarnessOutcome,
-  loadHarnessStatus,
-  useHarnessStatus,
-} from "../lib/harnessState";
-import type { ToolId } from "../types";
-
-type Machine = "unknown" | "deployed" | "undeployed";
-type Pending = "deploy" | "remove" | null;
+import { Button, Field, IconButton, Input } from "../components/ui";
+import type { ToastApi } from "../hooks/useToasts";
+import { applyHarnessOutcome, getHarnessStatus, loadHarnessStatus, useHarnessStatus } from "../lib/harnessState";
+import { canConfirmPlan } from "../lib/planGate";
+import { toastSafeMessage } from "../lib/redact";
+import { pickDirectory } from "../lib/runtime";
+import { defaultScopeFor, isRecoveryState, mergeTools, scopeNeedsProjectDir } from "../lib/tools";
+import type { Envelope, PlanResult, ScopeId, Settings, ToolId, ToolInfo } from "../types";
 
 export function HarnessPage({
   tool,
+  settings,
+  toast,
+  onRememberProject,
+  onNavigate,
   onDirtyChange,
 }: {
   tool: ToolId;
+  settings?: Settings;
+  toast?: ToastApi;
+  onRememberProject?: (dir: string) => void;
+  onNavigate?: (page: AppPage) => void;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
   const { t } = useTranslation();
-  const action = useHarnessPhase();
   const entry = useHarnessStatus(tool);
-  const [pending, setPending] = useState<Pending>(null);
+  const [toolInfo, setToolInfo] = useState<ToolInfo>(() => mergeTools(null).find((item) => item.id === tool)!);
+  const [status, setStatus] = useState<Envelope | null>(null);
+  const [title, setTitle] = useState(() => t("quickDeploy.defaultTitle"));
+  const [content, setContent] = useState("");
+  const [savedDraft, setSavedDraft] = useState<string | null>(null);
+  const [scope, setScope] = useState<ScopeId>("user");
+  const [projectDir, setProjectDir] = useState("");
+  const [plan, setPlan] = useState<{
+    kind: "activate" | "deactivate";
+    result: PlanResult;
+    scope: ScopeId;
+    projectDir: string;
+    title: string;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   const [reading, setReading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [statusEpoch, setStatusEpoch] = useState(0);
+  const [projectStatusError, setProjectStatusError] = useState<string | null>(null);
 
-  const machine: Machine = entry ? entry.machine : "unknown";
-  const statusError = entry?.error ?? null;
+  const supportedScopes = useMemo(() => toolInfo.supportedScopes.length ? toolInfo.supportedScopes : ["user"] as ScopeId[], [toolInfo]);
+  const requireProject = scopeNeedsProjectDir(scope);
+  const projectReady = !requireProject || Boolean(projectDir.trim());
+  const machine = scope === "user"
+    ? entry?.error ? "unknown" : entry?.machine ?? "unknown"
+    : status && status.available
+      ? status.status === "active" ? "deployed" : status.status === "inactive" || status.status === "not-installed" ? "undeployed" : "unknown"
+      : "unknown";
+  const statusError = error ?? (scope === "user" ? entry?.error : projectStatusError ?? status?.error);
+  const dirty = ((title !== t("quickDeploy.defaultTitle") || Boolean(content)) && savedDraft !== `${title}\0${content}`) || Boolean(plan) || busy;
 
   useEffect(() => {
-    onDirtyChange?.(busy || pending !== null);
-  }, [busy, onDirtyChange, pending]);
+    onDirtyChange?.(dirty);
+  }, [dirty, onDirtyChange]);
 
-  // Reads the machine once per run per tool. Switching tools and coming back
-  // reuses the remembered result instead of reading again.
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
+
   useEffect(() => {
+    setTitle(t("quickDeploy.defaultTitle"));
+    setContent("");
+    setSavedDraft(null);
+    setProjectDir("");
+    setPlan(null);
+    setStatus(null);
+    setError(null);
+    setProjectStatusError(null);
+    setToolInfo(mergeTools(null).find((item) => item.id === tool)!);
+    setScope("user");
     let cancelled = false;
-    if (entry) return undefined;
+    void api.listTools()
+      .then(({ tools }) => {
+        if (cancelled) return;
+        const next = tools.find((item) => item.id === tool);
+        if (!next) return;
+        setToolInfo(next);
+        setScope(defaultScopeFor(tool, next.supportedScopes, settings?.defaultClaudeScope ?? "user"));
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled) setError(toastSafeMessage(reason) || t("errors.loadFailed"));
+      });
+    return () => { cancelled = true; };
+  }, [settings?.defaultClaudeScope, t, tool]);
+
+  useEffect(() => {
+    if (getHarnessStatus(tool)) return;
+    let cancelled = false;
     setReading(true);
     void loadHarnessStatus(tool).finally(() => {
       if (!cancelled) setReading(false);
     });
-    return () => {
-      cancelled = true;
-    };
-  }, [entry, tool]);
+    return () => { cancelled = true; };
+  }, [tool]);
+
+  useEffect(() => {
+    setStatus(null);
+    setProjectStatusError(null);
+    if (!requireProject || !projectDir.trim()) return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void api.toolStatus({ tool, scope, projectDir: projectDir.trim() })
+        .then((result) => {
+          if (!cancelled) setStatus(result);
+        })
+        .catch((reason: unknown) => {
+          if (!cancelled) setProjectStatusError(toastSafeMessage(reason) || t("errors.loadFailed"));
+        });
+    }, 200);
+    return () => { cancelled = true; window.clearTimeout(timer); };
+  }, [projectDir, requireProject, scope, statusEpoch, t, tool]);
 
   const refresh = async () => {
     setReading(true);
+    setError(null);
     try {
-      await loadHarnessStatus(tool, true);
+      if (scope === "user") await loadHarnessStatus(tool, true);
+      else setStatusEpoch((value) => value + 1);
     } finally {
       setReading(false);
     }
   };
 
-  const run = async (next: Exclude<Pending, null>) => {
-    action.begin();
+  const openActivatePlan = async () => {
+    if (!title.trim() || !content.trim()) {
+      const reason = t("quickDeploy.validation");
+      setError(reason);
+      toast?.err(reason);
+      return;
+    }
+    if (!projectReady) {
+      const reason = t("scope.needsProjectDir");
+      setError(reason);
+      toast?.err(reason);
+      return;
+    }
     setBusy(true);
+    setError(null);
     try {
-      const outcome = next === "deploy" ? await api.deployHarness(tool) : await api.removeHarness(tool);
-      if (outcome.ok) {
-        applyHarnessOutcome(tool, next);
-        action.succeed();
-      } else {
-        action.fail(outcome.error || t("harness.genericError"));
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : t("harness.genericError");
-      action.fail(message || t("harness.genericError"));
+      const plannedScope = scope;
+      const plannedDir = requireProject ? projectDir.trim() : "";
+      const prompt = await api.createPastedPrompt({ tool, title: title.trim(), content });
+      setSavedDraft(`${title}\0${content}`);
+      const result = await api.planActivate({
+        promptId: prompt.id,
+        scope: plannedScope,
+        projectDir: plannedDir || undefined,
+      });
+      setPlan({ kind: "activate", result, scope: plannedScope, projectDir: plannedDir, title: prompt.title });
+    } catch (reason) {
+      const message = toastSafeMessage(reason) || t("quickDeploy.failed");
+      setError(message);
+      toast?.err(message);
     } finally {
       setBusy(false);
     }
   };
 
-  const confirm = () => {
-    const next = pending;
-    setPending(null);
-    if (next) void run(next);
+  const openRemovePlan = async () => {
+    if (!projectReady) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const plannedDir = requireProject ? projectDir.trim() : "";
+      const result = await api.planDeactivate({
+        tool,
+        scope,
+        projectDir: plannedDir || undefined,
+      });
+      setPlan({ kind: "deactivate", result, scope, projectDir: plannedDir, title: "" });
+    } catch (reason) {
+      const message = toastSafeMessage(reason) || t("quickDeploy.failed");
+      setError(message);
+      toast?.err(message);
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const failed = action.phase === "failure";
-  const removing = machine === "deployed";
-  const statusText = failed
-    ? action.reason
-    : statusError
-      ? statusError
-      : machine === "unknown"
-        ? t("harness.reading")
-        : removing
-          ? t("harness.deployed")
-          : t("harness.undeployed");
+  const confirmPlan = async () => {
+    if (!plan || !canConfirmPlan(plan.result.envelope) || isRecoveryState(plan.result.envelope)) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const result = plan.kind === "activate"
+        ? await api.activate(plan.result.operationId)
+        : await api.deactivate(plan.result.operationId);
+      if (!result.envelope.ok || result.envelope.exitCode !== 0) {
+        const message = toastSafeMessage(result.envelope.error || t("quickDeploy.failed"));
+        setError(message);
+        toast?.err(message);
+        return;
+      }
+      if (plan.scope === "user") applyHarnessOutcome(tool, plan.kind === "activate" ? "deploy" : "remove");
+      else setStatusEpoch((value) => value + 1);
+      setPlan(null);
+      if (plan.kind === "activate") toast?.ok(t("quickDeploy.deployed"));
+    } catch (reason) {
+      const message = toastSafeMessage(reason) || t("quickDeploy.failed");
+      setError(message);
+      toast?.err(message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
+  const disabled = busy || Boolean(plan);
   return (
-    <section
-      data-testid="harness-page"
-      data-machine={machine}
-      className="flex h-full min-h-0 w-full items-start justify-center overflow-auto px-6 py-12"
-    >
-      <div className="flex w-full max-w-xl flex-col rounded-2xl border border-border bg-card shadow-[0_1px_3px_hsl(var(--shadow)/0.04)]">
-        <header className="flex items-start gap-3.5 px-6 pt-6">
+    <section data-testid="harness-page" data-machine={machine} className="flex h-full min-h-0 w-full items-start justify-center overflow-auto px-6 py-8">
+      <div className="flex w-full max-w-4xl flex-col gap-5 rounded-2xl border border-border bg-card px-6 py-6 shadow-[0_1px_3px_hsl(var(--shadow)/0.04)]">
+        <header className="flex items-center gap-3">
           <ToolLogo tool={tool} size={34} />
           <div className="min-w-0 flex-1">
-            <h1 className="text-[19px] font-semibold tracking-[-0.01em] text-foreground">
-              {t(`nav.${tool}`)}
-            </h1>
-            <p className="mt-0.5 text-[13px] leading-5 text-muted-foreground">{t("harness.lead")}</p>
+            <h1 className="text-[19px] font-semibold tracking-[-0.01em] text-foreground">{t("quickDeploy.title")}</h1>
+            <p className="mt-0.5 text-[13px] leading-5 text-muted-foreground">{t("quickDeploy.lead", { tool: t(`nav.${tool}`) })}</p>
           </div>
-          <IconButton
-            label={t("harness.refresh")}
-            title={t("harness.refresh")}
-            data-testid="harness-refresh"
-            disabled={reading || busy}
-            onClick={() => void refresh()}
-          >
+          <IconButton label={t("quickDeploy.refresh")} data-testid="harness-refresh" disabled={reading || busy} onClick={() => void refresh()}>
             <IconRefresh className={reading ? "harness-spin" : undefined} />
           </IconButton>
         </header>
 
-        <div className="flex min-h-[3.25rem] flex-wrap items-center gap-3 px-6 pb-6 pt-5">
-          {machine === "unknown" && !failed ? (
-            <p
-              data-testid="harness-status"
-              data-reading={reading || undefined}
-              className="inline-flex h-8 items-center gap-2 text-[13px] leading-5 text-muted-foreground"
-            >
-              <span className="harness-spinner" aria-hidden="true" />
-              {statusText}
-            </p>
-          ) : (
-            <>
-              <HarnessAction
-                testId={removing ? "harness-remove" : "harness-deploy"}
-                reasonTestId="harness-reason"
-                label={removing ? t("harness.remove") : t("harness.deploy")}
-                busyLabel={removing ? t("harness.busyRemove") : t("harness.busyDeploy")}
-                successLabel={t("harness.done")}
-                retryLabel={t("harness.retry")}
-                phase={action.phase}
-                reason={null}
-                danger={removing}
-                onRun={() => setPending(removing ? "remove" : "deploy")}
-              />
-              <p
-                data-testid="harness-status"
-                className={
-                  failed || statusError
-                    ? "min-w-0 text-[13px] leading-5 text-destructive"
-                    : "min-w-0 text-[13px] leading-5 text-muted-foreground"
-                }
-              >
-                {statusText}
-              </p>
-            </>
-          )}
+        <ScopeBar
+          scope={scope}
+          supportedScopes={supportedScopes}
+          projectDir={projectDir}
+          recentProjectDirs={settings?.recentProjectDirs ?? []}
+          disabled={disabled}
+          onScopeChange={(next) => { setScope(next); setError(null); }}
+          onProjectDirChange={(dir) => { setProjectDir(dir); setError(null); }}
+          onBrowse={() => {
+            void pickDirectory().then((dir) => {
+              if (dir) { setProjectDir(dir); onRememberProject?.(dir); }
+            });
+          }}
+        />
+
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)]">
+          <Field label={t("quickDeploy.titleLabel")} hint={t("quickDeploy.titleHint")}>
+            <Input value={title} disabled={disabled} placeholder={t("quickDeploy.titlePlaceholder")} data-testid="quick-deploy-title" onChange={(event) => setTitle(event.target.value)} />
+          </Field>
+          <div className="min-w-0">
+            <div className="mb-2 text-[14px] font-medium text-muted-foreground">{t("quickDeploy.contentLabel")}</div>
+            <MarkdownEditor value={content} onChange={setContent} placeholder={t("quickDeploy.contentPlaceholder")} ariaLabel={t("quickDeploy.contentLabel")} readOnly={disabled} minHeight="300px" />
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3 border-t border-border pt-4">
+          <Button variant="primary" disabled={disabled || !toolInfo.available} data-testid="quick-deploy-submit" onClick={() => void openActivatePlan()}>
+            {busy && !plan ? t("common.busy") : t("quickDeploy.preview")}
+          </Button>
+          {machine === "deployed" ? (
+            <Button variant="danger" disabled={disabled || !projectReady} data-testid="quick-deploy-remove" onClick={() => void openRemovePlan()}>
+              {t("quickDeploy.remove")}
+            </Button>
+          ) : null}
+          {onNavigate ? (
+            <Button variant="outline" disabled={disabled} data-testid="quick-deploy-library" onClick={() => onNavigate({ kind: "tool", tool })}>
+              {t("prompts.library")}
+            </Button>
+          ) : null}
+          <span data-testid="quick-deploy-status" data-reading={reading || undefined} className={statusError ? "text-[13px] text-destructive" : "text-[13px] text-muted-foreground"}>
+            {statusError ?? (machine === "unknown" ? t("quickDeploy.reading") : machine === "deployed" ? t("quickDeploy.deployedState") : t("quickDeploy.undeployedState"))}
+          </span>
         </div>
       </div>
+
       <ConfirmDialog
-        open={pending !== null}
-        title={pending === "remove" ? t("harness.confirmRemoveTitle") : t("harness.confirmDeployTitle")}
-        confirmLabel={t("common.confirm")}
+        open={Boolean(plan)}
+        wide
+        title={plan?.kind === "deactivate" ? t("plan.titleDeactivate") : t("quickDeploy.previewTitle")}
+        description={[t(`nav.${tool}`), t(`scope.${plan?.scope ?? scope}`), plan?.projectDir, plan?.title].filter(Boolean).join(" · ")}
+        confirmLabel={plan?.kind === "deactivate" ? t("plan.confirmDeactivate") : t("quickDeploy.confirm")}
         cancelLabel={t("common.cancel")}
-        confirmTestId="harness-confirm"
-        danger={pending === "remove"}
+        closeLabel={t("common.close")}
         busy={busy}
-        onConfirm={confirm}
-        onClose={() => {
-          if (!busy) setPending(null);
-        }}
+        confirmDisabled={!plan || !canConfirmPlan(plan.result.envelope) || isRecoveryState(plan.result.envelope) || busy}
+        confirmTestId="quick-deploy-confirm"
+        onClose={() => { if (!busy) setPlan(null); }}
+        onConfirm={() => void confirmPlan()}
       >
-        <p className="text-[13px] leading-5 text-muted-foreground">
-          {pending === "remove" ? t("harness.confirmRemoveBody") : t("harness.confirmDeployBody")}
-        </p>
+        {plan ? <PlanPreview envelope={plan.result.envelope} /> : null}
       </ConfirmDialog>
     </section>
   );

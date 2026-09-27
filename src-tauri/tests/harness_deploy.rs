@@ -4,9 +4,13 @@ use keysmith_switch_lib::adapter::AdapterOptions;
 use keysmith_switch_lib::db::Store;
 use keysmith_switch_lib::harness::{
     accept_prompt_body, deploy_harness_with, harness_source, harness_state, remove_harness,
-    store_harness_prompt, HarnessAction, MAX_PROMPT_BYTES,
+    store_harness_prompt, store_pasted_prompt, HarnessAction, MAX_PROMPT_BYTES,
 };
-use keysmith_switch_lib::models::{PromptSort, Scope, ToolKind, ToolStatus};
+use keysmith_switch_lib::models::{
+    CreatePromptInput, PlanActivateInput, PromptSort, Scope, ToolKind, ToolStatus,
+    UpdatePromptInput,
+};
+use keysmith_switch_lib::ops::{confirm_activate, create_prompt, plan_activate, update_prompt};
 use keysmith_switch_lib::paths::AppPaths;
 
 fn fixture(name: &str) -> PathBuf {
@@ -43,43 +47,28 @@ fn setup(tool: ToolKind) -> (tempfile::TempDir, Store, AdapterOptions) {
 }
 
 #[test]
-fn catalog_points_at_the_current_default_prompt() {
+fn catalog_is_local_compatibility_metadata() {
     let cases = [
-        (
-            ToolKind::Claude,
-            "claude-keysmith",
-            "main",
-            "examples/claude-project-rules.md",
-        ),
-        (
-            ToolKind::Codex,
-            "codex-keysmith",
-            "main",
-            "examples/gpt-overlay.md",
-        ),
-        (
-            ToolKind::Grok,
-            "grok-keysmith",
-            "main",
-            "examples/grok-unrestricted.md",
-        ),
-        (
-            ToolKind::Zcode,
-            "zcode-keysmith",
-            "master",
-            "examples/system-role.md",
-        ),
+        (ToolKind::Claude, "Claude prompt"),
+        (ToolKind::Codex, "Codex prompt"),
+        (ToolKind::Grok, "Grok prompt"),
+        (ToolKind::Zcode, "ZCode prompt"),
     ];
-    for (tool, repo, branch, path) in cases {
+    for (tool, title) in cases {
         let source = harness_source(tool);
-        assert_eq!(source.repo, repo);
-        assert_eq!(source.branch, branch);
-        assert_eq!(source.path, path);
-        assert_eq!(
-            source.url(),
-            format!("https://raw.githubusercontent.com/Jia-Ethan/{repo}/{branch}/{path}")
-        );
+        assert_eq!(source.tool, tool);
+        assert_eq!(source.title(), title);
     }
+}
+
+#[tokio::test]
+async fn default_deploy_requires_user_content() {
+    let (_tmp, store, opts) = setup(ToolKind::Claude);
+    let outcome = deploy_harness_with(&store, ToolKind::Claude, &opts, None)
+        .await
+        .unwrap();
+    assert!(!outcome.ok, "{outcome:?}");
+    assert!(outcome.error.unwrap().contains("content is required"));
 }
 
 #[test]
@@ -110,6 +99,154 @@ fn same_sha_reuses_the_existing_prompt() {
             .len(),
         2
     );
+}
+
+#[test]
+fn pasted_prompt_uses_a_generic_source_tag_and_title() {
+    let (_tmp, store, _opts) = setup(ToolKind::Claude);
+    let id = keysmith_switch_lib::harness::store_pasted_prompt(
+        &store,
+        ToolKind::Claude,
+        "My rules",
+        "be concise\n",
+    )
+    .unwrap();
+    let prompt = store.get_prompt(&id).unwrap();
+    assert_eq!(prompt.title, "My rules");
+    assert!(prompt.tags.iter().any(|tag| tag == "pasted"));
+    assert!(!prompt.tags.iter().any(|tag| tag == "harness"));
+}
+
+#[test]
+fn same_content_reuses_existing_metadata_without_retagging() {
+    let (_tmp, store, _opts) = setup(ToolKind::Claude);
+    let original = create_prompt(
+        &store,
+        CreatePromptInput {
+            tool: ToolKind::Claude,
+            title: "Existing import".into(),
+            content: "shared body".into(),
+            tags: vec!["imported".into()],
+        },
+    )
+    .unwrap();
+    let reused =
+        store_pasted_prompt(&store, ToolKind::Claude, "New pasted title", "shared body").unwrap();
+    assert_eq!(reused, original.id);
+    let detail = store.get_prompt(&reused).unwrap();
+    assert_eq!(detail.title, "Existing import");
+    assert_eq!(detail.tags, vec!["imported"]);
+    assert_eq!(
+        store
+            .list_prompts(ToolKind::Claude, None, None, PromptSort::Updated)
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn concurrent_identical_pastes_share_one_entry() {
+    let (_tmp, store, _opts) = setup(ToolKind::Claude);
+    std::thread::scope(|threads| {
+        let workers: Vec<_> = (0..8)
+            .map(|_| {
+                threads
+                    .spawn(|| store_pasted_prompt(&store, ToolKind::Claude, "Rules", "exact body"))
+            })
+            .collect();
+        let ids: Vec<_> = workers
+            .into_iter()
+            .map(|worker| worker.join().unwrap().unwrap())
+            .collect();
+        assert!(ids.iter().all(|id| id == &ids[0]));
+    });
+    assert_eq!(
+        store
+            .list_prompts(ToolKind::Claude, None, None, PromptSort::Updated)
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn pasted_activation_deploys_only_body_and_cleans_temporary_input() {
+    let (_tmp, store, opts) = setup(ToolKind::Claude);
+    let body = "\nOnly these rules, with no library metadata.";
+    let prompt_id = store_pasted_prompt(&store, ToolKind::Claude, "My title", body).unwrap();
+    let plan = plan_activate(
+        &store,
+        PlanActivateInput {
+            prompt_id: prompt_id.clone(),
+            scope: Scope::User,
+            project_dir: None,
+            runtime: false,
+            append_file: None,
+            max_tokens: None,
+        },
+        &opts,
+    )
+    .await
+    .unwrap();
+    assert!(plan.envelope.ok, "{plan:?}");
+    let adapter_file = store
+        .get_prompt(&prompt_id)
+        .unwrap()
+        .path
+        .with_extension("adapter.txt");
+    assert!(!adapter_file.exists(), "preview input must not persist");
+    let executed = confirm_activate(&store, &plan.operation_id, &opts)
+        .await
+        .unwrap();
+    assert!(executed.envelope.ok, "{executed:?}");
+    let installed = opts
+        .home
+        .unwrap()
+        .join(".claude/keysmith/claude-project-rules.md");
+    assert_eq!(std::fs::read_to_string(installed).unwrap(), body);
+    assert!(!adapter_file.exists(), "execution input must not persist");
+    assert_eq!(store.get_prompt(&prompt_id).unwrap().content, body);
+}
+
+#[tokio::test]
+async fn preview_rejects_changed_prompt_even_if_body_sha_is_unchanged() {
+    let (_tmp, store, opts) = setup(ToolKind::Claude);
+    let id = store_pasted_prompt(&store, ToolKind::Claude, "Old title", "unchanged body").unwrap();
+    let plan = plan_activate(
+        &store,
+        PlanActivateInput {
+            prompt_id: id.clone(),
+            scope: Scope::User,
+            project_dir: None,
+            runtime: false,
+            append_file: None,
+            max_tokens: None,
+        },
+        &opts,
+    )
+    .await
+    .unwrap();
+    update_prompt(
+        &store,
+        UpdatePromptInput {
+            id,
+            title: Some("New title".into()),
+            content: None,
+            tags: None,
+        },
+    )
+    .unwrap();
+    let result = confirm_activate(&store, &plan.operation_id, &opts).await;
+    assert!(
+        result.is_err(),
+        "a title-only version change must invalidate preview"
+    );
+    assert!(!opts
+        .home
+        .unwrap()
+        .join(".claude/keysmith/claude-project-rules.md")
+        .exists());
 }
 
 #[tokio::test]
