@@ -1,11 +1,12 @@
 # Keysmith Switch 实现状态
 
-更新日期：2026-09-22（Asia/Shanghai）
+更新日期：2026-09-27（Asia/Shanghai）
 
-阶段：**`v0.1.4` 已在 2026-09-22 公开。** annotated tag `v0.1.4`（`af73d7b`）指向源码 `0071d5d79`（#13）。源仓库 `release` run [35700418653](https://github.com/Jia-Ethan/keysmith-switch/actions/runs/35700418653) 成功。公开稳定包是 [`v0.1.4`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.1.4)（stable、Latest），含 macOS Apple Silicon 与 Windows x64 安装包；stable feed 的 `latest.json` 版本是 `0.1.4`。`main` 已包含 #7–#12。#6 仍 OPEN。
+阶段：公开稳定版为 [`v0.1.8`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.1.8)，含 macOS Apple Silicon 与 Windows x64 安装包。`main` 已合并 Quick Deploy [#28](https://github.com/Jia-Ethan/keysmith-switch/pull/28)；`v0.1.9` 仍在发布准备阶段，没有本版 tag、安装包或公共 feed。此文下方 `v0.1.3`／`v0.1.4` 的验证记录是历史记录，不代表 `v0.1.9` 已通过相同门槛。
 
 ## 产品状态
 
+- Quick Deploy 可将用户粘贴的正文保存到本地库，预览计划后确认部署；默认不抓取兄弟仓库的远程提示词。当前仍由四个随包提供的 legacy adapter 执行写入；Agent registry 与外部 adapter 尚未实现。
 - 四工具独立提示词库、Markdown 可重建索引、SQLite 元数据、历史、标签、激活状态和跨工具复制已实现。
 - 激活、停用、恢复、清除数据和官方 CLI 操作保留计划、确认、执行、失败保留与恢复门禁。
 - 提示词详情与编辑使用独立页面，保留脏状态保护、键盘与无障碍行为。
