@@ -5,7 +5,7 @@ use serde_json::json;
 use crate::adapter::{
     check_adapter_version, run_adapter_with, AdapterCommand, AdapterOptions, Envelope,
 };
-use crate::db::Store;
+use crate::db::{markdown::content_sha, Store};
 use crate::diff::{change_summary, unified_diff};
 use crate::error::{Error, Result};
 use crate::lock::HomeLock;
@@ -14,6 +14,29 @@ use crate::models::{
     OperationKind, OperationResult, OperationStatus, PlanActivateInput, PlanDeactivateInput,
     PromptDetail, PromptVersion, RebuildReport, Scope, ToolKind, ToolStatus, UpdatePromptInput,
 };
+use crate::paths::atomic_write;
+
+// Adapter inputs are raw prompt text. Library Markdown has Switch front matter
+// and must never be passed directly to a target Agent. A deterministic path
+// keeps Grok's preview token stable, while Drop removes the transient file.
+struct AdapterPromptFile(PathBuf);
+
+impl Drop for AdapterPromptFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+fn write_adapter_prompt(prompt: &PromptDetail) -> Result<AdapterPromptFile> {
+    if content_sha(&prompt.content) != prompt.sha256 {
+        return Err(Error::user_cancel(
+            "prompt changed since last save; save and preview again",
+        ));
+    }
+    let file = prompt.path.with_extension("adapter.txt");
+    atomic_write(&file, &prompt.content)?;
+    Ok(AdapterPromptFile(file))
+}
 
 pub fn create_prompt(store: &Store, input: CreatePromptInput) -> Result<PromptDetail> {
     let _lock = HomeLock::acquire(store.paths())?;
@@ -112,8 +135,9 @@ pub async fn plan_activate(
     }
     validate_scope(prompt.tool, input.scope, input.project_dir.as_deref())?;
     let name = cli_name(&prompt);
+    let adapter_file = write_adapter_prompt(&prompt)?;
     let command = AdapterCommand::PlanActivate {
-        file: prompt.path.clone(),
+        file: adapter_file.0.clone(),
         scope: input.scope,
         project_dir: input.project_dir.clone(),
         name: Some(name.clone()),
@@ -130,6 +154,7 @@ pub async fn plan_activate(
         "name": name,
         "file": prompt.path,
         "fileSha256": prompt.sha256,
+        "promptVersion": prompt.version,
         "runtime": input.runtime,
         "appendFile": input.append_file,
         "maxTokens": input.max_tokens,
@@ -163,11 +188,21 @@ pub async fn confirm_activate(
         .and_then(|value| value.as_str())
         .ok_or_else(|| Error::user_cancel("activate without confirmed plan"))?;
     let prompt = store.get_prompt(prompt_id)?;
+    if prompt.deleted_at.is_some() {
+        return Err(Error::user_cancel(
+            "prompt deleted since preview; preview again",
+        ));
+    }
     let planned_sha = request
         .get("fileSha256")
         .and_then(|value| value.as_str())
         .unwrap_or_default();
-    if planned_sha != prompt.sha256 {
+    if planned_sha != prompt.sha256
+        || request
+            .get("promptVersion")
+            .and_then(|value| value.as_i64())
+            .is_some_and(|version| version != prompt.version)
+    {
         return Err(Error::user_cancel(
             "prompt changed since preview; run plan-activate again",
         ));
@@ -208,8 +243,9 @@ pub async fn confirm_activate(
         .and_then(|value| value.as_str())
         .map(str::to_string)
         .unwrap_or_else(|| cli_name(&prompt));
+    let adapter_file = write_adapter_prompt(&prompt)?;
     let command = AdapterCommand::Activate {
-        file: prompt.path.clone(),
+        file: adapter_file.0.clone(),
         scope,
         project_dir: project_dir.clone(),
         name: Some(name),

@@ -2,125 +2,205 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { resetHarnessStatuses } from "../lib/harnessState";
 
-const deployHarness = vi.fn();
-const removeHarness = vi.fn();
+const createPastedPrompt = vi.fn();
+const planActivate = vi.fn();
+const activate = vi.fn();
+const planDeactivate = vi.fn();
+const deactivate = vi.fn();
 const getHarnessState = vi.fn();
+const listTools = vi.fn();
+const toolStatus = vi.fn();
 
-vi.mock("../api", () => ({
-  deployHarness: (...args: unknown[]) => deployHarness(...args),
-  removeHarness: (...args: unknown[]) => removeHarness(...args),
-  getHarnessState: (...args: unknown[]) => getHarnessState(...args),
+vi.mock("../components/MarkdownEditor", () => ({
+  MarkdownEditor: ({ value, onChange, ariaLabel }: { value: string; onChange: (value: string) => void; ariaLabel?: string }) => (
+    <textarea aria-label={ariaLabel} value={value} onChange={(event) => onChange(event.target.value)} />
+  ),
 }));
 
-describe("HarnessPage", () => {
+vi.mock("../api", () => ({
+  createPastedPrompt: (...args: unknown[]) => createPastedPrompt(...args),
+  planActivate: (...args: unknown[]) => planActivate(...args),
+  activate: (...args: unknown[]) => activate(...args),
+  planDeactivate: (...args: unknown[]) => planDeactivate(...args),
+  deactivate: (...args: unknown[]) => deactivate(...args),
+  getHarnessState: (...args: unknown[]) => getHarnessState(...args),
+  listTools: (...args: unknown[]) => listTools(...args),
+  toolStatus: (...args: unknown[]) => toolStatus(...args),
+}));
+
+const envelope = {
+  schema: "keysmith-switch/adapter-v1",
+  tool: "claude",
+  command: "plan-activate",
+  ok: true,
+  preview: true,
+  available: true,
+  unavailableReason: null,
+  adapterVersion: "7.1",
+  cliPath: null,
+  argv: [],
+  exitCode: 0,
+  status: "inactive",
+  recoveryRequired: false,
+  scopes: [],
+  targetPaths: [],
+  plannedFiles: [],
+  backups: [],
+  conflicts: [],
+  warnings: [],
+  blockers: [],
+  currentFingerprint: null,
+  targetFingerprint: null,
+  doctor: { ok: true, checks: [] },
+  reloadRequired: false,
+  reloadHint: null,
+  error: null,
+  redactedStderr: "",
+} as const;
+
+function setup() {
+  listTools.mockResolvedValue({
+    tools: [
+      {
+        id: "claude",
+        name: "Claude Code",
+        adapterVersion: "7.1",
+        available: true,
+        unavailableReason: null,
+        supportedScopes: ["user", "project", "local"],
+        cliPath: null,
+      },
+      {
+        id: "codex",
+        name: "Codex",
+        adapterVersion: "0.3.8",
+        available: true,
+        unavailableReason: null,
+        supportedScopes: ["user"],
+        cliPath: null,
+      },
+    ],
+  });
+  toolStatus.mockResolvedValue({ ...envelope, tool: "claude", scopes: [{ id: "project", supported: true, reason: null }] });
+  getHarnessState.mockResolvedValue({ tool: "codex", deployed: false, error: null });
+  createPastedPrompt.mockResolvedValue({ id: "prompt-1", title: "My rules" });
+  planActivate.mockResolvedValue({ operationId: "op-1", envelope });
+  activate.mockResolvedValue({ envelope: { ...envelope, ok: true, preview: false, command: "activate" } });
+  planDeactivate.mockResolvedValue({ operationId: "op-2", envelope: { ...envelope, command: "plan-deactivate" } });
+  deactivate.mockResolvedValue({ envelope: { ...envelope, ok: true, preview: false, command: "deactivate" } });
+}
+
+describe("Quick Deploy page", () => {
   beforeEach(() => {
-    // The store remembers for a whole app run, which in a test file means it
-    // would leak from one case into the next.
     resetHarnessStatuses();
-    deployHarness.mockReset();
-    removeHarness.mockReset();
-    getHarnessState.mockReset();
-    getHarnessState.mockResolvedValue({ tool: "claude", deployed: false, error: null });
+    vi.clearAllMocks();
+    setup();
   });
 
-  it("reads the machine and shows only deploy when nothing is deployed", async () => {
+  it("renders an editable prompt form and reads the machine once per run", async () => {
+    const { HarnessPage } = await import("./HarnessPage");
+    const { unmount } = render(<HarnessPage tool="codex" />);
+    expect(await screen.findByRole("heading", { name: "快速部署" })).toBeInTheDocument();
+    await waitFor(() => expect(getHarnessState).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId("quick-deploy-title")).toHaveValue("粘贴的提示词");
+    expect(screen.getByRole("textbox", { name: "提示词内容" })).toBeInTheDocument();
+    expect(screen.getByTestId("quick-deploy-submit")).toHaveTextContent("生成部署预览");
+    unmount();
+    render(<HarnessPage tool="codex" />);
+    expect(getHarnessState).toHaveBeenCalledTimes(1);
+  });
+
+  it("requires pasted content before creating a prompt", async () => {
     const { HarnessPage } = await import("./HarnessPage");
     render(<HarnessPage tool="codex" />);
-    expect(screen.getByRole("heading", { name: "Codex" })).toBeInTheDocument();
-    expect(await screen.findByTestId("harness-deploy")).toHaveTextContent("部署");
-    expect(screen.getByTestId("harness-status")).toHaveTextContent("未部署");
-    expect(screen.queryByTestId("harness-remove")).not.toBeInTheDocument();
-    expect(getHarnessState).toHaveBeenCalledWith("codex");
-    expect(screen.queryByTestId("prompt-search")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("prompt-new")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("prompt-sort")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("scope-bar")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("quick-deploy-submit"));
+    expect(createPastedPrompt).not.toHaveBeenCalled();
+    expect(screen.getByTestId("quick-deploy-status")).toHaveTextContent("请输入标题和提示词内容。");
   });
 
-  it("shows only remove when the machine is already deployed", async () => {
-    getHarnessState.mockResolvedValue({ tool: "zcode", deployed: true, error: null });
+  it("saves, previews, and confirms a pasted prompt", async () => {
     const { HarnessPage } = await import("./HarnessPage");
-    render(<HarnessPage tool="zcode" />);
-    expect(await screen.findByTestId("harness-remove")).toHaveTextContent("卸载");
-    expect(screen.getByTestId("harness-status")).toHaveTextContent("已部署");
-    expect(screen.queryByTestId("harness-deploy")).not.toBeInTheDocument();
+    render(<HarnessPage tool="codex" />);
+    fireEvent.change(screen.getByTestId("quick-deploy-title"), { target: { value: "My rules" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "提示词内容" }), { target: { value: "Be concise." } });
+    fireEvent.click(screen.getByTestId("quick-deploy-submit"));
+    await waitFor(() => expect(createPastedPrompt).toHaveBeenCalledWith({ tool: "codex", title: "My rules", content: "Be concise." }));
+    expect(planActivate).toHaveBeenCalledWith({ promptId: "prompt-1", scope: "user", projectDir: undefined });
+    fireEvent.click(await screen.findByTestId("quick-deploy-confirm"));
+    await waitFor(() => expect(activate).toHaveBeenCalledWith("op-1"));
+    await waitFor(() => expect(screen.getByTestId("quick-deploy-remove")).toBeInTheDocument());
+    expect(getHarnessState).toHaveBeenCalledTimes(1);
   });
 
-  it("confirms once, shows busy on the control, then success, and ignores a second click", async () => {
-    let release: (value: { ok: boolean; tool: string; action: string; promptId: null; error: null }) => void =
-      () => undefined;
-    deployHarness.mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          release = resolve;
-        }),
-    );
+  it("shows remove after a deployed state and uses the standard deactivation plan", async () => {
+    getHarnessState.mockResolvedValue({ tool: "codex", deployed: true, error: null });
     const { HarnessPage } = await import("./HarnessPage");
-    render(<HarnessPage tool="claude" />);
-
-    fireEvent.click(await screen.findByTestId("harness-deploy"));
-    const confirm = await screen.findByTestId("harness-confirm");
-    fireEvent.click(confirm);
-
-    await waitFor(() => {
-      expect(screen.getByTestId("harness-deploy")).toHaveAttribute("data-phase", "busy");
-    });
-    expect(screen.getByTestId("harness-deploy")).toBeDisabled();
-    fireEvent.click(screen.getByTestId("harness-deploy"));
-    expect(deployHarness).toHaveBeenCalledTimes(1);
-    expect(deployHarness).toHaveBeenCalledWith("claude");
-    expect(screen.queryByTestId("harness-remove")).not.toBeInTheDocument();
-
-    release({ ok: true, tool: "claude", action: "deploy", promptId: null, error: null });
-    await waitFor(() => {
-      expect(screen.getByTestId("harness-remove")).toHaveAttribute("data-phase", "success");
-    });
-    expect(screen.getByTestId("harness-status")).toHaveTextContent("已部署");
-    expect(screen.queryByTestId("harness-deploy")).not.toBeInTheDocument();
+    render(<HarnessPage tool="codex" />);
+    fireEvent.click(await screen.findByTestId("quick-deploy-remove"));
+    expect(await screen.findByTestId("quick-deploy-confirm")).toBeInTheDocument();
+    expect(planDeactivate).toHaveBeenCalledWith({ tool: "codex", scope: "user", projectDir: undefined });
   });
 
-  it("holds the failure beside the same button and does not reveal the other action", async () => {
-    getHarnessState.mockResolvedValue({ tool: "grok", deployed: true, error: null });
-    removeHarness.mockResolvedValue({
-      ok: false,
-      tool: "grok",
-      action: "remove",
-      promptId: null,
-      error: "no audited latest feed",
-    });
+  it("blocks a preview with adapter blockers before execution", async () => {
+    planActivate.mockResolvedValue({ operationId: "blocked", envelope: { ...envelope, ok: false, blockers: ["conflict"] } });
     const { HarnessPage } = await import("./HarnessPage");
-    render(<HarnessPage tool="grok" />);
-
-    fireEvent.click(await screen.findByTestId("harness-remove"));
-    const confirm = await screen.findByTestId("harness-confirm");
-    fireEvent.click(confirm);
-
-    await waitFor(() => {
-      expect(screen.getByTestId("harness-remove")).toHaveAttribute("data-phase", "failure");
-    });
-    expect(screen.getByTestId("harness-remove")).toHaveTextContent("重试");
-    expect(screen.getByTestId("harness-status")).toHaveTextContent("no audited latest feed");
-    expect(screen.queryByTestId("harness-deploy")).not.toBeInTheDocument();
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    render(<HarnessPage tool="codex" />);
+    fireEvent.change(screen.getByTestId("quick-deploy-title"), { target: { value: "My rules" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "提示词内容" }), { target: { value: "Be concise." } });
+    fireEvent.click(screen.getByTestId("quick-deploy-submit"));
+    const confirm = await screen.findByTestId("quick-deploy-confirm");
+    expect(confirm).toBeDisabled();
+    expect(activate).not.toHaveBeenCalled();
   });
 
-  it("returns to deploy after a successful remove", async () => {
-    getHarnessState.mockResolvedValue({ tool: "claude", deployed: true, error: null });
-    removeHarness.mockResolvedValue({
-      ok: true,
-      tool: "claude",
-      action: "remove",
-      promptId: null,
-      error: null,
-    });
+  it("keeps a saved draft clean after preview cancellation and failed retry", async () => {
+    const { HarnessPage } = await import("./HarnessPage");
+    const onDirtyChange = vi.fn();
+    render(<HarnessPage tool="codex" onDirtyChange={onDirtyChange} />);
+    fireEvent.change(screen.getByRole("textbox", { name: "提示词内容" }), { target: { value: "Be concise." } });
+    await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(true));
+    fireEvent.click(screen.getByTestId("quick-deploy-submit"));
+    fireEvent.click(await screen.findByRole("button", { name: "取消" }));
+    await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
+    planActivate.mockRejectedValueOnce(new Error("preview unavailable"));
+    fireEvent.click(screen.getByTestId("quick-deploy-submit"));
+    await waitFor(() => expect(planActivate).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(false));
+    expect(createPastedPrompt).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows reused library metadata in the confirmation", async () => {
+    createPastedPrompt.mockResolvedValue({ id: "existing-1", title: "Original import" });
+    const { HarnessPage } = await import("./HarnessPage");
+    render(<HarnessPage tool="codex" />);
+    fireEvent.change(screen.getByTestId("quick-deploy-title"), { target: { value: "New title" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "提示词内容" }), { target: { value: "Be concise." } });
+    fireEvent.click(screen.getByTestId("quick-deploy-submit"));
+    await waitFor(() => expect(planActivate).toHaveBeenCalledWith({ promptId: "existing-1", scope: "user", projectDir: undefined }));
+    expect(screen.getByRole("dialog")).toHaveTextContent("Original import");
+  });
+
+  it("refreshes user status explicitly without a second initial read", async () => {
+    const { HarnessPage } = await import("./HarnessPage");
+    render(<HarnessPage tool="codex" />);
+    await waitFor(() => expect(screen.getByTestId("quick-deploy-status")).toHaveTextContent("当前未部署"));
+    expect(getHarnessState).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(screen.getByTestId("harness-refresh")).toBeEnabled());
+    getHarnessState.mockResolvedValue({ tool: "codex", deployed: true, error: null });
+    fireEvent.click(screen.getByTestId("harness-refresh"));
+    await waitFor(() => expect(getHarnessState).toHaveBeenCalledTimes(2));
+    expect(await screen.findByTestId("quick-deploy-remove")).toBeInTheDocument();
+  });
+
+  it("supports project scope with an explicit directory", async () => {
     const { HarnessPage } = await import("./HarnessPage");
     render(<HarnessPage tool="claude" />);
-    fireEvent.click(await screen.findByTestId("harness-remove"));
-    fireEvent.click(await screen.findByTestId("harness-confirm"));
-    await waitFor(() => {
-      expect(screen.getByTestId("harness-deploy")).toHaveTextContent("部署");
-    });
-    expect(screen.getByTestId("harness-status")).toHaveTextContent("未部署");
-    expect(screen.queryByTestId("harness-remove")).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("radiogroup", { name: "当前目标范围" })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("radio", { name: "项目" }));
+    fireEvent.change(screen.getByTestId("scope-project-dir"), { target: { value: "/tmp/example" } });
+    fireEvent.change(screen.getByTestId("quick-deploy-title"), { target: { value: "Project rules" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "提示词内容" }), { target: { value: "Use tests." } });
+    fireEvent.click(screen.getByTestId("quick-deploy-submit"));
+    await waitFor(() => expect(planActivate).toHaveBeenCalledWith({ promptId: "prompt-1", scope: "project", projectDir: "/tmp/example" }));
   });
 });

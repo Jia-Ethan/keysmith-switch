@@ -89,6 +89,14 @@ export function createPrompt(input: {
   return call("create_prompt", input);
 }
 
+export function createPastedPrompt(input: {
+  tool: ToolId;
+  title: string;
+  content: string;
+}): Promise<PromptDetail> {
+  return call("create_pasted_prompt", input);
+}
+
 export function updatePrompt(input: {
   id: string;
   title?: string;
@@ -171,10 +179,6 @@ export interface HarnessState {
 
 export function getHarnessState(tool: ToolId): Promise<HarnessState> {
   return call("harness_state", { tool });
-}
-
-export function deployHarness(tool: ToolId): Promise<HarnessOutcome> {
-  return call("deploy_harness", { tool });
 }
 
 export function removeHarness(tool: ToolId): Promise<HarnessOutcome> {

@@ -118,7 +118,14 @@ export function App() {
         ) : null}
         {visiblePage.kind === "harness" ? (
           <div className="min-h-0 flex-1">
-            <HarnessPage tool={visiblePage.tool} onDirtyChange={setDirty} />
+            <HarnessPage
+              tool={visiblePage.tool}
+              settings={settingsState.settings}
+              toast={toast}
+              onRememberProject={(dir) => void rememberProject(dir)}
+              onNavigate={navigate}
+              onDirtyChange={setDirty}
+            />
           </div>
         ) : null}
         {visiblePage.kind === "tool" ? (

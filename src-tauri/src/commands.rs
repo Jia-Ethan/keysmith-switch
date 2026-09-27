@@ -437,6 +437,18 @@ pub fn create_prompt(
 }
 
 #[tauri::command(rename_all = "camelCase")]
+pub fn create_pasted_prompt(
+    state: State<'_, AppState>,
+    tool: String,
+    title: String,
+    content: String,
+) -> Result<UiPromptDetail> {
+    let tool = parse_tool(&tool)?;
+    let id = harness::store_pasted_prompt(&state.store, tool, &title, &content)?;
+    detail_from_store(&state.store, &id)
+}
+
+#[tauri::command(rename_all = "camelCase")]
 pub fn update_prompt(
     state: State<'_, AppState>,
     id: String,
@@ -595,11 +607,6 @@ pub async fn deactivate(state: State<'_, AppState>, operation_id: String) -> Res
 #[tauri::command(rename_all = "camelCase")]
 pub async fn harness_state(state: State<'_, AppState>, tool: String) -> Result<HarnessState> {
     harness::harness_state(&state.store, parse_tool(&tool)?, &opts()).await
-}
-
-#[tauri::command(rename_all = "camelCase")]
-pub async fn deploy_harness(state: State<'_, AppState>, tool: String) -> Result<HarnessOutcome> {
-    harness::deploy_harness(&state.store, parse_tool(&tool)?, &opts()).await
 }
 
 #[tauri::command(rename_all = "camelCase")]

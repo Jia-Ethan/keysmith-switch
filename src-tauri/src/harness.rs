@@ -1,11 +1,8 @@
-//! Tool-level deploy and remove for the four Keysmith harnesses.
+//! Prompt deployment helpers.
 //!
-//! Deploy fetches the current default prompt from that tool's upstream
-//! repository, stores it with the existing prompt library, then runs the
-//! existing plan/confirm activate path. Remove runs the existing
-//! plan/confirm deactivate path at user scope. Sidecar argv is unchanged.
-
-use std::time::Duration;
+//! Quick Deploy accepts content supplied by the user and then uses the normal
+//! prompt-library activation lifecycle. The legacy harness entry points remain
+//! for compatibility, but they never fetch a remote default prompt.
 
 use serde::{Deserialize, Serialize};
 
@@ -13,58 +10,35 @@ use crate::adapter::AdapterOptions;
 use crate::db::markdown::content_sha;
 use crate::db::Store;
 use crate::error::{Error, Result};
+use crate::lock::HomeLock;
 use crate::models::{
-    CreatePromptInput, PlanActivateInput, PlanDeactivateInput, PromptSort, Scope, ToolKind,
-    ToolStatus,
+    PlanActivateInput, PlanDeactivateInput, PromptSort, Scope, ToolKind, ToolStatus,
 };
 use crate::ops::{self, confirm_activate, confirm_deactivate, plan_activate, plan_deactivate};
 
 pub const MAX_PROMPT_BYTES: usize = 512 * 1024;
-const FETCH_TIMEOUT: Duration = Duration::from_secs(20);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HarnessSource {
-    pub repo: &'static str,
-    pub branch: &'static str,
-    pub path: &'static str,
+    pub tool: ToolKind,
+    pub title: &'static str,
 }
 
 impl HarnessSource {
-    pub fn url(self) -> String {
-        format!(
-            "https://raw.githubusercontent.com/Jia-Ethan/{}/{}/{}",
-            self.repo, self.branch, self.path
-        )
-    }
-
     pub fn title(self) -> &'static str {
-        self.path.rsplit('/').next().unwrap_or(self.path)
+        self.title
     }
 }
 
+/// Legacy labels retained for compatibility. They are not remote sources.
 pub fn harness_source(tool: ToolKind) -> HarnessSource {
-    match tool {
-        ToolKind::Claude => HarnessSource {
-            repo: "claude-keysmith",
-            branch: "main",
-            path: "examples/claude-project-rules.md",
-        },
-        ToolKind::Codex => HarnessSource {
-            repo: "codex-keysmith",
-            branch: "main",
-            path: "examples/gpt-overlay.md",
-        },
-        ToolKind::Grok => HarnessSource {
-            repo: "grok-keysmith",
-            branch: "main",
-            path: "examples/grok-unrestricted.md",
-        },
-        ToolKind::Zcode => HarnessSource {
-            repo: "zcode-keysmith",
-            branch: "master",
-            path: "examples/system-role.md",
-        },
-    }
+    let title = match tool {
+        ToolKind::Claude => "Claude prompt",
+        ToolKind::Codex => "Codex prompt",
+        ToolKind::Grok => "Grok prompt",
+        ToolKind::Zcode => "ZCode prompt",
+    };
+    HarnessSource { tool, title }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -77,8 +51,6 @@ pub struct HarnessOutcome {
     pub error: Option<String>,
 }
 
-/// Machine state for one tool. `deployed` is the only fact the first screen
-/// uses to choose between the deploy button and the remove button.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HarnessState {
@@ -120,76 +92,72 @@ pub enum HarnessAction {
     Remove,
 }
 
-pub async fn fetch_harness_prompt(tool: ToolKind) -> Result<String> {
-    let url = harness_source(tool).url();
-    fetch_prompt_url(&url).await
-}
-
-pub async fn fetch_prompt_url(url: &str) -> Result<String> {
-    if !(url.starts_with("https://") || url.starts_with("http://")) {
-        return Err(Error::invalid("harness prompt url must be http(s)"));
-    }
-    let client = reqwest::Client::builder()
-        .timeout(FETCH_TIMEOUT)
-        .redirect(reqwest::redirect::Policy::limited(3))
-        .build()
-        .map_err(|err| Error::message(format!("harness fetch client: {err}")))?;
-    let response = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|err| Error::command_failed(format!("harness prompt fetch failed: {err}")))?;
-    let status = response.status();
-    if !status.is_success() {
-        return Err(Error::command_failed(format!(
-            "harness prompt fetch returned {status}"
-        )));
-    }
-    let bytes = response
-        .bytes()
-        .await
-        .map_err(|err| Error::command_failed(format!("harness prompt body: {err}")))?;
-    accept_prompt_body(&bytes)
-}
-
 pub fn accept_prompt_body(bytes: &[u8]) -> Result<String> {
     if bytes.is_empty() {
-        return Err(Error::command_failed("harness prompt body is empty"));
+        return Err(Error::command_failed("prompt body is empty"));
     }
     if bytes.len() > MAX_PROMPT_BYTES {
         return Err(Error::command_failed(format!(
-            "harness prompt body exceeds {MAX_PROMPT_BYTES} bytes"
+            "prompt body exceeds {MAX_PROMPT_BYTES} bytes"
         )));
     }
     let text = String::from_utf8(bytes.to_vec())
-        .map_err(|_| Error::command_failed("harness prompt body is not utf-8"))?;
+        .map_err(|_| Error::command_failed("prompt body is not utf-8"))?;
     if text.trim().is_empty() {
-        return Err(Error::command_failed("harness prompt body is empty"));
+        return Err(Error::command_failed("prompt body is empty"));
     }
     Ok(text)
 }
 
-/// Store `body` for `tool`. Reuse the newest live prompt with the same content
-/// sha instead of inserting another copy.
-pub fn store_harness_prompt(store: &Store, tool: ToolKind, body: &str) -> Result<String> {
-    let sha = content_sha(body);
+fn store_prompt_body(
+    store: &Store,
+    tool: ToolKind,
+    title: &str,
+    body: &str,
+    tags: Vec<String>,
+) -> Result<String> {
+    let body = accept_prompt_body(body.as_bytes())?;
+    let title = title.trim();
+    if title.is_empty() {
+        return Err(Error::invalid("prompt title is required"));
+    }
+    // The lookup and insertion must share the home lock. Acquiring it via
+    // ops::create_prompt after the lookup would allow concurrent pastes to
+    // create duplicate entries.
+    let _lock = HomeLock::acquire(store.paths())?;
+    let sha = content_sha(&body);
     if let Some(existing) = store
         .list_prompts(tool, None, None, PromptSort::Updated)?
         .into_iter()
         .find(|item| item.sha256 == sha)
     {
+        // Content identity wins: reusing a library entry never renames or
+        // retags it behind the user's back. The returned detail tells the UI
+        // which existing entry will actually be deployed.
         return Ok(existing.id);
     }
-    let created = ops::create_prompt(
+    let id = uuid::Uuid::new_v4().to_string();
+    store.insert_prompt(&id, tool, title, &body, &tags, false)?;
+    Ok(id)
+}
+
+pub fn store_pasted_prompt(
+    store: &Store,
+    tool: ToolKind,
+    title: &str,
+    body: &str,
+) -> Result<String> {
+    store_prompt_body(store, tool, title, body, vec!["pasted".to_string()])
+}
+
+pub fn store_harness_prompt(store: &Store, tool: ToolKind, body: &str) -> Result<String> {
+    store_prompt_body(
         store,
-        CreatePromptInput {
-            tool,
-            title: harness_source(tool).title().to_string(),
-            content: body.to_string(),
-            tags: vec!["harness".to_string()],
-        },
-    )?;
-    Ok(created.id)
+        tool,
+        harness_source(tool).title(),
+        body,
+        vec!["harness".to_string()],
+    )
 }
 
 pub async fn deploy_harness(
@@ -211,10 +179,13 @@ pub async fn deploy_harness_with(
     }
     let body = match body {
         Some(body) => accept_prompt_body(body.as_bytes())?,
-        None => match fetch_harness_prompt(tool).await {
-            Ok(body) => body,
-            Err(error) => return Ok(failed(tool, HarnessAction::Deploy, error.to_string())),
-        },
+        None => {
+            return Ok(failed(
+                tool,
+                HarnessAction::Deploy,
+                "prompt content is required; paste or import a prompt before deploying",
+            ))
+        }
     };
     let prompt_id = match store_harness_prompt(store, tool, &body) {
         Ok(id) => id,
