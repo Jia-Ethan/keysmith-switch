@@ -10,7 +10,7 @@ Switch 不绑定某一组官方提示词正文。提示词可以来自粘贴，�
 
 ## 状态
 
-当前准备发布 `v0.1.8`。源码在 `main`（`5b48563`，#25）。annotated tag、安装包和公共 feed 还没发出。上一份已发布的稳定版是 [`v0.1.7`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.1.7)。
+公开稳定版是 [`v0.1.8`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.1.8)。`main` 已合并 Quick Deploy [#28](https://github.com/Jia-Ethan/keysmith-switch/pull/28)；`v0.1.9` 正在准备中，尚未创建该版本的 tag、安装包或公共 feed。不要把准备分支当作可下载版本。
 
 `v0.1.4` 接替四个独立桌面安装包。之后只维护 Keysmith Switch。已发出的 Claude、Grok、Codex、Zcode 桌面包保持原样，不撤回，也不改成各自仓库的 Latest。
 
@@ -21,7 +21,7 @@ Switch 不绑定某一组官方提示词正文。提示词可以来自粘贴，�
 | Codex | [`desktop-v0.6.0-beta.2`](https://github.com/Jia-Ethan/codex-keysmith/releases/tag/desktop-v0.6.0-beta.2) | v0.6.0 |
 | Zcode | [`desktop-v0.1.0-beta.1`](https://github.com/Jia-Ethan/zcode-keysmith/releases/tag/desktop-v0.1.0-beta.1)（prerelease） | 0.3.2 |
 
-已安装 `v0.1.3` 及以上的 Switch 可以在 `v0.1.8` 发出后从应用内更新。`v0.1.1` 内置测试 updater 公钥，仍须手动安装。范围见 [keysmith-switch#6](https://github.com/Jia-Ethan/keysmith-switch/issues/6)。
+已安装 `v0.1.3` 及以上的 Switch 可以在应用内检查更新到已发布的 `v0.1.8`；`v0.1.9` 仅在正式发布后才会进入更新渠道。`v0.1.1` 内置测试 updater 公钥，仍须手动安装。范围见 [keysmith-switch#6](https://github.com/Jia-Ethan/keysmith-switch/issues/6)。
 
 公开 updater 仓库 [`Jia-Ethan/keysmith-switch-releases`](https://github.com/Jia-Ethan/keysmith-switch-releases)、来源验证、生产 updater 签名与受保护发布环境已经启用。
 
@@ -33,12 +33,12 @@ Switch 不绑定某一组官方提示词正文。提示词可以来自粘贴，�
 
 ## 下载
 
-当前可下载的稳定版是 [`v0.1.7`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.1.7)。`v0.1.8` 的安装包要等这次发布完成。
+当前可下载的稳定版是 [`v0.1.8`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.1.8)。`v0.1.9` 的安装包尚未发布。
 
-- macOS Apple Silicon（M 系列，含 Mac Studio M4 Max）：`Keysmith.Switch_0.1.7_aarch64.dmg`
-- Windows x64：`Keysmith.Switch_0.1.7_x64-setup.exe`
+- macOS Apple Silicon（M 系列，含 Mac Studio M4 Max）：`Keysmith.Switch_0.1.8_aarch64.dmg`
+- Windows x64：`Keysmith.Switch_0.1.8_x64-setup.exe`
 
-`v0.1.1` 用户需要手动安装 `v0.1.3` 或更新版本才能完成 updater bootstrap。已安装 `v0.1.3` 及以上可以在 `v0.1.8` 发出后应用内更新。
+`v0.1.1` 用户需要手动安装 `v0.1.3` 或更新版本才能完成 updater bootstrap。已安装 `v0.1.3` 及以上的用户可以在应用内检查更新；未来版本仍需完成独立发布流程。
 
 ## 开发
 
