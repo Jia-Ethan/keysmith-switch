@@ -5,18 +5,15 @@ import { Feedback } from "./Feedback";
 
 const submitFeedback = vi.fn();
 const openExternal = vi.fn();
-const pickFiles = vi.fn();
 vi.mock("../api", () => ({ submitFeedback: (...args: unknown[]) => submitFeedback(...args) }));
 vi.mock("../lib/runtime", () => ({
   openExternal: (...args: unknown[]) => openExternal(...args),
-  pickFiles: (...args: unknown[]) => pickFiles(...args),
 }));
 
 describe("Feedback", () => {
   beforeEach(() => {
     applyLanguage("en");
     vi.clearAllMocks();
-    pickFiles.mockResolvedValue([]);
   });
 
   it("requires both feature fields and shows a created issue link", async () => {
@@ -34,23 +31,34 @@ describe("Feedback", () => {
     expect(openExternal).toHaveBeenCalledWith("https://github.com/Jia-Ethan/keysmith-switch/issues/42");
   });
 
-  it("keeps a bug draft and screenshot for the manual browser handoff", async () => {
-    pickFiles.mockResolvedValue(["/tmp/screenshot.png"]);
-    submitFeedback.mockResolvedValue({ issueUrl: null, fallbackUrl: "https://github.com/Jia-Ethan/keysmith-switch/issues/new?title=Bug", reason: "screenshotsManual" });
+  it("opens the prefilled issue form in the browser and keeps the draft", async () => {
+    const form = "https://github.com/Jia-Ethan/keysmith-switch/issues/new?template=bug-report.yml&title=Bug";
+    submitFeedback.mockResolvedValue({ issueUrl: null, fallbackUrl: form, reason: "browser", truncated: false });
     render(<Feedback />);
     fireEvent.click(screen.getByRole("button", { name: "Report a problem" }));
+    expect(screen.getByTestId("feedback-how")).toHaveTextContent("prefilled GitHub form");
+    expect(screen.getByTestId("feedback-screenshot-tip")).toBeInTheDocument();
     fireEvent.change(screen.getByRole("textbox", { name: "What happened (required)" }), { target: { value: "A button fails" } });
-    fireEvent.click(screen.getByRole("button", { name: "Add screenshot" }));
-    expect(await screen.findByText("screenshot.png")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Submit to GitHub" }));
-    expect(await screen.findByText(/not a missing GitHub CLI/)).toBeInTheDocument();
-    expect(submitFeedback).toHaveBeenCalledWith({ kind: "bug", description: "A button fails", solution: "", contact: "", screenshots: ["/tmp/screenshot.png"] });
-    fireEvent.click(screen.getByRole("button", { name: "Open prefilled issue" }));
-    expect(openExternal).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(openExternal).toHaveBeenCalledWith(form));
+    expect(submitFeedback).toHaveBeenCalledWith({ kind: "bug", description: "A button fails", solution: "", contact: "", screenshots: [] });
+    expect(await screen.findByText(/prefilled form is open in your browser/)).toBeInTheDocument();
+    expect(screen.queryByText(/only the first part was prefilled/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Open the form again" }));
+    expect(openExternal).toHaveBeenCalledTimes(2);
     fireEvent.click(within(screen.getByRole("dialog")).getAllByRole("button", { name: "Close" })[0]);
     fireEvent.click(screen.getByRole("button", { name: "Report a problem" }));
     expect(screen.getByRole("textbox", { name: "What happened (required)" })).toHaveValue("A button fails");
-    expect(screen.getByText("screenshot.png")).toBeInTheDocument();
+  });
+
+  it("says when a long draft was only partly prefilled", async () => {
+    submitFeedback.mockResolvedValue({ issueUrl: null, fallbackUrl: "https://github.com/x", reason: "createFailed", truncated: true });
+    render(<Feedback />);
+    fireEvent.click(screen.getByRole("button", { name: "Report a problem" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "What happened (required)" }), { target: { value: "Long" } });
+    fireEvent.click(screen.getByRole("button", { name: "Submit to GitHub" }));
+    expect(await screen.findByText(/could not create the issue/)).toBeInTheDocument();
+    expect(screen.getByText(/only the first part was prefilled/)).toBeInTheDocument();
   });
 
   it("retains the draft on a CLI failure", async () => {
