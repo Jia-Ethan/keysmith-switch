@@ -10,7 +10,7 @@ Switch 不绑定某一组官方提示词正文。提示词可以来自粘贴，�
 
 ## 状态
 
-公开稳定版是 [`v0.2.0`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.2.0)，包含界面改版 [#30](https://github.com/Jia-Ethan/keysmith-switch/pull/30)；`v0.2.1`（反馈表单与设置图标修复，[#34](https://github.com/Jia-Ethan/keysmith-switch/pull/34)）正在准备中，尚未创建 tag 或安装包。上一版 [`v0.1.9`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.1.9) 带来了 Quick Deploy [#28](https://github.com/Jia-Ethan/keysmith-switch/pull/28)。
+公开稳定版是 [`v0.2.1`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.2.1)，修复反馈表单并更换设置图标（[#34](https://github.com/Jia-Ethan/keysmith-switch/pull/34)）；[`v0.2.0`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.2.0) 带来了界面改版 [#30](https://github.com/Jia-Ethan/keysmith-switch/pull/30)。上一版 [`v0.1.9`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.1.9) 带来了 Quick Deploy [#28](https://github.com/Jia-Ethan/keysmith-switch/pull/28)。
 
 `v0.1.4` 接替四个独立桌面安装包。之后只维护 Keysmith Switch。已发出的 Claude、Grok、Codex、Zcode 桌面包保持原样，不撤回，也不改成各自仓库的 Latest。
 
@@ -21,7 +21,7 @@ Switch 不绑定某一组官方提示词正文。提示词可以来自粘贴，�
 | Codex | [`desktop-v0.6.0-beta.2`](https://github.com/Jia-Ethan/codex-keysmith/releases/tag/desktop-v0.6.0-beta.2) | v0.6.0 |
 | Zcode | [`desktop-v0.1.0-beta.1`](https://github.com/Jia-Ethan/zcode-keysmith/releases/tag/desktop-v0.1.0-beta.1)（prerelease） | 0.3.2 |
 
-已安装 `v0.1.3` 及以上的 Switch 可以在应用内检查更新到 `v0.2.0`。`v0.1.1` 内置测试 updater 公钥，仍须手动安装。范围见 [keysmith-switch#6](https://github.com/Jia-Ethan/keysmith-switch/issues/6)。
+已安装 `v0.1.3` 及以上的 Switch 可以在应用内检查更新到 `v0.2.1`。`v0.1.1` 内置测试 updater 公钥，仍须手动安装。范围见 [keysmith-switch#6](https://github.com/Jia-Ethan/keysmith-switch/issues/6)。
 
 公开 updater 仓库 [`Jia-Ethan/keysmith-switch-releases`](https://github.com/Jia-Ethan/keysmith-switch-releases)、来源验证、生产 updater 签名与受保护发布环境已经启用。
 
@@ -33,10 +33,10 @@ Switch 不绑定某一组官方提示词正文。提示词可以来自粘贴，�
 
 ## 下载
 
-当前可下载的稳定版是 [`v0.2.0`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.2.0)。
+当前可下载的稳定版是 [`v0.2.1`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.2.1)。
 
-- macOS Apple Silicon（M 系列，含 Mac Studio M4 Max）：`Keysmith.Switch_0.2.0_aarch64.dmg`
-- Windows x64：`Keysmith.Switch_0.2.0_x64-setup.exe`
+- macOS Apple Silicon（M 系列，含 Mac Studio M4 Max）：`Keysmith.Switch_0.2.1_aarch64.dmg`
+- Windows x64：`Keysmith.Switch_0.2.1_x64-setup.exe`
 
 `v0.1.1` 用户需要手动安装 `v0.1.3` 或更新版本才能完成 updater bootstrap。已安装 `v0.1.3` 及以上的用户可以在应用内检查更新；未来版本仍需完成独立发布流程。
 
