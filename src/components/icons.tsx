@@ -43,11 +43,12 @@ export function IconClose(props: IconProps) {
   );
 }
 
+/** Eight-tooth gear with a hub; drawn for this set, not copied from an icon library. */
 export function IconSettings(props: IconProps) {
   return (
     <Svg {...props}>
-      <circle cx="8" cy="8" r="2" />
-      <path d="M8 1.7v1.55M8 12.75v1.55M4.55 2.85l.78 1.35M10.67 11.8l.78 1.35M2.85 4.55l1.35.78M11.8 10.67l1.35.78M1.7 8h1.55M12.75 8h1.55M2.85 11.45l1.35-.78M11.8 5.33l1.35-.78M4.55 13.15l.78-1.35M10.67 4.2l.78-1.35" />
+      <path d="M7.16 2.97 L7.33 1.43 L8.67 1.43 L8.84 2.97 L10.97 3.85 L12.17 2.88 L13.12 3.83 L12.15 5.03 L13.03 7.16 L14.57 7.33 L14.57 8.67 L13.03 8.84 L12.15 10.97 L13.12 12.17 L12.17 13.12 L10.97 12.15 L8.84 13.03 L8.67 14.57 L7.33 14.57 L7.16 13.03 L5.03 12.15 L3.83 13.12 L2.88 12.17 L3.85 10.97 L2.97 8.84 L1.43 8.67 L1.43 7.33 L2.97 7.16 L3.85 5.03 L2.88 3.83 L3.83 2.88 L5.03 3.85Z" />
+      <circle cx="8" cy="8" r="2.1" />
     </Svg>
   );
 }

@@ -1,15 +1,21 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import * as api from "../api";
-import { openExternal, pickFiles } from "../lib/runtime";
+import { openExternal } from "../lib/runtime";
 import type { FeedbackInput, FeedbackResult } from "../types";
-import { IconExternal } from "./icons";
+import { IconExternal, IconInfo } from "./icons";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { Button, Field, Input, SectionLabel, Textarea } from "./ui";
 
 type Kind = FeedbackInput["kind"];
-const EMPTY = { description: "", solution: "", contact: "", screenshots: [] as string[] };
+const EMPTY = { description: "", solution: "", contact: "" };
 
+/**
+ * Feedback goes to the public repository's issue forms. The backend creates
+ * the issue directly when a signed-in GitHub CLI is available; otherwise it
+ * returns the prefilled form, which opens in the browser straight away so the
+ * person reviews and submits it under their own account.
+ */
 export function Feedback() {
   const { t } = useTranslation();
   const [kind, setKind] = useState<Kind | null>(null);
@@ -29,26 +35,19 @@ export function Feedback() {
     setResult(null);
     setError(null);
   };
-  const addScreenshots = async () => {
-    const selected = await pickFiles([{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp"] }]);
-    if (!kind || !selected.length) return;
-    const files = [...new Set([...drafts[kind].screenshots, ...selected])];
-    if (files.length > 3) {
-      setError(t("feedback.screenshotLimit"));
-      return;
-    }
-    patch({ screenshots: files });
-  };
+  const ready = Boolean(kind && draft.description.trim() && (kind !== "feature" || draft.solution.trim()));
   const submit = async () => {
-    if (!kind || !draft.description.trim() || (kind === "feature" && !draft.solution.trim())) return;
+    if (!kind || !ready) return;
     setBusy(true);
     setError(null);
     setResult(null);
     try {
-      const response = await api.submitFeedback({ kind, ...draft });
+      const response = await api.submitFeedback({ kind, ...draft, screenshots: [] });
       setResult(response);
       if (response.issueUrl) {
-        setDrafts((current) => ({ ...current, [kind]: { ...EMPTY, screenshots: [] } }));
+        setDrafts((current) => ({ ...current, [kind]: { ...EMPTY } }));
+      } else if (response.fallbackUrl) {
+        await openExternal(response.fallbackUrl);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : t("feedback.createFailed"));
@@ -72,12 +71,18 @@ export function Feedback() {
         closeLabel={t("common.close")}
         busy={busy}
         wide
-        confirmDisabled={busy || !draft.description.trim() || (kind === "feature" && !draft.solution.trim()) || Boolean(result?.issueUrl)}
+        confirmDisabled={busy || !ready || Boolean(result?.issueUrl)}
         onConfirm={() => void submit()}
         onClose={() => setKind(null)}
       >
         <div className="space-y-4">
-          <p className="text-sm text-muted-foreground">{t("feedback.publicWarning")}</p>
+          <div className="flex items-start gap-2 rounded-xl border border-border bg-muted/50 px-3 py-2 text-[12.5px] leading-relaxed text-muted-foreground">
+            <IconInfo size={14} className="mt-[3px] shrink-0" />
+            <div className="min-w-0 space-y-0.5">
+              <p data-testid="feedback-how">{t("feedback.how")}</p>
+              <p>{t("feedback.publicWarning")}</p>
+            </div>
+          </div>
           <Field label={t(kind === "feature" ? "feedback.requestDescription" : "feedback.problemDescription")}>
             <Textarea value={draft.description} required maxLength={10000} rows={5} onChange={(event) => patch({ description: event.target.value })} />
           </Field>
@@ -86,23 +91,7 @@ export function Feedback() {
               <Textarea value={draft.solution} required maxLength={10000} rows={4} onChange={(event) => patch({ solution: event.target.value })} />
             </Field>
           ) : (
-            <div>
-              <span className="text-sm font-medium text-muted-foreground">{t("feedback.screenshots")}</span>
-              <div className="mt-1 flex flex-wrap items-center gap-2">
-                <Button size="sm" disabled={draft.screenshots.length >= 3} onClick={() => void addScreenshots()}>{t("feedback.addScreenshot")}</Button>
-                <span className="text-xs text-muted-foreground">{t("feedback.screenshotHint")}</span>
-              </div>
-              {draft.screenshots.length ? (
-                <ul className="mt-2 space-y-1 text-sm">
-                  {draft.screenshots.map((path) => (
-                    <li key={path} className="flex min-w-0 items-center gap-2">
-                      <span className="min-w-0 flex-1 truncate" title={path}>{path.split(/[\\/]/).pop()}</span>
-                      <Button size="sm" onClick={() => patch({ screenshots: draft.screenshots.filter((item) => item !== path) })}>{t("feedback.remove")}</Button>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-            </div>
+            <p className="text-[12.5px] text-muted-foreground" data-testid="feedback-screenshot-tip">{t("feedback.screenshotTip")}</p>
           )}
           <Field label={t("feedback.contact")}>
             <Input value={draft.contact} maxLength={500} onChange={(event) => patch({ contact: event.target.value })} />
@@ -116,9 +105,9 @@ export function Feedback() {
           ) : null}
           {result?.fallbackUrl ? (
             <div role="status" className="space-y-2 text-sm">
-              <p>{t(`feedback.${result.reason ?? "createFailed"}`)}</p>
-              {result.reason === "screenshotsManual" ? <p>{t("feedback.manualScreenshot")}</p> : null}
-              <Button size="sm" onClick={() => void openExternal(result.fallbackUrl!)}><IconExternal />{t("feedback.openDraft")}</Button>
+              <p>{t(result.reason === "createFailed" ? "feedback.createFailed" : "feedback.browser")}</p>
+              {result.truncated ? <p className="text-warning">{t("feedback.truncated")}</p> : null}
+              <Button size="sm" onClick={() => void openExternal(result.fallbackUrl!)}><IconExternal />{t("feedback.reopen")}</Button>
             </div>
           ) : null}
         </div>

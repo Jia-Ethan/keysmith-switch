@@ -200,7 +200,10 @@ export interface FeedbackInput {
 export interface FeedbackResult {
   issueUrl: string | null;
   fallbackUrl: string | null;
-  reason: "ghMissing" | "notAuthenticated" | "noPermission" | "screenshotsManual" | "createFailed" | null;
+  /** Why the browser form was used; null when the issue was created directly. */
+  reason: "browser" | "screenshotsManual" | "createFailed" | null;
+  /** A field was shortened to keep the prefilled form URL openable. */
+  truncated?: boolean;
 }
 
 export interface AboutInfo {

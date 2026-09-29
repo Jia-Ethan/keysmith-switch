@@ -28,35 +28,73 @@ pub struct FeedbackInput {
 #[serde(rename_all = "camelCase")]
 pub struct FeedbackResult {
     issue_url: Option<String>,
+    /// The prefilled issue form to open in the browser.
     fallback_url: Option<String>,
     reason: Option<&'static str>,
+    /// A field was shortened to keep the form URL openable.
+    truncated: bool,
 }
 
-fn prepare(input: &FeedbackInput) -> Result<(String, String)> {
+/// Everything needed to file one piece of feedback, either through `gh` or
+/// through the repository's issue form in the browser.
+#[derive(Debug)]
+struct Prepared {
+    title: String,
+    /// Markdown body for `gh issue create`.
+    body: String,
+    /// Issue form template file under `.github/ISSUE_TEMPLATE/`.
+    template: &'static str,
+    /// Issue form field ids and the values to prefill them with.
+    fields: Vec<(&'static str, String)>,
+}
+
+fn platform_label() -> String {
+    format!("{} / {}", std::env::consts::OS, std::env::consts::ARCH)
+}
+
+fn prepare(input: &FeedbackInput) -> Result<Prepared> {
     let description = input.description.trim();
-    if description.is_empty() || description.len() > 10_000 {
+    if description.is_empty() || description.chars().count() > 10_000 {
         return Err(Error::invalid("Description must be 1-10000 characters"));
     }
     let contact = input.contact.as_deref().unwrap_or("").trim();
-    if contact.len() > 500 {
+    if contact.chars().count() > 500 {
         return Err(Error::invalid("Contact must be at most 500 characters"));
     }
     let solution = input.solution.as_deref().unwrap_or("").trim();
-    let (prefix, body) = match input.kind.as_str() {
+    let contact_or_none = if contact.is_empty() {
+        "Not provided"
+    } else {
+        contact
+    };
+    let (prefix, body, template, fields) = match input.kind.as_str() {
         "bug" => (
             "Bug",
             format!(
                 "### Keysmith Switch 版本 / Version\n\n{APP_VERSION}\n\n### 操作系统与架构 / Operating system and architecture\n\n{}\n\n### 操作位置 / Area\n\nother\n\n### 实际发生的问题（含复现步骤和预期结果）/ What happened (include steps and what you expected)\n\n{description}\n\n### 其他信息 / Additional context\n\n{}\n\n### 安全提醒 / Privacy reminder\n\nThis issue is public. Review and remove sensitive information before publishing.",
-                format!("{} / {}", std::env::consts::OS, std::env::consts::ARCH),
-                if contact.is_empty() { "Not provided" } else { contact }
+                platform_label(),
+                contact_or_none
             ),
+            "bug-report.yml",
+            vec![
+                ("keysmith-version", APP_VERSION.to_string()),
+                ("operating-system", platform_label()),
+                ("reproduction", description.to_string()),
+                ("additional-context", contact.to_string()),
+            ],
         ),
-        "feature" if !solution.is_empty() && solution.len() <= 10_000 => (
+        "feature" if !solution.is_empty() && solution.chars().count() <= 10_000 => (
             "Feature",
             format!(
                 "### 需求描述 / Request\n\n{description}\n\n### 期望的解决方案 / Proposed solution\n\n{solution}\n\n### 联系方式 / Contact (optional)\n\n{}\n\n### 安全提醒 / Privacy reminder\n\nThis issue is public. Review and remove sensitive information before publishing.",
-                if contact.is_empty() { "Not provided" } else { contact }
+                contact_or_none
             ),
+            "feature-request.yml",
+            vec![
+                ("request", description.to_string()),
+                ("solution", solution.to_string()),
+                ("contact", contact.to_string()),
+            ],
         ),
         "feature" => return Err(Error::invalid("Solution must be 1-10000 characters")),
         _ => return Err(Error::invalid("Unknown feedback kind")),
@@ -86,19 +124,75 @@ fn prepare(input: &FeedbackInput) -> Result<(String, String)> {
         .unwrap_or(description);
     let summary: String = summary.trim().chars().take(80).collect();
     let title = format!("[{prefix}] {summary}");
-    Ok((title, body))
+    Ok(Prepared {
+        title,
+        body,
+        template,
+        fields: fields
+            .into_iter()
+            .filter(|(_, value)| !value.is_empty())
+            .collect(),
+    })
 }
 
-fn fallback(title: &str, body: &str, reason: &'static str) -> FeedbackResult {
+/// Browsers and GitHub accept long URLs, but not unlimited ones. Keep the
+/// prefilled form comfortably below the point where the page fails to open.
+const MAX_FORM_URL_BYTES: usize = 6_000;
+const TRUNCATION_NOTE: &str = "\n\n…（内容过长，请在此补全 / Truncated, please complete here）";
+
+fn form_url_for(template: &str, title: &str, fields: &[(&str, String)]) -> String {
     let mut url =
         Url::parse("https://github.com/Jia-Ethan/keysmith-switch/issues/new").expect("static URL");
-    url.query_pairs_mut()
-        .append_pair("title", title)
-        .append_pair("body", body);
+    {
+        let mut query = url.query_pairs_mut();
+        query
+            .append_pair("template", template)
+            .append_pair("title", title);
+        for (id, value) in fields {
+            query.append_pair(id, value);
+        }
+    }
+    url.into()
+}
+
+/// The repository's issue form, prefilled. Returns the URL and whether a
+/// field had to be shortened to fit.
+fn issue_form_url(prepared: &Prepared) -> (String, bool) {
+    let mut fields = prepared.fields.clone();
+    let mut truncated = false;
+    loop {
+        let url = form_url_for(prepared.template, &prepared.title, &fields);
+        if url.len() <= MAX_FORM_URL_BYTES {
+            return (url, truncated);
+        }
+        // Shorten the longest field. Percent-encoding can triple a byte and
+        // CJK text is three bytes per character, so cut generously.
+        let Some((_, longest)) = fields.iter_mut().max_by_key(|(_, value)| value.len()) else {
+            return (url, truncated);
+        };
+        let excess = url.len() - MAX_FORM_URL_BYTES;
+        let base: String = longest
+            .strip_suffix(TRUNCATION_NOTE)
+            .unwrap_or(longest)
+            .to_string();
+        let chars = base.chars().count();
+        let cut = (excess / 9).max(32).min(chars);
+        if cut == 0 || chars == 0 {
+            return (url, truncated);
+        }
+        let kept: String = base.chars().take(chars - cut).collect();
+        *longest = format!("{kept}{TRUNCATION_NOTE}");
+        truncated = true;
+    }
+}
+
+fn in_browser(prepared: &Prepared, reason: &'static str) -> FeedbackResult {
+    let (url, truncated) = issue_form_url(prepared);
     FeedbackResult {
         issue_url: None,
-        fallback_url: Some(url.into()),
+        fallback_url: Some(url),
         reason: Some(reason),
+        truncated,
     }
 }
 
@@ -242,33 +336,26 @@ async fn run_gh(args: &[&str], body: Option<&str>) -> std::io::Result<std::proce
     }
 }
 
+/// Files feedback on the public repository.
+///
+/// The issue form in the browser is the default: it needs nothing installed,
+/// the person reviews the prefilled text under their own GitHub account, and
+/// screenshots are dropped straight onto the page. When the GitHub CLI is
+/// installed and signed in, the issue is created directly instead. Any
+/// signed-in account can open an issue on a public repository, so no push
+/// permission is required.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn submit_feedback(input: FeedbackInput) -> Result<FeedbackResult> {
-    let (title, body) = prepare(&input)?;
+    let prepared = prepare(&input)?;
     if !input.screenshots.is_empty() {
-        return Ok(fallback(&title, &body, "screenshotsManual"));
+        return Ok(in_browser(&prepared, "screenshotsManual"));
     }
     if gh_program().is_none() {
-        return Ok(fallback(&title, &body, "ghMissing"));
+        return Ok(in_browser(&prepared, "browser"));
     }
     let auth = run_gh(&["auth", "status", "--hostname", "github.com"], None).await;
     if !auth.is_ok_and(|output| output.status.success()) {
-        return Ok(fallback(&title, &body, "notAuthenticated"));
-    }
-    let permission = run_gh(
-        &[
-            "api",
-            "repos/Jia-Ethan/keysmith-switch",
-            "--jq",
-            ".permissions.push",
-        ],
-        None,
-    )
-    .await;
-    if !permission.is_ok_and(|output| {
-        output.status.success() && String::from_utf8_lossy(&output.stdout).trim() == "true"
-    }) {
-        return Ok(fallback(&title, &body, "noPermission"));
+        return Ok(in_browser(&prepared, "browser"));
     }
     let created = run_gh(
         &[
@@ -277,11 +364,11 @@ pub async fn submit_feedback(input: FeedbackInput) -> Result<FeedbackResult> {
             "--repo",
             REPO,
             "--title",
-            &title,
+            &prepared.title,
             "--body-file",
             "-",
         ],
-        Some(&body),
+        Some(&prepared.body),
     )
     .await;
     if let Ok(output) = created {
@@ -298,11 +385,12 @@ pub async fn submit_feedback(input: FeedbackInput) -> Result<FeedbackResult> {
                     issue_url: Some(link.to_string()),
                     fallback_url: None,
                     reason: None,
+                    truncated: false,
                 });
             }
         }
     }
-    Ok(fallback(&title, &body, "createFailed"))
+    Ok(in_browser(&prepared, "createFailed"))
 }
 
 #[cfg(test)]
@@ -329,16 +417,68 @@ mod tests {
         assert!(prepare(&feature).is_err());
     }
 
-    #[test]
-    fn prefilled_link_retains_draft_and_does_not_include_diagnostics() {
-        let input = example("feature");
-        let (title, body) = prepare(&input).unwrap();
-        let result = fallback(&title, &body, "ghMissing");
+    fn query_of(result: &FeedbackResult) -> std::collections::HashMap<String, String> {
         let url = Url::parse(result.fallback_url.as_deref().unwrap()).unwrap();
-        let query: std::collections::HashMap<_, _> = url.query_pairs().into_owned().collect();
+        assert_eq!(url.path(), "/Jia-Ethan/keysmith-switch/issues/new");
+        url.query_pairs().into_owned().collect()
+    }
+
+    #[test]
+    fn feature_form_is_prefilled_by_field_id() {
+        let prepared = prepare(&example("feature")).unwrap();
+        let result = in_browser(&prepared, "browser");
+        let query = query_of(&result);
+        assert_eq!(query.get("template").unwrap(), "feature-request.yml");
         assert_eq!(query.get("title").unwrap(), "[Feature] A clear request");
-        assert!(query.get("body").unwrap().contains("A proposed solution"));
-        assert!(!query.get("body").unwrap().contains("diagnostic-output"));
+        assert_eq!(query.get("request").unwrap(), "A clear request");
+        assert_eq!(query.get("solution").unwrap(), "A proposed solution");
+        assert!(
+            !query.contains_key("contact"),
+            "empty fields are left for the form"
+        );
+        assert!(
+            !query.contains_key("body"),
+            "the form replaces the free-text body"
+        );
+        assert!(!result.truncated);
+    }
+
+    #[test]
+    fn bug_form_carries_version_and_platform() {
+        let mut input = example("bug");
+        input.contact = Some("@someone".into());
+        let prepared = prepare(&input).unwrap();
+        let query = query_of(&in_browser(&prepared, "browser"));
+        assert_eq!(query.get("template").unwrap(), "bug-report.yml");
+        assert_eq!(query.get("keysmith-version").unwrap(), APP_VERSION);
+        assert_eq!(query.get("operating-system").unwrap(), &platform_label());
+        assert_eq!(query.get("reproduction").unwrap(), "A clear request");
+        assert_eq!(query.get("additional-context").unwrap(), "@someone");
+    }
+
+    #[test]
+    fn length_limits_count_characters_not_bytes() {
+        let mut input = example("bug");
+        // 9,000 CJK characters are 27,000 bytes but within the 10,000-character limit.
+        input.description = "问".repeat(9_000);
+        assert!(prepare(&input).is_ok());
+        input.description = "问".repeat(10_001);
+        assert!(prepare(&input).is_err());
+    }
+
+    #[test]
+    fn long_drafts_are_shortened_to_an_openable_url() {
+        let mut input = example("bug");
+        input.description = "问题描述".repeat(2_000);
+        let prepared = prepare(&input).unwrap();
+        let result = in_browser(&prepared, "browser");
+        assert!(result.truncated);
+        assert!(result.fallback_url.as_deref().unwrap().len() <= MAX_FORM_URL_BYTES);
+        let query = query_of(&result);
+        let reproduction = query.get("reproduction").unwrap();
+        assert!(reproduction.starts_with("问题描述"));
+        assert!(reproduction.ends_with(TRUNCATION_NOTE));
+        assert_eq!(query.get("keysmith-version").unwrap(), APP_VERSION);
     }
 
     #[tokio::test]
@@ -352,6 +492,11 @@ mod tests {
         assert!(result.issue_url.is_none());
         assert!(result.fallback_url.is_some());
         assert!(!result.fallback_url.as_deref().unwrap().contains("image"));
+        assert!(result
+            .fallback_url
+            .as_deref()
+            .unwrap()
+            .contains("template=bug-report.yml"));
     }
 
     #[test]
