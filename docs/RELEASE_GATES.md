@@ -2,7 +2,7 @@
 
 本文件记录 `v0.1.4` 及后续版本的发布边界。应用安装包不使用 Apple Developer ID、公证或 Windows Authenticode；应用内更新仍使用独立生产密钥签名并在客户端安装前验证。
 
-下一版候选：`0.2.0`（准备中，取代未发布的 `0.1.9`；当前公开稳定版为 `v0.1.8`）。以下门槛是要求，不代表本次候选已通过。
+当前公开稳定版为 `v0.2.0`。以下门槛是每次发布的要求，不代表下一版候选已通过。
 
 identifier：`com.jia-ethan.keysmith-switch`
 
@@ -67,13 +67,13 @@ identifier：`com.jia-ethan.keysmith-switch`
 - 用户界面不展示 Preview、平台签名、Developer ID、公证或 Authenticode 说明。
 - 发布文档必须准确说明 bootstrap 和系统警告边界，不得把 updater minisign 描述成平台代码签名。
 
-## v0.2.0 发布顺序（尚未执行）
+## 发布顺序
 
-`v0.1.4` 已接替四个独立桌面安装包；这些历史安装包不撤回，也不改成各自仓库的 Latest。当前稳定版是 `v0.1.8`；本节只描述下一版的发布门槛，不沿用旧候选的验证结论。
+`v0.1.4` 已接替四个独立桌面安装包；这些历史安装包不撤回，也不改成各自仓库的 Latest。当前稳定版是 `v0.2.0`；本节描述每一版的发布门槛，不沿用旧候选的验证结论。以 `vX.Y.Z` 表示待发布版本。
 
-1. 源仓库合并 `v0.2.0` 发布准备，`main` CI 通过。七处版本声明一致，tag 名必须等于 `v` 加 `package.json` 的版本。
-2. 经当次明确确认后创建 GitHub-verified annotated tag `v0.2.0`。
-3. 另行确认后手动触发源仓库 `release` workflow：`source_tag=v0.2.0`、`channel=stable`。
+1. 源仓库合并 `vX.Y.Z` 发布准备，`main` CI 通过。七处版本声明一致，tag 名必须等于 `v` 加 `package.json` 的版本。
+2. 经当次明确确认后创建 GitHub-verified annotated tag `vX.Y.Z`。
+3. 另行确认后手动触发源仓库 `release` workflow：`source_tag=vX.Y.Z`、`channel=stable`。
 4. 独立下载并验证 source candidate artifact、provenance、payload、签名和 SHA-256。
 5. 另行确认后手动触发公开仓库 workflow。批准受保护的 `production` environment 后，才发布不可变 Release 并更新 stable feed。
 6. 发布说明使用 `scripts/release-notes.md`；`scripts/updater-notes.md` 写入本版 `latest.json`，不得沿用 `v0.1.4` 文字。
