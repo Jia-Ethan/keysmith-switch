@@ -8,8 +8,13 @@ use keysmith_switch_lib::updater::{
     bootstrap_reason_for_metadata, check_update, fixture_manifest, install_update,
     known_manual_bootstrap, resolve_update_endpoint, runtime_update_config, updater_error_install,
     updater_fixture_dir, verify_minisign, InstallMode, InstallRequest, UpdateChannel, UpdateReason,
-    UpdateRequest, APP_VERSION, BETA_ENDPOINT, FIXTURE_PUBKEY, RELEASE_PAGE, STABLE_ENDPOINT,
+    UpdateRequest, BETA_ENDPOINT, FIXTURE_PUBKEY, RELEASE_PAGE, STABLE_ENDPOINT,
 };
+
+/// The version the simulated client runs. It stays fixed below the signed
+/// `0.2.0` fixture artifacts, so bumping the app version cannot turn every
+/// "update available" case into "already current".
+const INSTALLED_VERSION: &str = "0.1.9";
 
 fn env_lock() -> std::sync::MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -35,7 +40,7 @@ fn pubkey() -> String {
 
 fn base_req(server: &MockServer) -> UpdateRequest {
     UpdateRequest {
-        current_version: Some(APP_VERSION.to_string()),
+        current_version: Some(INSTALLED_VERSION.to_string()),
         endpoint_base: Some(server.base_url()),
         pubkey: Some(pubkey()),
         platform_key: Some("darwin-aarch64".to_string()),
@@ -153,7 +158,7 @@ fn check_update_selects_stable_endpoint_by_default() {
     assert!(check.available);
     assert_eq!(check.channel, UpdateChannel::Stable);
     assert_eq!(check.latest_version.as_deref(), Some("0.2.0"));
-    assert_eq!(check.current_version, APP_VERSION);
+    assert_eq!(check.current_version, INSTALLED_VERSION);
     assert_eq!(check.release_page, RELEASE_PAGE);
     assert_eq!(check.install_mode, InstallMode::InApp);
     assert_eq!(check.reason, None);
@@ -218,7 +223,7 @@ fn check_update_rejects_downgrade() {
     serve_json(&server, "/releases/latest/download/latest.json", &body);
     let check = check_update(&base_req(&server));
     assert!(!check.available);
-    assert_eq!(check.current_version, APP_VERSION);
+    assert_eq!(check.current_version, INSTALLED_VERSION);
     assert_eq!(check.latest_version.as_deref(), Some("0.0.9"));
     assert!(
         check
@@ -243,7 +248,7 @@ fn check_update_rejects_corrupt_metadata() {
     );
     let check = check_update(&base_req(&server));
     assert!(!check.available);
-    assert_eq!(check.current_version, APP_VERSION);
+    assert_eq!(check.current_version, INSTALLED_VERSION);
     assert!(
         check
             .error
@@ -589,7 +594,7 @@ fn check_update_offline_keeps_current_version() {
     let port = listener.local_addr().unwrap().port();
     drop(listener);
     let req = UpdateRequest {
-        current_version: Some(APP_VERSION.to_string()),
+        current_version: Some(INSTALLED_VERSION.to_string()),
         endpoint: Some(format!("http://127.0.0.1:{port}/latest.json")),
         pubkey: Some(pubkey()),
         platform_key: Some("darwin-aarch64".to_string()),
@@ -597,7 +602,7 @@ fn check_update_offline_keeps_current_version() {
     };
     let check = check_update(&req);
     assert!(!check.available);
-    assert_eq!(check.current_version, APP_VERSION);
+    assert_eq!(check.current_version, INSTALLED_VERSION);
     assert!(
         check.error.as_deref().unwrap_or("").contains("offline"),
         "{:?}",
@@ -609,14 +614,14 @@ fn check_update_offline_keeps_current_version() {
 fn check_update_linux_unsupported_keeps_current_version() {
     let _guard = env_lock();
     let req = UpdateRequest {
-        current_version: Some(APP_VERSION.to_string()),
+        current_version: Some(INSTALLED_VERSION.to_string()),
         platform_key: Some("linux-x86_64".to_string()),
         endpoint: Some("http://127.0.0.1:1/latest.json".to_string()),
         ..UpdateRequest::default()
     };
     let check = check_update(&req);
     assert!(!check.available);
-    assert_eq!(check.current_version, APP_VERSION);
+    assert_eq!(check.current_version, INSTALLED_VERSION);
     assert!(
         check.error.as_deref().unwrap_or("").contains("unsupported"),
         "{:?}",
@@ -745,7 +750,7 @@ fn install_update_download_interrupt_keeps_current_version() {
     });
     assert!(!install.ok);
     assert_eq!(install.error.as_deref(), Some("update download failed"));
-    assert_eq!(check.current_version, APP_VERSION);
+    assert_eq!(check.current_version, INSTALLED_VERSION);
 }
 
 #[test]
@@ -769,8 +774,8 @@ fn install_update_failure_keeps_current_version() {
     });
     let after = check_update(&base_req(&server));
     assert!(!install.ok);
-    assert_eq!(before.current_version, APP_VERSION);
-    assert_eq!(after.current_version, APP_VERSION);
+    assert_eq!(before.current_version, INSTALLED_VERSION);
+    assert_eq!(after.current_version, INSTALLED_VERSION);
     assert!(!after.restart_required || after.error.is_some() || after.available);
 }
 

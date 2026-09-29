@@ -1,8 +1,8 @@
 # Keysmith Switch 实现状态
 
-更新日期：2026-09-27（Asia/Shanghai）
+更新日期：2026-09-29（Asia/Shanghai）
 
-阶段：公开稳定版为 [`v0.1.8`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.1.8)，含 macOS Apple Silicon 与 Windows x64 安装包。`main` 已合并 Quick Deploy [#28](https://github.com/Jia-Ethan/keysmith-switch/pull/28)；`v0.1.9` 仍在发布准备阶段，没有本版 tag、安装包或公共 feed。此文下方 `v0.1.3`／`v0.1.4` 的验证记录是历史记录，不代表 `v0.1.9` 已通过相同门槛。
+阶段：公开稳定版为 [`v0.1.8`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.1.8)，含 macOS Apple Silicon 与 Windows x64 安装包。`main` 已合并 Quick Deploy [#28](https://github.com/Jia-Ethan/keysmith-switch/pull/28) 与界面改版 [#30](https://github.com/Jia-Ethan/keysmith-switch/pull/30)；二者合并为 `v0.2.0`（`v0.1.9` 不单独发布），仍在发布准备阶段，没有本版 tag、安装包或公共 feed。此文下方 `v0.1.3`／`v0.1.4` 的验证记录是历史记录，不代表 `v0.2.0` 已通过相同门槛。
 
 ## 产品状态
 
