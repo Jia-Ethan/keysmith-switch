@@ -1,5 +1,23 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Keysmith Switch",
+        "width": 1180,
+        "height": 760,
+        "minWidth": 520,
+        "minHeight": 620,
+        "visible": false,
+        "center": true,
+        "dragDropEnabled": false,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": { "x": 18, "y": 24 }
+      }
+    ]
+  },
   "bundle": {
     "targets": ["app", "dmg"],
     "createUpdaterArtifacts": true,

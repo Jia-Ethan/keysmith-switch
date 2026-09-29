@@ -233,7 +233,7 @@ export function PromptViewPage({
           <div className="flex min-w-0 items-center gap-2">
             {isActiveHere === null ? (
               <span
-                className="inline-flex items-center rounded-xl border border-amber-600/30 bg-amber-500/10 px-2.5 py-1 text-[14px] text-amber-700 dark:text-amber-300"
+                className="inline-flex items-center rounded-full border border-warning/30 bg-warning/10 px-2.5 py-1 text-[12px] text-warning"
                 role="status"
                 data-testid="prompt-activation-unknown"
               >
@@ -242,9 +242,10 @@ export function PromptViewPage({
             ) : null}
             {isActiveHere === true ? (
               <span
-                className="inline-flex shrink-0 items-center rounded-lg border border-primary/30 bg-primary/10 px-2 py-1 text-[13px] font-medium text-primary"
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 text-[12px] font-medium text-primary ring-1 ring-inset ring-primary/25"
                 data-testid="prompt-active-here"
               >
+                <span className="status-dot text-primary" data-live="" aria-hidden="true" />
                 {t("status.active")}
               </span>
             ) : null}
@@ -309,7 +310,7 @@ export function PromptViewPage({
                     id={menuId}
                     ref={menuRef}
                     role="menu"
-                    className="absolute bottom-full right-0 mb-2 w-52 overflow-hidden rounded-xl border border-border bg-card py-1 shadow-lg"
+                    className="animate-disclosure absolute bottom-full right-0 mb-2 w-52 overflow-hidden rounded-xl border border-border bg-card p-1 shadow-pop"
                     style={{ zIndex: 30 }}
                     onKeyDown={(event) => {
                       if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
@@ -341,7 +342,7 @@ export function PromptViewPage({
                       {t("prompts.copy")}
                     </MenuItem>
                     <div className="my-1 border-t border-border" />
-                    <p className="px-3 py-1.5 text-[13px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    <p className="px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
                       {t("prompts.copyTo")}
                     </p>
                     {TOOL_IDS.filter((item) => item !== tool).map((target) => (
@@ -375,25 +376,27 @@ export function PromptViewPage({
       }
     >
       <div className="mx-auto w-full max-w-5xl space-y-5">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label={t("prompts.title")}>
-            <div className="rounded-xl border border-border bg-muted/35 px-3 py-2 text-[15px]">
-              {detail.title}
-            </div>
-          </Field>
-          <Field label={t("prompts.tags")}>
-            <div className="rounded-xl border border-border bg-muted/35 px-3 py-2 text-[15px]">
-              {detail.tags.join(", ") || "—"}
-            </div>
-          </Field>
-        </div>
+        <section className="surface-card relative overflow-hidden p-5">
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 bg-[radial-gradient(80%_140%_at_0%_0%,rgb(var(--primary)/0.10),transparent_60%)]"
+          />
+          <div className="relative grid gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+            <Field label={t("prompts.title")}>
+              <div className="text-[18px] font-semibold tracking-[-0.01em] text-foreground">{detail.title}</div>
+            </Field>
+            <Field label={t("prompts.tags")}>
+              <div className="text-[13.5px] text-foreground">{detail.tags.join(", ") || "—"}</div>
+            </Field>
+          </div>
+        </section>
 
         <Field label={t("prompts.content")}>
           <Textarea
             value={detail.content}
             rows={18}
             readOnly
-            className={cx("min-h-[420px] bg-muted/35")}
+            className={cx("min-h-[420px] bg-card text-[13px] leading-[1.7]")}
           />
         </Field>
 
@@ -414,7 +417,7 @@ export function PromptViewPage({
               {versions.map((item, index) => (
                 <li
                   key={item.version}
-                  className="flex flex-wrap items-center gap-2 rounded-lg border border-border px-2.5 py-2 text-[13px]"
+                  className="flex flex-wrap items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 text-[12.5px]"
                 >
                   <span className="font-mono font-medium text-foreground">
                     {t("history.version")} {item.version}
@@ -495,7 +498,7 @@ function MenuItem({
       data-testid={testId}
       onClick={onSelect}
       className={cx(
-        "flex w-full items-center gap-2 px-3 py-2 text-left text-[15px] transition-colors",
+        "flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors",
         "focus-visible:bg-muted focus-visible:outline-none",
         danger
           ? "text-destructive hover:bg-destructive/10"

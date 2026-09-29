@@ -19,6 +19,7 @@ export function ScopeBar({
   onScopeChange,
   onProjectDirChange,
   onBrowse,
+  embedded = false,
 }: {
   scope: ScopeId;
   supportedScopes: ScopeId[];
@@ -28,14 +29,21 @@ export function ScopeBar({
   onScopeChange: (scope: ScopeId) => void;
   onProjectDirChange: (dir: string) => void;
   onBrowse: () => void;
+  /** Rendered inside another card: no border or background of its own. */
+  embedded?: boolean;
 }) {
   const { t } = useTranslation();
   const needsProject = scopeNeedsProjectDir(scope);
   const projectMissing = needsProject && !projectDir.trim();
 
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-2xl border border-border bg-card px-3 py-2.5 sm:px-4">
-      <span className="text-[14px] font-medium text-muted-foreground">{t("scope.label")}</span>
+    <div
+      className={cx(
+        "flex flex-wrap items-center gap-x-3 gap-y-2",
+        !embedded && "surface-card px-3 py-2.5 sm:px-4",
+      )}
+    >
+      <span className="text-[12.5px] font-medium text-muted-foreground">{t("scope.label")}</span>
 
       {supportedScopes.length > 1 ? (
         <Segmented
@@ -50,7 +58,7 @@ export function ScopeBar({
         />
       ) : (
         <span
-          className="inline-flex h-9 items-center rounded-xl border border-border bg-muted px-3 text-[15px] font-medium text-foreground"
+          className="inline-flex h-8 items-center rounded-[10px] bg-muted px-3 text-[13px] font-medium text-foreground"
           data-testid="scope-single"
         >
           {t(`scope.${supportedScopes[0] ?? "user"}`)}
@@ -68,12 +76,12 @@ export function ScopeBar({
               placeholder={t("scope.projectDirPlaceholder")}
               title={projectDir || undefined}
               onChange={(event) => onProjectDirChange(event.target.value)}
-              className={cx(projectMissing && "border-amber-600/60")}
+              className={cx("h-8 font-mono text-[12.5px]", projectMissing && "border-warning/60")}
               data-testid="scope-project-dir"
             />
           </div>
           <Button
-            size="md"
+            size="sm"
             disabled={disabled}
             onClick={onBrowse}
             data-testid="scope-browse"
@@ -87,7 +95,7 @@ export function ScopeBar({
               value=""
               disabled={disabled}
               aria-label={t("scope.recent")}
-              className="w-auto max-w-[180px]"
+              className="h-8 w-auto max-w-[180px] text-[12.5px]"
               onChange={(event) => {
                 if (event.target.value) onProjectDirChange(event.target.value);
               }}
@@ -105,7 +113,7 @@ export function ScopeBar({
       ) : null}
 
       {projectMissing ? (
-        <p className="w-full text-[14px] text-amber-600 dark:text-amber-500" data-testid="scope-project-required">
+        <p className="w-full text-[12.5px] text-warning" data-testid="scope-project-required">
           {t("scope.needsProjectDir")}
         </p>
       ) : null}

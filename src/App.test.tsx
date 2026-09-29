@@ -5,7 +5,7 @@ vi.mock("./api", () => ({
   getSettings: vi.fn().mockRejectedValue(new Error("no backend")),
   updateSettings: vi.fn(),
   listTools: vi.fn().mockResolvedValue({ tools: [] }),
-  listPrompts: vi.fn().mockRejectedValue(new Error("no backend")),
+  listPrompts: vi.fn().mockResolvedValue({ prompts: [] }),
   doctor: vi.fn().mockRejectedValue(new Error("no backend")),
   listOperations: vi.fn().mockRejectedValue(new Error("no backend")),
   listActivations: vi.fn().mockRejectedValue(new Error("no backend")),
@@ -29,16 +29,26 @@ vi.mock("./api", () => ({
 }));
 
 describe("App smoke", () => {
-  it("mounts on the Quick Deploy page with a pasted prompt form", async () => {
+  it("mounts on the agent workspace with the library and a Quick Deploy entry", async () => {
     const { App } = await import("./App");
     render(<App />);
     expect(screen.getByTestId("nav-claude")).toBeInTheDocument();
     expect(screen.getByTestId("nav-settings")).toBeInTheDocument();
-    expect(await screen.findByTestId("quick-deploy-submit")).toBeInTheDocument();
-    expect(screen.getByTestId("quick-deploy-title")).toBeInTheDocument();
-    expect(screen.queryByTestId("harness-deploy")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("prompt-search")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByTestId("quick-deploy-library"));
-    expect(await screen.findByTestId("prompt-search")).toBeInTheDocument();
+    expect(await screen.findByTestId("workspace-page")).toBeInTheDocument();
+    expect(screen.getByTestId("prompt-search")).toBeInTheDocument();
+    expect(screen.queryByTestId("quick-deploy-title")).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByTestId("quick-deploy-open"));
+    expect(await screen.findByTestId("quick-deploy-title")).toBeInTheDocument();
+    expect(document.documentElement.dataset.agent).toBe("claude");
+  });
+
+  it("switches agents with mod+number and retints the accent", async () => {
+    const { App } = await import("./App");
+    render(<App />);
+    await screen.findByTestId("workspace-page");
+    fireEvent.keyDown(window, { key: "3", ctrlKey: true });
+    expect(await screen.findByRole("heading", { name: "Grok Build" })).toBeInTheDocument();
+    expect(screen.getByTestId("nav-grok")).toHaveAttribute("aria-current", "page");
+    expect(document.documentElement.dataset.agent).toBe("grok");
   });
 });

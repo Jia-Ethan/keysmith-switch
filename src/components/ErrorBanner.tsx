@@ -10,7 +10,7 @@ export function ErrorBanner({
   if (!message) return null;
   return (
     <div
-      className="flex items-start justify-between gap-3 rounded-2xl border border-destructive/45 bg-destructive/10 px-4 py-3 text-[14px] text-destructive"
+      className="flex items-start justify-between gap-3 rounded-xl border border-destructive/35 bg-destructive/[0.07] px-4 py-2.5 text-[12.5px] text-destructive"
       role="alert"
     >
       <p className="min-w-0 break-words">{message}</p>

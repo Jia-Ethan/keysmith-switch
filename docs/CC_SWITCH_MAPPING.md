@@ -10,7 +10,8 @@
 | --- | --- |
 | 多应用供应商切换器 | 四工具提示词库管理器 |
 | 当前供应商 / 其余供应商 | 已激活提示词 / 未激活提示词 |
-| 供应商卡片 + 全屏编辑 | 提示词摘要 + 全屏 Markdown 编辑 |
+| 供应商卡片 + 全屏编辑 | 提示词卡片（一键部署）+ 全屏 Markdown 编辑 |
+| 首页即供应商列表 | 首页即 Agent 工作区：部署状态横幅 + 提示词库，快速部署为弹出面板 |
 | 设置横向标签 + About 子页 | 设置横向标签：通用 / 工具 / 数据与备份 / 更新 / 高级 / 关于 |
 | 官方 CLI 安装行 | Claude / Codex 确认后 argv 安装；Grok / ZCode 只展示来源、命令、目标并打开官网 |
 | 全局 Update Provider | 启动延迟检查，确认后下载，禁止静默安装 |
@@ -21,10 +22,11 @@
 | CC Switch 源码 | Keysmith Switch | 复用方式 |
 | --- | --- | --- |
 | `src/App.tsx` 顶栏、HEADER_HEIGHT、右侧设置/更新 | `src/components/AppShell.tsx` | 布局思路；不复制供应商/MCP/用量 |
-| `src/components/AppSwitcher.tsx` 图标切换、溢出「更多」、选中态 | `src/components/AppShell.tsx` + `src/components/ToolLogos.tsx` | 图标切换、溢出与选中态交互映射 |
+| `src/components/AppSwitcher.tsx` 图标切换、溢出「更多」、选中态 | `src/components/AppShell.tsx` + `src/components/ToolLogos.tsx` | 图标切换、溢出与选中态交互映射；滑动选中指示与 Agent 主题色为 Keysmith 自有实现 |
+| `src/App.tsx` 首页供应商列表 | `src/pages/WorkspacePage.tsx` + `src/components/AgentHero.tsx` | 结构思路：状态在上、列表在下；部署仍走可审阅的 adapter 计划 |
 | `src/components/providers/ProviderList.tsx` 搜索 + 当前/其余分组 | `src/components/PromptList.tsx` | 栏目结构，业务换成提示词 |
 | `src/components/providers/ProviderCard.tsx` 卡片选中/状态 | `src/components/PromptList.tsx` 卡片 | 视觉密度与选中态，不含供应商字段 |
-| `src/components/prompts/PromptFormPanel.tsx` | `src/components/PromptFormPanel.tsx` | 结构复用：全屏面板 + 标题 + Markdown |
+| `src/components/prompts/PromptFormPanel.tsx` | `src/components/PromptFormPanel.tsx`、`src/components/QuickDeployPanel.tsx` | 结构复用：面板 + 标题 + Markdown；导入/拖入 .md、字数统计为 Keysmith 自有实现 |
 | `src/components/MarkdownEditor.tsx` | `src/components/MarkdownEditor.tsx` | **MIT 改编**：CodeMirror Markdown + 查找 |
 | `src/components/common/FullScreenPanel.tsx` | `src/components/FullScreenPanel.tsx` | **MIT 改编**：Portal、Escape、页脚；去掉 framer-motion |
 | `src/components/FrontendErrorBoundary.tsx` | `src/components/ErrorBoundary.tsx` | **MIT 改编** |
@@ -34,6 +36,7 @@
 | `src/components/settings/AboutSection.tsx` | `src/pages/AboutPage.tsx`（设置 > 关于） | 三层：应用 / 内置适配器 / 官方工具 |
 | `src/components/settings/WindowSettings.tsx` | 设置 > 通用 | 未采用：该页只剩界面语言（页内下拉）与主题 |
 | `src/contexts/UpdateContext` / `UpdateBadge` | `src/components/UpdateProvider.tsx` | 全局延迟检查、非打扰状态、确认后下载 |
+| macOS 自绘标题栏（红绿灯并入顶栏） | `src-tauri/tauri.macos.conf.json` `titleBarStyle: Overlay` + 顶栏 `data-tauri-drag-region` | 仅 macOS；Windows 保留原生标题栏 |
 | `src-tauri/src/lib.rs` CloseRequested / 单实例 / 窗口状态 | `src-tauri/src/lib.rs` + `desktop.rs` | 关窗即退出（草稿未保存时先确认）、单实例聚焦、位置恢复 |
 | `src-tauri/src/tray.rs` | — | 未采用：托盘整块移除，包括菜单栏图标与「隐藏到托盘」 |
 | `src-tauri/src/auto_launch.rs` | — | 未采用：开机启动与静默启动一并移除 |

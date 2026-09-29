@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useTheme } from "../hooks/useTheme";
 import type { ToastApi } from "../hooks/useToasts";
 import type { PromptDetail, ToolId } from "../types";
 import { ErrorBanner } from "./ErrorBanner";
@@ -36,7 +35,6 @@ export function PromptEditPage({
   onDirtyChange?: (dirty: boolean) => void;
 }) {
   const { t } = useTranslation();
-  const { resolved } = useTheme();
   const [loadedDetail, setLoadedDetail] = useState<PromptDetail | null>(detail ?? null);
   const [loading, setLoading] = useState(!creating && !detail && Boolean(promptId));
   const [loadError, setLoadError] = useState(false);
@@ -219,7 +217,6 @@ export function PromptEditPage({
             value={draft.content}
             onChange={(content) => setDraft({ ...draft, content })}
             ariaLabel={t("prompts.content")}
-            darkMode={resolved === "dark"}
             readOnly={saving}
             minHeight="420px"
           />

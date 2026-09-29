@@ -19,6 +19,8 @@ export function ConfirmDialog({
   closeLabel = "Close",
   busy = false,
   wide = false,
+  icon,
+  footerStart,
 }: {
   open: boolean;
   title: string;
@@ -34,6 +36,10 @@ export function ConfirmDialog({
   closeLabel?: string;
   busy?: boolean;
   wide?: boolean;
+  /** Leading visual in the header, e.g. the agent logo. */
+  icon?: ReactNode;
+  /** Extra content on the left of the footer (secondary actions, hints). */
+  footerStart?: ReactNode;
 }) {
   const dialogRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
@@ -81,7 +87,14 @@ export function ConfirmDialog({
   if (!open) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+      <div
+        className="animate-backdrop-in absolute inset-0 bg-[hsl(var(--shadow)/0.38)] backdrop-blur-[6px] dark:bg-black/55"
+        aria-hidden="true"
+        onMouseDown={() => {
+          if (!busy) closeRef.current();
+        }}
+      />
       <div
         ref={dialogRef}
         role="dialog"
@@ -90,23 +103,32 @@ export function ConfirmDialog({
         aria-busy={busy || undefined}
         tabIndex={-1}
         className={cx(
-          "animate-dialog-in flex max-h-[86vh] w-full flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-[0_16px_60px_hsl(var(--shadow)/0.18)] focus:outline-none",
-          wide ? "max-w-[560px]" : "max-w-[440px]",
+          "animate-dialog-in relative flex max-h-[86vh] w-full flex-col overflow-hidden rounded-[18px] border border-border bg-card focus:outline-none",
+          "shadow-[0_0_0_1px_hsl(var(--shadow)/0.03),0_24px_80px_-12px_hsl(var(--shadow)/0.35)]",
+          wide ? "max-w-[600px]" : "max-w-[440px]",
         )}
       >
-        <div className="flex shrink-0 items-start gap-3 border-b border-border px-5 py-3.5">
+        <div className="flex shrink-0 items-start gap-3 px-5 pb-3 pt-4">
+          {icon ? (
+            <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 ring-1 ring-primary/15">
+              {icon}
+            </div>
+          ) : null}
           <div className="min-w-0 flex-1">
-            <h2 className="text-[17px] font-semibold text-foreground">{title}</h2>
+            <h2 className="text-[16px] font-semibold tracking-[-0.01em] text-foreground">{title}</h2>
             {description ? (
-              <p className="mt-1 text-[14px] text-muted-foreground">{description}</p>
+              <p className="mt-0.5 truncate text-[12.5px] text-muted-foreground" title={description}>
+                {description}
+              </p>
             ) : null}
           </div>
-          <IconButton label={closeLabel} disabled={busy} onClick={onClose}>
+          <IconButton label={closeLabel} size="iconSm" disabled={busy} onClick={onClose} className="-mr-1.5 -mt-0.5">
             <IconClose />
           </IconButton>
         </div>
-        <div className="min-h-0 flex-1 overflow-auto px-5 py-3.5 text-[15px]">{children}</div>
-        <div className="flex shrink-0 justify-end gap-2 border-t border-border px-5 py-3.5">
+        <div className="min-h-0 flex-1 overflow-auto px-5 pb-4 pt-1 text-[13.5px]">{children}</div>
+        <div className="flex shrink-0 items-center gap-2 border-t border-border bg-muted/40 px-5 py-3">
+          <div className="min-w-0 flex-1">{footerStart}</div>
           <Button disabled={busy} onClick={onClose}>{cancelLabel}</Button>
           <Button
             variant={danger ? "danger" : "primary"}
@@ -114,6 +136,7 @@ export function ConfirmDialog({
             data-testid={confirmTestId}
             onClick={onConfirm}
           >
+            {busy ? <span className="harness-spinner" aria-hidden="true" /> : null}
             {confirmLabel}
           </Button>
         </div>

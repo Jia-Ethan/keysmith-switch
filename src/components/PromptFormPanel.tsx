@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useTheme } from "../hooks/useTheme";
 import type { PromptDraft } from "./PromptEditor";
 import { FullScreenPanel } from "./FullScreenPanel";
 import { MarkdownEditor } from "./MarkdownEditor";
@@ -24,7 +23,6 @@ export function PromptFormPanel({
   dirtyGuard: () => boolean;
 }) {
   const { t } = useTranslation();
-  const { resolved } = useTheme();
   const [local, setLocal] = useState(draft);
 
   useEffect(() => {
@@ -84,7 +82,6 @@ export function PromptFormPanel({
           <MarkdownEditor
             value={local.content}
             onChange={(content) => update({ ...local, content })}
-            darkMode={resolved === "dark"}
             readOnly={saving}
             minHeight="420px"
           />
