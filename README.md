@@ -10,7 +10,7 @@ Switch 不绑定某一组官方提示词正文。提示词可以来自粘贴，�
 
 ## 状态
 
-公开稳定版是 [`v0.2.0`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.2.0)，包含界面改版 [#30](https://github.com/Jia-Ethan/keysmith-switch/pull/30)；上一版 [`v0.1.9`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.1.9) 带来了 Quick Deploy [#28](https://github.com/Jia-Ethan/keysmith-switch/pull/28)。
+公开稳定版是 [`v0.2.0`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.2.0)，包含界面改版 [#30](https://github.com/Jia-Ethan/keysmith-switch/pull/30)；`v0.2.1`（反馈表单与设置图标修复，[#34](https://github.com/Jia-Ethan/keysmith-switch/pull/34)）正在准备中，尚未创建 tag 或安装包。上一版 [`v0.1.9`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.1.9) 带来了 Quick Deploy [#28](https://github.com/Jia-Ethan/keysmith-switch/pull/28)。
 
 `v0.1.4` 接替四个独立桌面安装包。之后只维护 Keysmith Switch。已发出的 Claude、Grok、Codex、Zcode 桌面包保持原样，不撤回，也不改成各自仓库的 Latest。
 
