@@ -49,7 +49,8 @@
     "drift": "Drift",
     "conflict": "Conflict",
     "recovery-required": "Recovery required",
-    "unavailable": "Unavailable"
+    "unavailable": "Unavailable",
+    "deployed": "Deployed"
   },
   "scope": {
     "user": "User",
@@ -80,8 +81,8 @@
     "diagnostics": "Diagnostics"
   },
   "prompts": {
-    "active": "Currently active",
-    "inactive": "Other prompts",
+    "active": "Deployed now",
+    "inactive": "Library",
     "noneActive": "No active prompts",
     "noneInactive": "—",
     "noResults": "No matching prompts",
@@ -110,7 +111,7 @@
     "sortTitle": "Title",
     "sortCreated": "Created",
     "empty": "No prompts yet",
-    "emptyHint": "Create your first prompt.",
+    "emptyHint": "Paste your first prompt, review the plan, and it goes live.",
     "deleteConfirm": "Delete this prompt? This cannot be undone.",
     "copied": "Copied to target tool",
     "created": "Created",
@@ -122,7 +123,11 @@
     "noSelection": "No prompt selected",
     "noSelectionHint": "Choose a prompt above, or create a new one.",
     "allPrompts": "All prompts",
-    "activationUnknown": "Activation state could not be read; Active / Inactive grouping is hidden."
+    "activationUnknown": "Activation state could not be read; Active / Inactive grouping is hidden.",
+    "noExcerpt": "No summary",
+    "deploy": "Deploy",
+    "deployThis": "Deploy this prompt",
+    "searchPlaceholder": "Search titles, content, or tags…"
   },
   "plan": {
     "titleActivate": "Activation preview",
@@ -140,7 +145,11 @@
     "failed": "Operation failed",
     "success": "Operation finished",
     "driftNoOverwrite": "Target has drifted. Recover first; do not force overwrite.",
-    "reloadHint": "Reload hint"
+    "reloadHint": "Reload hint",
+    "summaryFiles": "Files changed: {{count}}",
+    "summaryBackups": "Backups: {{count}}",
+    "reviewed": "Safe to apply",
+    "fingerprint": "Fingerprint"
   },
   "history": {
     "title": "Version history",
@@ -294,7 +303,8 @@
     "officialAutomaticInstallUnavailable": "Automatic Grok installation is not supported yet because no audited install source is available.",
     "openOfficialInstaller": "Open official installer",
     "zcodeMacOnly": "Official ZCode is macOS-only.",
-    "adapterExternal": "External path"
+    "adapterExternal": "External path",
+    "tagline": "Local prompt manager and quick deploy for coding agents"
   },
   "feedback": {
     "title": "Feedback",
@@ -345,7 +355,7 @@
   },
   "quickDeploy": {
     "title": "Quick Deploy",
-    "lead": "Deploy a custom prompt to {{tool}}. You provide the content; Switch shows a reviewable plan first.",
+    "lead": "Deploy to {{tool}} after reviewing the plan",
     "titleLabel": "Prompt title",
     "titleHint": "Saved to the prompt library with version history.",
     "titlePlaceholder": "For example: My working rules",
@@ -362,6 +372,34 @@
     "deployed": "Prompt deployed",
     "defaultTitle": "Pasted prompt",
     "validation": "Enter a title and prompt content.",
-    "failed": "Quick Deploy failed."
+    "failed": "Quick Deploy failed.",
+    "open": "Quick Deploy",
+    "firstPrompt": "Deploy your first prompt",
+    "draftPending": "Draft in progress",
+    "saveOnly": "Save to library",
+    "savedToLibrary": "Saved to the library",
+    "import": "Import file",
+    "importUnsupported": "Only .md, .markdown, or .txt text files are supported.",
+    "importTooLarge": "The file is larger than 1 MB.",
+    "importFailed": "The file could not be read.",
+    "replaceConfirm": "Replace the current content with the imported file?",
+    "stats": "{{chars}} characters · {{lines}} lines",
+    "dropHint": "Drop a .md file to import",
+    "removed": "Deployment removed",
+    "deployedTo": "Deployed to {{tool}}"
+  },
+  "hero": {
+    "inScope": "{{scope}} scope",
+    "statusError": "Status unavailable",
+    "pickProject": "Choose a project folder"
+  },
+  "shortcuts": {
+    "title": "Keyboard shortcuts",
+    "switchAgent": "Switch agent",
+    "compose": "Open Quick Deploy",
+    "preview": "Preview deployment (while editing)",
+    "search": "Search prompts",
+    "refresh": "Refresh agent status",
+    "settings": "Open settings"
   }
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import * as api from "../api";
@@ -8,7 +8,9 @@ import { Feedback } from "../components/Feedback";
 import { useUpdateOptional } from "../components/UpdateProvider";
 import { IconDownload, IconExternal, IconMonitor, IconMoon, IconRefresh, IconSun } from "../components/icons";
 import { ToolLogo } from "../components/ToolLogos";
-import { Button, Mono, Segmented, SettingRow, SectionLabel, cx } from "../components/ui";
+import { Button, Mono, Segmented, SettingRow, SectionLabel, cx, useSlidingIndicator } from "../components/ui";
+import keysmithIcon from "../assets/keysmith-icon.png";
+import { modLabel, shortcutLabel } from "../lib/platform";
 import { Dropdown } from "../components/Dropdown";
 import { useTheme, type ThemeMode } from "../hooks/useTheme";
 import type { ToastApi } from "../hooks/useToasts";
@@ -51,6 +53,8 @@ export function SettingsPage({
   const [about, setAbout] = useState<AboutInfo | null>(null);
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
   const updateInstallPending = useRef(false);
+  const tabsRef = useRef<HTMLDivElement>(null);
+  const tabIndicator = useSlidingIndicator(tabsRef, '[aria-selected="true"]', [tab]);
 
   useEffect(() => {
     if (TABS.includes(initialTab as TabId)) setTab(initialTab as TabId);
@@ -135,12 +139,22 @@ export function SettingsPage({
   };
 
   return (
-    <div className="mx-auto flex h-full min-h-0 w-full max-w-6xl flex-col gap-3">
+    <div className="mx-auto flex h-full min-h-0 w-full max-w-3xl flex-col gap-4">
+      <div className="flex shrink-0 items-center justify-between gap-3">
+        <h1 className="text-[20px] font-semibold tracking-[-0.02em] text-foreground">{t("settings.title")}</h1>
       <div
-        className="flex shrink-0 gap-0.5 overflow-x-auto rounded-lg border border-border bg-muted/60 p-0.5"
+        ref={tabsRef}
+        className="relative flex shrink-0 gap-0.5 overflow-x-auto rounded-xl border border-border/80 bg-muted/70 p-[3px]"
         role="tablist"
         aria-label={t("settings.title")}
       >
+        {tabIndicator ? (
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute rounded-[9px] bg-card shadow-[0_1px_2px_hsl(var(--shadow)/0.12)] transition-[left,width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] dark:bg-accent"
+            style={{ left: tabIndicator.left, width: tabIndicator.width, top: tabIndicator.top, height: tabIndicator.height }}
+          />
+        ) : null}
         {TABS.map((item) => {
           const active = item === tab;
           return (
@@ -155,10 +169,10 @@ export function SettingsPage({
               onClick={() => selectTab(item)}
               onKeyDown={(event) => onTabKeyDown(event, item)}
               className={cx(
-                "h-8 shrink-0 rounded-lg px-3 text-[14px] font-medium transition-colors",
+                "relative z-[1] h-8 shrink-0 rounded-[9px] px-3.5 text-[13px] font-medium transition-colors",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                 active
-                  ? "bg-card text-foreground shadow-[0_1px_2px_hsl(var(--shadow)/0.06)]"
+                  ? cx("text-foreground", !tabIndicator && "bg-card shadow-sm")
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
@@ -167,15 +181,18 @@ export function SettingsPage({
           );
         })}
       </div>
+      </div>
 
       <div
         id={`settings-panel-${tab}`}
+        key={tab}
         role="tabpanel"
-        className="min-h-0 flex-1 overflow-auto rounded-xl border border-border bg-card shadow-[0_1px_3px_hsl(var(--shadow)/0.05)]"
+        className="animate-page-in min-h-0 flex-1 overflow-auto pb-6"
         aria-busy={busy || undefined}
       >
         {tab === "general" ? (
-          <div>
+          <div className="space-y-4">
+          <div className="surface-card overflow-hidden">
             <SettingRow
               label={t("settings.language")}
               control={
@@ -216,18 +233,22 @@ export function SettingsPage({
               }
             />
           </div>
+          <ShortcutList />
+          </div>
         ) : null}
 
         {tab === "tools" ? (
-          <div className="flex flex-col gap-2 p-4 sm:p-5" data-testid="settings-keysmiths">
+          <div className="surface-card flex flex-col gap-2 p-4 sm:p-5" data-testid="settings-keysmiths">
             {KEYSMITHS.map((item) => (
               <article
                 key={item.tool}
                 data-testid={`keysmith-${item.tool}`}
-                className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-border bg-background/35 px-3 py-2.5"
+                className="group flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-border bg-background/50 px-3 py-2.5 transition-colors hover:border-foreground/15"
               >
-                <ToolLogo tool={item.tool} size={20} />
-                <h2 className="min-w-[9rem] text-[14px] font-medium text-foreground">{item.name}</h2>
+                <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-card ring-1 ring-border">
+                  <ToolLogo tool={item.tool} size={20} />
+                </span>
+                <h2 className="min-w-[9rem] text-[13.5px] font-medium text-foreground">{item.name}</h2>
                 <Button
                   size="sm"
                   variant="ghost"
@@ -244,7 +265,34 @@ export function SettingsPage({
         ) : null}
 
         {tab === "about" ? (
-          <div>
+          <div className="space-y-4">
+            <section className="surface-card relative overflow-hidden px-5 py-6" data-testid="about-hero">
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 bg-[radial-gradient(70%_120%_at_50%_0%,rgb(var(--primary)/0.14),transparent_70%)]"
+              />
+              <div className="relative flex flex-col items-center text-center">
+                <span className="flex h-16 w-16 items-center justify-center rounded-[20px] bg-card shadow-glow ring-1 ring-border">
+                  <img src={keysmithIcon} alt="" className="h-11 w-11" aria-hidden="true" draggable={false} />
+                </span>
+                <h2 className="mt-3 text-[18px] font-semibold tracking-[-0.01em] text-foreground">{t("app.name")}</h2>
+                <p className="mt-0.5 text-[12.5px] text-muted-foreground">{t("about.tagline")}</p>
+                <span className="mt-2 rounded-full bg-muted px-2.5 py-0.5 font-mono text-[11.5px] text-muted-foreground">
+                  v{about?.app.version ?? updater?.update?.currentVersion ?? "—"}
+                </span>
+                <div className="mt-3 flex flex-wrap justify-center gap-1.5">
+                  <Button size="sm" variant="outline" onClick={() => void openExternal(PROJECT_REPO)}>
+                    <IconExternal />
+                    GitHub
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => void openExternal(LICENSE_URL)}>
+                    <IconExternal />
+                    MIT License
+                  </Button>
+                </div>
+              </div>
+            </section>
+          <div className="surface-card overflow-hidden">
             <section className="border-b border-border p-4 sm:p-5" data-testid="update-section">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -353,38 +401,7 @@ export function SettingsPage({
 
             <Feedback />
 
-            <div className="p-4 sm:p-5">
-              <div className="space-y-3">
-                <div>
-                  <SectionLabel>{t("about.version")}</SectionLabel>
-                  <Mono className="mt-1 text-sm">{about?.app.version ?? "—"}</Mono>
-                </div>
-                <div>
-                  <SectionLabel>{t("about.repository")}</SectionLabel>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="mt-1"
-                    onClick={() => void openExternal(PROJECT_REPO)}
-                  >
-                    <IconExternal />
-                    GitHub
-                  </Button>
-                </div>
-                <div>
-                  <SectionLabel>{t("about.license")}</SectionLabel>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="mt-1"
-                    onClick={() => void openExternal(LICENSE_URL)}
-                  >
-                    <IconExternal />
-                    MIT License
-                  </Button>
-                </div>
-              </div>
-            </div>
+          </div>
           </div>
         ) : null}
       </div>
@@ -448,5 +465,42 @@ export function SettingsPage({
         </div>
       </ConfirmDialog>
     </div>
+  );
+}
+
+function ShortcutList() {
+  const { t } = useTranslation();
+  const rows: Array<{ label: string; keys: string[] }> = [
+    { label: t("shortcuts.switchAgent"), keys: [`${shortcutLabel("1")} – ${shortcutLabel("4")}`] },
+    { label: t("shortcuts.compose"), keys: [shortcutLabel("n")] },
+    { label: t("shortcuts.preview"), keys: [shortcutLabel("Enter")] },
+    { label: t("shortcuts.search"), keys: ["/", shortcutLabel("f")] },
+    { label: t("shortcuts.refresh"), keys: [shortcutLabel("r")] },
+    { label: t("shortcuts.settings"), keys: [shortcutLabel(",")] },
+  ];
+  return (
+    <section className="surface-card overflow-hidden" data-testid="settings-shortcuts" aria-label={t("shortcuts.title")}>
+      <div className="flex items-center justify-between border-b border-border/70 px-5 py-3">
+        <SectionLabel>{t("shortcuts.title")}</SectionLabel>
+        <span className="text-[11.5px] text-muted-foreground">{modLabel()}</span>
+      </div>
+      <dl className="divide-y divide-border/70">
+        {rows.map((row) => (
+          <div key={row.label} className="flex items-center justify-between gap-3 px-5 py-2.5 text-[13px]">
+            <dt className="text-foreground">{row.label}</dt>
+            <dd className="flex items-center gap-1.5">
+              {row.keys.map((key, index) => (
+                <Fragment key={key}>
+                  {index > 0 ? <span className="text-[11px] text-muted-foreground">/</span> : null}
+                  <kbd className="rounded-md border border-border bg-muted px-1.5 py-0.5 font-sans text-[11.5px] font-medium text-muted-foreground shadow-[0_1px_0_hsl(var(--border))]">
+                    {key}
+                  </kbd>
+                </Fragment>
+              ))}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </section>
   );
 }

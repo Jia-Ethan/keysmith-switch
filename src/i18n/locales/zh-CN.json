@@ -49,7 +49,8 @@
     "drift": "已漂移",
     "conflict": "冲突",
     "recovery-required": "需要恢复",
-    "unavailable": "不可用"
+    "unavailable": "不可用",
+    "deployed": "已部署"
   },
   "scope": {
     "user": "用户",
@@ -80,8 +81,8 @@
     "diagnostics": "诊断详情"
   },
   "prompts": {
-    "active": "当前激活提示词",
-    "inactive": "其他提示词",
+    "active": "当前部署",
+    "inactive": "提示词库",
     "noneActive": "当前没有激活的提示词",
     "noneInactive": "—",
     "noResults": "没有匹配的提示词",
@@ -110,7 +111,7 @@
     "sortTitle": "标题",
     "sortCreated": "创建时间",
     "empty": "还没有提示词",
-    "emptyHint": "新建第一条提示词。",
+    "emptyHint": "粘贴第一条提示词，审阅部署计划后即可生效。",
     "deleteConfirm": "删除这条提示词？此操作不可撤销。",
     "copied": "已复制到目标工具",
     "created": "已创建",
@@ -122,7 +123,11 @@
     "noSelection": "未选择提示词",
     "noSelectionHint": "选择上方提示词，或新建一条。",
     "allPrompts": "全部提示词",
-    "activationUnknown": "无法读取激活状态，暂不显示已激活 / 未激活分组。"
+    "activationUnknown": "无法读取激活状态，暂不显示已激活 / 未激活分组。",
+    "noExcerpt": "暂无摘要",
+    "deploy": "部署",
+    "deployThis": "部署这条提示词",
+    "searchPlaceholder": "搜索标题、内容或标签…"
   },
   "plan": {
     "titleActivate": "激活预览",
@@ -140,7 +145,11 @@
     "failed": "操作失败",
     "success": "操作完成",
     "driftNoOverwrite": "目标已漂移。需要先恢复，不会强制覆盖。",
-    "reloadHint": "重载提示"
+    "reloadHint": "重载提示",
+    "summaryFiles": "{{count}} 个文件变更",
+    "summaryBackups": "{{count}} 份备份",
+    "reviewed": "可以安全执行",
+    "fingerprint": "内容指纹"
   },
   "history": {
     "title": "版本历史",
@@ -294,7 +303,8 @@
     "officialAutomaticInstallUnavailable": "暂不支持自动安装 Grok，因为没有可审计的安装源。",
     "openOfficialInstaller": "打开官方安装页",
     "zcodeMacOnly": "ZCode 官方工具仅 macOS 可用。",
-    "adapterExternal": "外部路径"
+    "adapterExternal": "外部路径",
+    "tagline": "本机 Agent 提示词管理与快速部署"
   },
   "feedback": {
     "title": "反馈",
@@ -345,7 +355,7 @@
   },
   "quickDeploy": {
     "title": "快速部署",
-    "lead": "将自定义提示词部署到 {{tool}}。内容由你提供，部署前会先生成可审阅的计划。",
+    "lead": "部署到 {{tool}}，确认前先审阅计划",
     "titleLabel": "提示词标题",
     "titleHint": "保存到提示词库并保留版本历史。",
     "titlePlaceholder": "例如：我的工作规则",
@@ -362,6 +372,34 @@
     "deployed": "提示词已部署",
     "defaultTitle": "粘贴的提示词",
     "validation": "请输入标题和提示词内容。",
-    "failed": "快速部署失败。"
+    "failed": "快速部署失败。",
+    "open": "快速部署",
+    "firstPrompt": "部署第一条提示词",
+    "draftPending": "有未完成的草稿",
+    "saveOnly": "仅保存到库",
+    "savedToLibrary": "已保存到提示词库",
+    "import": "导入文件",
+    "importUnsupported": "只支持 .md / .markdown / .txt 文本文件。",
+    "importTooLarge": "文件超过 1 MB，无法导入。",
+    "importFailed": "无法读取该文件。",
+    "replaceConfirm": "用导入的文件替换当前内容？",
+    "stats": "{{chars}} 字符 · {{lines}} 行",
+    "dropHint": "可直接拖入 .md 文件",
+    "removed": "已移除部署",
+    "deployedTo": "已部署到 {{tool}}"
+  },
+  "hero": {
+    "inScope": "{{scope}}范围",
+    "statusError": "无法读取状态",
+    "pickProject": "请选择项目目录"
+  },
+  "shortcuts": {
+    "title": "快捷键",
+    "switchAgent": "切换 Agent",
+    "compose": "打开快速部署",
+    "preview": "生成部署预览（编辑时）",
+    "search": "搜索提示词",
+    "refresh": "刷新 Agent 状态",
+    "settings": "打开设置"
   }
 }

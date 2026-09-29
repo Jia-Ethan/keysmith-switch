@@ -1,15 +1,16 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useHarnessStatus } from "../lib/harnessState";
+import { shortcutLabel } from "../lib/platform";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { ScopeId, ToolId } from "../types";
 import { TOOL_IDS } from "../types";
-import { Button, cx } from "./ui";
+import { Button, cx, useSlidingIndicator } from "./ui";
 import { IconMore, IconSettings } from "./icons";
 import { ToolLogo } from "./ToolLogos";
 import keysmithIcon from "../assets/keysmith-icon.png";
 
 export type AppPage =
-  | { kind: "harness"; tool: ToolId }
   | { kind: "tool"; tool: ToolId }
   | { kind: "prompt-view"; tool: ToolId; promptId: string; scope: ScopeId; projectDir: string }
   | {
@@ -23,14 +24,14 @@ export type AppPage =
   | { kind: "settings"; tab?: string }
   | { kind: "advanced" };
 
-const NAV_GAP_PX = 4;
-const NAV_PADDING_PX = 8;
+const NAV_GAP_PX = 2;
+const NAV_PADDING_PX = 6;
 const NAV_ITEM_FALLBACK_WIDTH = 88;
 const NAV_MORE_FALLBACK_WIDTH = 48;
 const NAV_BUTTON_CLASS =
-  "inline-flex h-8 items-center gap-2 rounded-lg px-3 text-[14px] font-medium transition-colors";
+  "relative z-[1] inline-flex h-8 items-center gap-2 rounded-[9px] px-3 text-[13px] font-medium transition-colors";
 const NAV_MORE_CLASS =
-  "inline-flex h-8 items-center justify-center rounded-lg px-3 transition-colors";
+  "relative z-[1] inline-flex h-8 items-center justify-center rounded-[9px] px-2.5 transition-colors";
 
 /** Pack tool buttons into the centered nav slot, reserving space for overflow. */
 export function countVisibleNavItems(
@@ -133,38 +134,45 @@ export function AppShell({
     };
   }, [moreOpen]);
 
-  const activeTool = page.kind === "harness" || page.kind === "tool" ? page.tool : null;
+  const activeTool = page.kind === "tool" ? page.tool : null;
   const visible = TOOL_IDS.slice(0, visibleCount);
   if (activeTool && !visible.includes(activeTool)) {
     visible[visible.length - 1] = activeTool;
   }
   const overflow = TOOL_IDS.filter((tool) => !visible.includes(tool));
+  const navRef = useRef<HTMLElement>(null);
+  const indicator = useSlidingIndicator(navRef, '[aria-current="page"]', [activeTool, visible.join(",")]);
 
   const selectTool = (tool: ToolId) => {
     setMoreOpen(false);
-    onNavigate({ kind: "harness", tool });
+    onNavigate({ kind: "tool", tool });
   };
 
   return (
-    <div className="keysmith-surface flex h-full flex-col">
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-card/80 px-4 backdrop-blur sm:px-5">
-        <div className="flex shrink-0 items-center gap-2.5">
-          <img src={keysmithIcon} alt="" className="h-6 w-6 shrink-0" aria-hidden="true" />
-          <div className="whitespace-nowrap text-[15px] font-semibold tracking-[-0.01em] text-foreground">
+    <div className="keysmith-surface relative flex h-full flex-col">
+      <header
+        data-tauri-drag-region=""
+        className="app-header glass relative z-30 flex h-[52px] shrink-0 items-center gap-3 border-b border-border/70 px-4"
+      >
+        <div data-tauri-drag-region="" className="flex shrink-0 items-center gap-2.5">
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-card shadow-[0_1px_2px_hsl(var(--shadow)/0.12)] ring-1 ring-border">
+            <img src={keysmithIcon} alt="" className="h-5 w-5 shrink-0" aria-hidden="true" draggable={false} />
+          </span>
+          <div className="hidden whitespace-nowrap text-[14px] font-semibold tracking-[-0.01em] text-foreground sm:block">
             {t("app.name")}
           </div>
         </div>
 
-        <div ref={navSlotRef} className="relative flex min-w-0 flex-1 items-center justify-center">
+        <div ref={navSlotRef} data-tauri-drag-region="" className="relative flex min-w-0 flex-1 items-center justify-center">
           <div
             ref={measureRef}
             aria-hidden="true"
-            className="pointer-events-none invisible fixed left-0 top-0 flex items-center gap-1 overflow-hidden p-1"
+            className="pointer-events-none invisible fixed left-0 top-0 flex items-center gap-0.5 overflow-hidden p-[3px]"
           >
             {TOOL_IDS.map((tool) => (
               <span key={tool} data-nav-measure={tool} className={NAV_BUTTON_CLASS}>
-                <ToolLogo tool={tool} size={20} />
-                <span className="hidden truncate xl:inline">{t(`nav.${tool}`)}</span>
+                <ToolLogo tool={tool} size={18} />
+                <span className="hidden truncate lg:inline">{t(`nav.${tool}`)}</span>
               </span>
             ))}
             <span data-nav-measure="more" className={NAV_MORE_CLASS}>
@@ -172,32 +180,30 @@ export function AppShell({
             </span>
           </div>
           <nav
-            className="flex items-center gap-0.5 rounded-lg border border-border bg-muted/60 p-0.5"
+            ref={navRef}
+            className="relative flex items-center gap-0.5 rounded-xl border border-border/80 bg-muted/70 p-[3px]"
             aria-label={t("nav.toolsLabel")}
           >
-            {visible.map((tool) => {
-              const active = activeTool === tool;
-              return (
-                <button
-                  key={tool}
-                  type="button"
-                  data-testid={`nav-${tool}`}
-                  aria-current={active ? "page" : undefined}
-                  title={t(`nav.${tool}`)}
-                  onClick={() => selectTool(tool)}
-                  className={cx(
-                    NAV_BUTTON_CLASS,
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                    active
-                      ? "bg-card text-foreground shadow-[0_1px_2px_hsl(var(--shadow)/0.06)]"
-                      : "text-muted-foreground hover:text-foreground hover:bg-card/60",
-                  )}
-                >
-                  <ToolLogo tool={tool} size={20} />
-                  <span className="hidden truncate xl:inline">{t(`nav.${tool}`)}</span>
-                </button>
-              );
-            })}
+            {indicator ? (
+              <span
+                aria-hidden="true"
+                data-testid="nav-indicator"
+                className="pointer-events-none absolute rounded-[9px] bg-card shadow-[0_1px_2px_hsl(var(--shadow)/0.12),0_0_0_0.5px_hsl(var(--shadow)/0.08)] transition-[left,width] duration-[420ms] ease-[cubic-bezier(0.22,1,0.36,1)] dark:bg-accent"
+                style={{ left: indicator.left, width: indicator.width, top: indicator.top, height: indicator.height }}
+              >
+                <span className="absolute inset-x-3 -bottom-px h-[2px] rounded-full bg-primary" />
+              </span>
+            ) : null}
+            {visible.map((tool) => (
+              <NavButton
+                key={tool}
+                tool={tool}
+                active={activeTool === tool}
+                indicatorReady={Boolean(indicator)}
+                shortcut={shortcutLabel(String(TOOL_IDS.indexOf(tool) + 1))}
+                onSelect={selectTool}
+              />
+            ))}
             {overflow.length > 0 ? (
               <div ref={moreRef} className="relative">
                 <button
@@ -212,7 +218,7 @@ export function AppShell({
                     NAV_MORE_CLASS,
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                     moreOpen
-                      ? "bg-background text-foreground shadow-sm"
+                      ? "bg-card text-foreground shadow-sm"
                       : "text-muted-foreground hover:text-foreground",
                   )}
                 >
@@ -221,7 +227,7 @@ export function AppShell({
                 {moreOpen ? (
                   <div
                     role="menu"
-                    className="absolute right-0 top-12 z-30 w-48 overflow-hidden rounded-xl border border-border bg-card py-1 shadow-lg"
+                    className="animate-disclosure absolute right-0 top-11 z-30 w-52 overflow-hidden rounded-xl border border-border bg-card p-1 shadow-pop"
                   >
                     {overflow.map((tool) => (
                       <button
@@ -230,9 +236,9 @@ export function AppShell({
                         role="menuitem"
                         data-testid={`nav-overflow-${tool}`}
                         onClick={() => selectTool(tool)}
-                        className="flex w-full items-center gap-2 px-3 py-2 text-left text-[15px] text-foreground transition-colors hover:bg-muted"
+                        className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[13px] text-foreground transition-colors hover:bg-muted"
                       >
-                        <ToolLogo tool={tool} size={20} />
+                        <ToolLogo tool={tool} size={18} />
                         <span className="truncate">{t(`nav.${tool}`)}</span>
                       </button>
                     ))}
@@ -247,7 +253,7 @@ export function AppShell({
           {advancedEnabled ? (
             <Button
               size="sm"
-              variant={page.kind === "advanced" ? "primary" : "ghost"}
+              variant={page.kind === "advanced" ? "subtle" : "ghost"}
               data-testid="nav-advanced"
               onClick={() => onNavigate({ kind: "advanced" })}
             >
@@ -255,21 +261,69 @@ export function AppShell({
             </Button>
           ) : null}
           <Button
-            size="icon"
-            variant={page.kind === "settings" ? "primary" : "ghost"}
-            title={t("nav.settings")}
+            size="iconSm"
+            variant={page.kind === "settings" ? "subtle" : "ghost"}
+            title={`${t("nav.settings")} (${shortcutLabel(",")})`}
             aria-label={t("nav.settings")}
+            aria-current={page.kind === "settings" ? "page" : undefined}
             data-testid="nav-settings"
             onClick={() => onNavigate({ kind: "settings" })}
           >
-            <IconSettings size={18} />
+            <IconSettings size={17} />
           </Button>
         </div>
       </header>
 
       <main className="min-h-0 flex-1 overflow-hidden">
-        <div className="mx-auto flex h-full max-w-[1440px] flex-col p-3 sm:p-4">{children}</div>
+        <div className="mx-auto flex h-full max-w-[1440px] flex-col">{children}</div>
       </main>
     </div>
+  );
+}
+
+/** One agent in the switcher; the dot says this run already knows a prompt is live there. */
+function NavButton({
+  tool,
+  active,
+  indicatorReady,
+  shortcut,
+  onSelect,
+}: {
+  tool: ToolId;
+  active: boolean;
+  indicatorReady: boolean;
+  shortcut: string;
+  onSelect: (tool: ToolId) => void;
+}) {
+  const { t } = useTranslation();
+  const status = useHarnessStatus(tool);
+  const deployed = status?.machine === "deployed" && !status.error;
+  return (
+    <button
+      type="button"
+      data-testid={`nav-${tool}`}
+      data-deployed={deployed || undefined}
+      aria-current={active ? "page" : undefined}
+      title={`${t(`nav.${tool}`)} (${shortcut})`}
+      onClick={() => onSelect(tool)}
+      className={cx(
+        NAV_BUTTON_CLASS,
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        active
+          ? cx("text-foreground", !indicatorReady && "bg-card shadow-sm")
+          : "text-muted-foreground hover:bg-card/50 hover:text-foreground",
+      )}
+    >
+      <span className={cx("relative transition-transform duration-300", active ? "scale-100" : "scale-[0.92] opacity-80 grayscale-[35%]")}>
+        <ToolLogo tool={tool} size={18} />
+        {deployed ? (
+          <span
+            className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-success ring-2 ring-muted"
+            aria-label={t("status.deployed")}
+          />
+        ) : null}
+      </span>
+      <span className="hidden truncate lg:inline">{t(`nav.${tool}`)}</span>
+    </button>
   );
 }

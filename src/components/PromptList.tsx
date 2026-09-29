@@ -1,8 +1,10 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { relativeTime } from "../lib/format";
 import type { PromptSummary } from "../types";
 import { EmptyState } from "./EmptyState";
-import { cx, Tag } from "./ui";
+import { IconChevronRight, IconLibrary, IconRocket } from "./icons";
+import { Button, cx, Tag } from "./ui";
 
 export interface PromptListProps {
   prompts: PromptSummary[];
@@ -19,6 +21,9 @@ export interface PromptListProps {
   /** true when a search query or tag filter is applied */
   filtered?: boolean;
   emptyAction?: ReactNode;
+  /** One-click deploy from a card. Omitted: cards only open the detail page. */
+  onDeploy?: (id: string) => void;
+  deployDisabled?: boolean;
 }
 
 export function PromptList({
@@ -29,18 +34,27 @@ export function PromptList({
   loading = false,
   filtered = false,
   emptyAction,
+  onDeploy,
+  deployDisabled = false,
 }: PromptListProps) {
   const { t } = useTranslation();
 
   if (loading) {
     return (
-      <div
-        className="flex min-h-[148px] items-center justify-center px-4 py-8 text-[14px] text-muted-foreground"
-        data-testid="prompt-list-loading"
-        role="status"
-      >
-        <span className="mr-2 h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary/25 border-t-primary" aria-hidden="true" />
-        <span>{t("common.loading")}</span>
+      <div data-testid="prompt-list-loading" role="status" aria-label={t("common.loading")}>
+        <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-hidden="true">
+          {Array.from({ length: 6 }, (_, index) => (
+            <li key={index} className="surface-card flex h-[132px] flex-col gap-2.5 p-4">
+              <div className="skeleton h-4 w-2/3" />
+              <div className="skeleton h-3 w-full" />
+              <div className="skeleton h-3 w-4/5" />
+              <div className="mt-auto flex gap-1.5">
+                <div className="skeleton h-5 w-12" />
+                <div className="skeleton h-5 w-10" />
+              </div>
+            </li>
+          ))}
+        </ul>
       </div>
     );
   }
@@ -54,6 +68,7 @@ export function PromptList({
       />
     ) : (
       <EmptyState
+        icon={<IconLibrary size={22} />}
         title={t("prompts.empty")}
         hint={t("prompts.emptyHint")}
         action={emptyAction}
@@ -66,43 +81,35 @@ export function PromptList({
   // under "Inactive", which would read as "nothing is applied".
   if (activeIds === null) {
     return (
-      <div className="flex flex-col gap-3" data-testid="prompt-list">
+      <div className="flex flex-col gap-4" data-testid="prompt-list">
         <p
-          className="rounded-2xl border border-amber-600/40 bg-amber-500/10 px-3 py-2 text-[14px] leading-snug text-amber-700 dark:text-amber-400"
+          className="rounded-xl border border-warning/35 bg-warning/10 px-3 py-2 text-[12.5px] leading-snug text-warning"
           role="status"
           data-testid="prompt-activation-unknown"
         >
           {t("prompts.activationUnknown")}
         </p>
-        <Group
-          title={t("prompts.allPrompts")}
-          items={prompts}
-          selectedId={selectedId}
-          onSelect={onSelect}
-        />
+        <Group title={t("prompts.allPrompts")} items={prompts} selectedId={selectedId} onSelect={onSelect} />
       </div>
     );
   }
 
-  const isActive = (item: PromptSummary) =>
-    activeIds ? activeIds.includes(item.id) : item.active;
+  const isActive = (item: PromptSummary) => (activeIds ? activeIds.includes(item.id) : item.active);
   const active = prompts.filter(isActive);
   const inactive = prompts.filter((item) => !isActive(item));
 
   return (
-    <div className="flex min-h-0 flex-col gap-3" data-testid="prompt-list">
-      <Group
-        title={t("prompts.active")}
-        items={active}
-        selectedId={selectedId}
-        onSelect={onSelect}
-        activeGroup
-      />
+    <div className="flex min-h-0 flex-col gap-6" data-testid="prompt-list">
+      {active.length > 0 ? (
+        <Group title={t("prompts.active")} items={active} selectedId={selectedId} onSelect={onSelect} activeGroup />
+      ) : null}
       <Group
         title={t("prompts.inactive")}
         items={inactive}
         selectedId={selectedId}
         onSelect={onSelect}
+        onDeploy={onDeploy}
+        deployDisabled={deployDisabled}
       />
     </div>
   );
@@ -114,80 +121,115 @@ function Group({
   selectedId,
   onSelect,
   activeGroup = false,
+  onDeploy,
+  deployDisabled = false,
 }: {
   title: string;
   items: PromptSummary[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   activeGroup?: boolean;
+  onDeploy?: (id: string) => void;
+  deployDisabled?: boolean;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   return (
-    <section
-      className={cx(
-        "flex min-w-0 flex-col overflow-hidden rounded-2xl border bg-card",
-        activeGroup ? "border-primary/35 shadow-[0_10px_30px_hsl(var(--primary)/0.08)]" : "border-border",
-      )}
-    >
-      <h3 className="mb-0 flex items-center gap-1 border-b border-border px-4 py-2.5 text-[14px] font-semibold text-foreground">
+    <section className="flex min-w-0 flex-col gap-2.5" data-group={activeGroup ? "active" : "library"}>
+      <h3 className="flex items-center gap-2 px-0.5 text-[12px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+        {activeGroup ? <span className="status-dot text-primary" data-live="" aria-hidden="true" /> : null}
         {title}
-        <span className="font-normal tabular-nums">({items.length})</span>
+        <span className="rounded-full bg-muted px-1.5 py-px text-[11px] font-medium tabular-nums tracking-normal">
+          {items.length}
+        </span>
       </h3>
       {items.length === 0 ? (
-        <p className="px-4 py-4 text-sm text-muted-foreground">
+        <p className="rounded-xl border border-dashed border-border px-4 py-5 text-center text-[12.5px] text-muted-foreground">
           {activeGroup ? t("prompts.noneActive") : t("prompts.noneInactive")}
         </p>
       ) : (
-        <ul className="grid grid-cols-1 gap-2 p-3 sm:grid-cols-2 xl:grid-cols-3">
-          {items.map((item) => {
+        <ul className={cx("grid grid-cols-1 gap-3", activeGroup ? "" : "sm:grid-cols-2 xl:grid-cols-3")}>
+          {items.map((item, index) => {
             const selected = selectedId === item.id;
             return (
-              <li key={item.id}>
+              <li
+                key={item.id}
+                className="animate-rise group relative"
+                style={{ animationDelay: `${Math.min(index, 8) * 35}ms` }}
+              >
                 <button
                   type="button"
                   onClick={() => onSelect(item.id)}
                   aria-current={selected ? "true" : undefined}
                   data-testid={`prompt-item-${item.id}`}
                   className={cx(
-                    "h-full w-full rounded-xl border px-3 py-3 text-left transition-colors",
+                    "flex h-full w-full flex-col rounded-2xl border p-4 text-left",
+                    "transition-[border-color,box-shadow,transform,background-color] duration-200",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                    selected
-                      ? "border-primary/50 bg-primary/10 shadow-sm"
-                      : "border-border/70 bg-background/60 hover:border-primary/25 hover:bg-muted/70",
+                    activeGroup
+                      ? "border-primary/40 bg-[linear-gradient(135deg,rgb(var(--primary)/0.10),rgb(var(--primary)/0.02)_55%,transparent)] bg-card shadow-glow"
+                      : cx(
+                          "surface-card hover:-translate-y-0.5 hover:border-primary/30",
+                          "hover:shadow-[0_1px_2px_hsl(var(--shadow)/0.05),0_16px_32px_-16px_rgb(var(--primary)/0.35)]",
+                        ),
+                    selected && "ring-2 ring-primary/40",
                   )}
                 >
-                  <div className="flex items-center gap-1.5">
-                    {activeGroup ? (
-                      <span
-                        className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary"
-                        aria-hidden="true"
-                      />
-                    ) : null}
+                  <div className="flex w-full items-start gap-2">
                     <span
                       className={cx(
-                        "min-w-0 flex-1 truncate text-[17px]",
-                        selected ? "font-semibold text-foreground" : "font-medium text-foreground",
+                        "min-w-0 flex-1 truncate font-semibold tracking-[-0.01em] text-foreground",
+                        activeGroup ? "text-[16px]" : "text-[14px]",
                       )}
                     >
                       {item.title}
                     </span>
-                  </div>
-                  {item.tags.length > 0 || item.lastUsedAt || item.updatedAt ? (
-                    <div className="mt-1 flex min-w-0 items-center gap-1 overflow-hidden">
-                      {item.tags.slice(0, 2).map((tag) => (
-                        <Tag key={tag}>{tag}</Tag>
-                      ))}
-                      {item.tags.length > 2 ? (
-                        <span className="shrink-0 text-[13px] text-muted-foreground">
-                          +{item.tags.length - 2}
-                        </span>
-                      ) : null}
-                      <span className="ml-auto shrink-0 text-[13px] tabular-nums text-muted-foreground">
-                        {shortDate(item.lastUsedAt ?? item.updatedAt)}
+                    {activeGroup ? (
+                      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold text-primary-foreground">
+                        {t("status.deployed")}
                       </span>
-                    </div>
-                  ) : null}
+                    ) : (
+                      <span className="shrink-0 pt-0.5 text-[11.5px] tabular-nums text-muted-foreground">
+                        {relativeTime(item.lastUsedAt ?? item.updatedAt, i18n.language)}
+                      </span>
+                    )}
+                  </div>
+                  <p
+                    className={cx(
+                      "mt-1.5 text-[12.5px] leading-relaxed text-muted-foreground",
+                      activeGroup ? "line-clamp-3" : "line-clamp-2 min-h-[2.6em]",
+                    )}
+                  >
+                    {item.excerpt || t("prompts.noExcerpt")}
+                  </p>
+                  <div className={cx("mt-3 flex min-w-0 items-center gap-1", onDeploy && !activeGroup && "pr-20")}>
+                    {item.tags.slice(0, 3).map((tag) => (
+                      <Tag key={tag}>{tag}</Tag>
+                    ))}
+                    {item.tags.length > 3 ? (
+                      <span className="shrink-0 text-[11.5px] text-muted-foreground">+{item.tags.length - 3}</span>
+                    ) : null}
+                    {activeGroup ? (
+                      <span className="ml-auto inline-flex shrink-0 items-center gap-0.5 text-[12px] font-medium text-primary">
+                        {relativeTime(item.lastUsedAt ?? item.updatedAt, i18n.language)}
+                        <IconChevronRight size={13} />
+                      </span>
+                    ) : null}
+                  </div>
                 </button>
+                {onDeploy && !activeGroup ? (
+                  <Button
+                    size="xs"
+                    variant="subtle"
+                    disabled={deployDisabled}
+                    data-testid={`prompt-deploy-${item.id}`}
+                    title={t("prompts.deployThis")}
+                    onClick={() => onDeploy(item.id)}
+                    className="absolute bottom-3.5 right-3.5 opacity-100 transition-opacity sm:opacity-0 sm:focus-visible:opacity-100 sm:group-hover:opacity-100"
+                  >
+                    <IconRocket size={13} />
+                    {t("prompts.deploy")}
+                  </Button>
+                ) : null}
               </li>
             );
           })}
@@ -195,14 +237,4 @@ function Group({
       )}
     </section>
   );
-}
-
-function shortDate(value: string | null): string {
-  if (!value) return "";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value.slice(0, 10);
-  const now = Date.now();
-  const diffDays = Math.floor((now - parsed.getTime()) / 86_400_000);
-  if (diffDays <= 0) return parsed.toISOString().slice(11, 16);
-  return parsed.toISOString().slice(0, 10);
 }

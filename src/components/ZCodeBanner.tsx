@@ -10,7 +10,7 @@ export function ZCodeBanner({ tool }: { tool: Pick<ToolInfo, "id" | "available" 
   return (
     <div
       data-testid="zcode-unavailable"
-      className="flex items-start gap-2 rounded-2xl border border-amber-600/40 bg-amber-500/10 px-3.5 py-2.5 text-[14px] text-amber-700 dark:text-amber-400"
+      className="flex items-start gap-2 rounded-xl border border-warning/35 bg-warning/10 px-3.5 py-2.5 text-[12.5px] text-warning"
       role="status"
     >
       <IconAlert size={14} className="mt-px shrink-0" />

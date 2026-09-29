@@ -8,23 +8,24 @@ import { PromptDetailPage } from "./components/PromptDetailPage";
 import { PromptEditPage } from "./components/PromptEditPage";
 import { ToastHost } from "./components/ToastHost";
 import { UpdateProvider } from "./components/UpdateProvider";
+import { useHotkeys } from "./hooks/useHotkeys";
 import { useSettings } from "./hooks/useSettings";
 import { useTheme } from "./hooks/useTheme";
 import { useToasts } from "./hooks/useToasts";
 import { isTauriRuntime } from "./lib/runtime";
 import { AdvancedPage } from "./pages/AdvancedPage";
 import { SettingsPage } from "./pages/SettingsPage";
-import { HarnessPage } from "./pages/HarnessPage";
-import { ToolPage } from "./pages/ToolPage";
+import { WorkspacePage } from "./pages/WorkspacePage";
 import * as api from "./api";
-import type { FirstRunReport, PromptDetail } from "./types";
+import type { FirstRunReport, PromptDetail, ToolId } from "./types";
+import { TOOL_IDS } from "./types";
 
 export function App() {
   const { t } = useTranslation();
   useTheme();
   const settingsState = useSettings();
   const toast = useToasts();
-  const [page, setPage] = useState<AppPage>({ kind: "harness", tool: "claude" });
+  const [page, setPage] = useState<AppPage>({ kind: "tool", tool: "claude" });
   const [dirty, setDirty] = useState(false);
   const [startup, setStartup] = useState<FirstRunReport | null>(null);
   const [libraryEpoch, setLibraryEpoch] = useState(0);
@@ -32,10 +33,21 @@ export function App() {
   const advancedEnabled = settingsState.settings.advancedToolsEnabled;
   const visiblePage = useMemo<AppPage>(() => {
     if (page.kind === "advanced" && !advancedEnabled) {
-      return { kind: "harness", tool: "claude" };
+      return { kind: "tool", tool: "claude" };
     }
     return page;
   }, [advancedEnabled, page]);
+
+  // The accent follows the agent in view, and stays with the last one visited
+  // while settings are open, so the chrome never flashes back to a default.
+  const [accentTool, setAccentTool] = useState<ToolId>("claude");
+  const pageTool = "tool" in visiblePage ? visiblePage.tool : null;
+  useEffect(() => {
+    if (pageTool) setAccentTool(pageTool);
+  }, [pageTool]);
+  useEffect(() => {
+    document.documentElement.dataset.agent = accentTool;
+  }, [accentTool]);
 
   useEffect(() => {
     void api
@@ -101,6 +113,15 @@ export function App() {
     [dirty, t],
   );
 
+  useHotkeys([
+    ...TOOL_IDS.map((tool, index) => ({
+      key: String(index + 1),
+      mod: true,
+      handler: () => navigate({ kind: "tool", tool }),
+    })),
+    { key: ",", mod: true, handler: () => navigate({ kind: "settings" }) },
+  ]);
+
   return (
     <UpdateProvider
       channel={settingsState.settings.updateChannel}
@@ -108,7 +129,7 @@ export function App() {
     >
       <AppShell page={visiblePage} onNavigate={navigate} advancedEnabled={advancedEnabled}>
         {settingsState.error ? (
-          <div className="mb-2 shrink-0">
+          <div className="shrink-0 px-4 pt-3 sm:px-6">
             <ErrorBanner
               message={t("errors.apiUnavailable")}
               onRetry={() => void settingsState.reload()}
@@ -116,21 +137,10 @@ export function App() {
             />
           </div>
         ) : null}
-        {visiblePage.kind === "harness" ? (
-          <div className="min-h-0 flex-1">
-            <HarnessPage
-              tool={visiblePage.tool}
-              settings={settingsState.settings}
-              toast={toast}
-              onRememberProject={(dir) => void rememberProject(dir)}
-              onNavigate={navigate}
-              onDirtyChange={setDirty}
-            />
-          </div>
-        ) : null}
         {visiblePage.kind === "tool" ? (
-          <div className="min-h-0 flex-1">
-            <ToolPage
+          <div key={visiblePage.tool} className="animate-page-in min-h-0 flex-1">
+            <WorkspacePage
+              key={visiblePage.tool}
               tool={visiblePage.tool}
               settings={settingsState.settings}
               toast={toast}
@@ -189,6 +199,7 @@ export function App() {
           />
         ) : null}
         {visiblePage.kind === "settings" ? (
+          <div className="animate-page-in min-h-0 flex-1 px-4 py-5 sm:px-6">
           <SettingsPage
             settings={settingsState.settings}
             onSave={settingsState.save}
@@ -199,8 +210,13 @@ export function App() {
             toast={toast}
             initialTab={visiblePage.tab}
           />
+          </div>
         ) : null}
-        {visiblePage.kind === "advanced" ? <AdvancedPage enabled={advancedEnabled} toast={toast} /> : null}
+        {visiblePage.kind === "advanced" ? (
+          <div className="animate-page-in min-h-0 flex-1 overflow-auto px-4 py-5 sm:px-6">
+            <AdvancedPage enabled={advancedEnabled} toast={toast} />
+          </div>
+        ) : null}
       </AppShell>
       <ToastHost toasts={toast.toasts} dismiss={toast.dismiss} />
       <FirstRunDialog

@@ -1,12 +1,14 @@
-import { forwardRef, useId, useState } from "react";
+import { forwardRef, useCallback, useId, useLayoutEffect, useRef, useState } from "react";
 import type {
   ButtonHTMLAttributes,
+  ComponentPropsWithRef,
   InputHTMLAttributes,
   ReactNode,
+  RefObject,
   SelectHTMLAttributes,
   TextareaHTMLAttributes,
 } from "react";
-import { IconChevronDown, IconChevronRight } from "./icons";
+import { IconChevronRight } from "./icons";
 
 export function cx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
@@ -16,18 +18,30 @@ const FOCUS_RING =
   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background";
 
 const BUTTON_VARIANTS = {
-  primary: "bg-primary text-primary-foreground hover:brightness-[1.08] disabled:hover:brightness-100 shadow-sm",
-  outline:
-    "border border-border bg-background text-foreground hover:border-ring/60 hover:bg-accent disabled:hover:bg-background disabled:hover:border-border",
+  primary: cx(
+    "bg-primary text-primary-foreground",
+    "shadow-[inset_0_1px_0_rgb(255_255_255/0.16),0_1px_2px_rgb(var(--primary)/0.35),0_6px_16px_-6px_rgb(var(--primary)/0.55)]",
+    "hover:brightness-[1.07] disabled:hover:brightness-100",
+  ),
+  outline: cx(
+    "border border-border bg-card text-foreground shadow-[0_1px_2px_hsl(var(--shadow)/0.05)]",
+    "hover:border-foreground/20 hover:bg-accent disabled:hover:bg-card disabled:hover:border-border",
+  ),
+  subtle: "bg-primary/10 text-primary hover:bg-primary/[0.16] disabled:hover:bg-primary/10",
   ghost: "text-muted-foreground hover:bg-accent hover:text-foreground disabled:hover:bg-transparent",
-  danger:
-    "border border-destructive/50 bg-transparent text-destructive hover:bg-destructive/12 disabled:hover:bg-transparent",
+  danger: cx(
+    "border border-destructive/30 bg-destructive/[0.04] text-destructive",
+    "hover:border-destructive/50 hover:bg-destructive/10 disabled:hover:bg-transparent",
+  ),
 } as const;
 
 const BUTTON_SIZES = {
-  sm: "h-9 gap-1 px-3 text-[15px]",
-  md: "h-10 gap-1.5 px-3.5 text-[15px]",
-  icon: "h-10 w-10 justify-center p-0",
+  xs: "h-7 gap-1 rounded-lg px-2.5 text-[12.5px]",
+  sm: "h-8 gap-1.5 rounded-lg px-3 text-[13px]",
+  md: "h-9 gap-1.5 rounded-[10px] px-3.5 text-[13.5px]",
+  lg: "h-10 gap-2 rounded-xl px-4 text-[14px]",
+  icon: "h-9 w-9 justify-center rounded-[10px] p-0",
+  iconSm: "h-8 w-8 justify-center rounded-lg p-0",
 } as const;
 
 export type ButtonVariant = keyof typeof BUTTON_VARIANTS;
@@ -47,7 +61,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLBut
       ref={ref}
       type={props.type ?? "button"}
       className={cx(
-        "inline-flex shrink-0 items-center rounded-xl font-medium transition-colors",
+        "inline-flex shrink-0 items-center whitespace-nowrap font-medium",
+        "transition-[background-color,border-color,color,box-shadow,filter,transform] duration-150 active:scale-[0.97] disabled:active:scale-100",
         FOCUS_RING,
         BUTTON_SIZES[size],
         BUTTON_VARIANTS[variant],
@@ -62,11 +77,12 @@ export function IconButton({
   label,
   className,
   children,
+  size = "icon",
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { label: string }) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & { label: string; size?: "icon" | "iconSm" }) {
   return (
     <Button
-      size="icon"
+      size={size}
       variant="ghost"
       title={label}
       aria-label={label}
@@ -91,21 +107,21 @@ export function Field({
 }) {
   return (
     <label className={cx("flex min-w-0 flex-col gap-1.5", className)}>
-      <span className="text-[14px] font-medium text-muted-foreground">{label}</span>
+      <span className="text-[12.5px] font-medium text-muted-foreground">{label}</span>
       {children}
-      {hint ? <span className="text-[14px] text-muted-foreground">{hint}</span> : null}
+      {hint ? <span className="text-[12.5px] text-muted-foreground">{hint}</span> : null}
     </label>
   );
 }
 
 const CONTROL_BASE = cx(
-  "w-full rounded-xl border border-input bg-background text-foreground transition-colors",
-  "placeholder:text-muted-foreground hover:border-ring/60",
-  FOCUS_RING,
+  "w-full rounded-[10px] border border-input bg-card text-foreground shadow-[inset_0_1px_2px_hsl(var(--shadow)/0.04)]",
+  "transition-[border-color,box-shadow] placeholder:text-muted-foreground/80 hover:border-foreground/25",
+  "focus-visible:outline-none focus-visible:border-primary/60 focus-visible:ring-[3px] focus-visible:ring-primary/15",
 );
 
-export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...props} className={cx(CONTROL_BASE, "h-10 px-3 text-[15px]", className)} />;
+export function Input({ className, ...props }: ComponentPropsWithRef<"input">) {
+  return <input {...props} className={cx(CONTROL_BASE, "h-9 px-3 text-[13.5px]", className)} />;
 }
 
 export function Textarea({ className, ...props }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
@@ -114,7 +130,7 @@ export function Textarea({ className, ...props }: TextareaHTMLAttributes<HTMLTex
       {...props}
       className={cx(
         CONTROL_BASE,
-        "resize-y px-3 py-2 font-mono text-[15px] leading-relaxed",
+        "resize-y px-3 py-2 font-mono text-[13px] leading-relaxed",
         className,
       )}
     />
@@ -123,7 +139,7 @@ export function Textarea({ className, ...props }: TextareaHTMLAttributes<HTMLTex
 
 export function Select({ className, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
-    <select {...props} className={cx(CONTROL_BASE, "h-10 px-3 text-[15px]", className)} />
+    <select {...props} className={cx(CONTROL_BASE, "h-9 px-3 text-[13.5px]", className)} />
   );
 }
 
@@ -138,7 +154,7 @@ export function Checkbox({
       <input
         type="checkbox"
         {...props}
-        className={cx("h-4 w-4 shrink-0 accent-[hsl(var(--primary))]", FOCUS_RING, className)}
+        className={cx("h-4 w-4 shrink-0 accent-[rgb(var(--primary))]", FOCUS_RING, className)}
       />
     );
   }
@@ -147,7 +163,7 @@ export function Checkbox({
       <input
         type="checkbox"
         {...props}
-        className={cx("mt-0.5 h-4 w-4 shrink-0 accent-[hsl(var(--primary))]", FOCUS_RING)}
+        className={cx("mt-0.5 h-4 w-4 shrink-0 accent-[rgb(var(--primary))]", FOCUS_RING)}
       />
       <span className="min-w-0">
         <span className="block font-medium text-foreground">{label}</span>
@@ -166,7 +182,7 @@ export function Panel({
   className?: string;
 }) {
   return (
-    <section className={cx("rounded-2xl border border-border bg-card shadow-[0_2px_8px_hsl(var(--shadow)/0.04)]", className)}>
+    <section className={cx("surface-card", className)}>
       {children}
     </section>
   );
@@ -188,7 +204,7 @@ export function PanelHeader({
         className,
       )}
     >
-      <h2 className="min-w-0 truncate text-[17px] font-semibold text-foreground">{title}</h2>
+      <h2 className="min-w-0 truncate text-[15px] font-semibold text-foreground">{title}</h2>
       {actions ? <div className="ml-auto flex shrink-0 items-center gap-1">{actions}</div> : null}
     </div>
   );
@@ -207,13 +223,13 @@ export function SettingRow({
   htmlFor?: string;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-b border-border px-4 py-3.5 last:border-b-0">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-b border-border/70 px-5 py-4 last:border-b-0">
       <div className="min-w-[160px] flex-1">
-        <label htmlFor={htmlFor} className="block text-[15px] font-medium text-foreground">
+        <label htmlFor={htmlFor} className="block text-[14px] font-medium text-foreground">
           {label}
         </label>
         {description ? (
-          <p className="mt-0.5 text-[14px] leading-snug text-muted-foreground">{description}</p>
+          <p className="mt-0.5 text-[12.5px] leading-snug text-muted-foreground">{description}</p>
         ) : null}
       </div>
       <div className="flex shrink-0 items-center gap-1.5">{control}</div>
@@ -223,10 +239,48 @@ export function SettingRow({
 
 export function SectionLabel({ children }: { children: ReactNode }) {
   return (
-    <h3 className="text-[14px] font-semibold uppercase tracking-wide text-muted-foreground">
+    <h3 className="text-[11.5px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
       {children}
     </h3>
   );
+}
+
+/**
+ * Keeps an absolutely positioned highlight under the active child of `container`.
+ * Measured before paint, re-measured on resize, so the highlight glides between
+ * options instead of jumping.
+ */
+export function useSlidingIndicator(
+  container: RefObject<HTMLElement | null>,
+  selector: string,
+  deps: unknown[],
+) {
+  const [rect, setRect] = useState<{ left: number; width: number; top: number; height: number } | null>(null);
+  const measure = useCallback(() => {
+    const root = container.current;
+    const active = root?.querySelector<HTMLElement>(selector);
+    if (!root || !active || active.offsetWidth === 0) {
+      setRect(null);
+      return;
+    }
+    const next = { left: active.offsetLeft, width: active.offsetWidth, top: active.offsetTop, height: active.offsetHeight };
+    setRect((current) =>
+      current && current.left === next.left && current.width === next.width && current.top === next.top && current.height === next.height
+        ? current
+        : next,
+    );
+  }, [container, selector]);
+
+  useLayoutEffect(() => {
+    measure();
+    const root = container.current;
+    if (!root || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(root);
+    return () => observer.disconnect();
+  }, [measure, ...deps]);
+
+  return rect;
 }
 
 export function Segmented<T extends string>({
@@ -236,6 +290,7 @@ export function Segmented<T extends string>({
   ariaLabel,
   className,
   disabled = false,
+  size = "md",
 }: {
   value: T;
   options: Array<{ value: T; label: ReactNode; title?: string }>;
@@ -243,13 +298,24 @@ export function Segmented<T extends string>({
   ariaLabel: string;
   className?: string;
   disabled?: boolean;
+  size?: "sm" | "md";
 }) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  const indicator = useSlidingIndicator(rootRef, '[aria-checked="true"]', [value, options.length]);
   return (
     <div
+      ref={rootRef}
       role="radiogroup"
       aria-label={ariaLabel}
-      className={cx("inline-flex gap-0.5 rounded-xl border border-border bg-muted p-1", className)}
+      className={cx("relative inline-flex gap-0.5 rounded-[10px] bg-muted p-[3px]", className)}
     >
+      {indicator ? (
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute rounded-[8px] bg-card shadow-[0_1px_2px_hsl(var(--shadow)/0.1),0_0_0_0.5px_hsl(var(--shadow)/0.06)] transition-[left,width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] dark:bg-accent"
+          style={{ left: indicator.left, width: indicator.width, top: indicator.top, height: indicator.height }}
+        />
+      ) : null}
       {options.map((option) => {
         const active = option.value === value;
         return (
@@ -262,10 +328,11 @@ export function Segmented<T extends string>({
             disabled={disabled}
             onClick={() => onChange(option.value)}
             className={cx(
-              "inline-flex h-9 items-center gap-1.5 rounded-xl px-3 text-[15px] font-medium transition-colors",
+              "relative z-[1] inline-flex items-center gap-1.5 rounded-[8px] font-medium transition-colors",
+              size === "sm" ? "h-7 px-2.5 text-[12.5px]" : "h-8 px-3 text-[13px]",
               FOCUS_RING,
               active
-                ? "bg-background text-foreground shadow-sm"
+                ? cx("text-foreground", !indicator && "bg-card shadow-sm")
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
@@ -292,22 +359,22 @@ export function Disclosure({
   const [open, setOpen] = useState(defaultOpen);
   const id = useId();
   return (
-    <div className="rounded-lg border border-border" data-testid={testId}>
+    <div className="rounded-xl border border-border bg-card/60" data-testid={testId}>
       <button
         type="button"
         aria-expanded={open}
         aria-controls={id}
         onClick={() => setOpen((value) => !value)}
         className={cx(
-          "flex w-full items-center gap-1.5 rounded-lg px-3 py-2 text-left text-[14px] font-medium text-muted-foreground transition-colors hover:text-foreground",
+          "flex w-full items-center gap-1.5 rounded-xl px-3 py-2 text-left text-[13px] font-medium text-muted-foreground transition-colors hover:text-foreground",
           FOCUS_RING,
         )}
       >
-        {open ? <IconChevronDown /> : <IconChevronRight />}
+        <IconChevronRight className={cx("transition-transform duration-200", open && "rotate-90")} />
         <span className="min-w-0 truncate">{title}</span>
       </button>
       {open ? (
-        <div id={id} className="border-t border-border px-3 py-2.5">
+        <div id={id} className="animate-disclosure border-t border-border px-3 py-2.5">
           {children}
         </div>
       ) : null}
@@ -317,7 +384,7 @@ export function Disclosure({
 
 export function Mono({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <span className={cx("break-all font-mono text-[13px] leading-snug text-muted-foreground", className)}>
+    <span className={cx("break-all font-mono text-[12px] leading-snug text-muted-foreground", className)}>
       {children}
     </span>
   );
@@ -325,7 +392,7 @@ export function Mono({ children, className }: { children: ReactNode; className?:
 
 export function Tag({ children }: { children: ReactNode }) {
   return (
-    <span className="inline-flex max-w-[140px] items-center truncate rounded-lg border border-border bg-muted px-2 py-0.5 text-[13px] text-muted-foreground">
+    <span className="inline-flex h-5 max-w-[140px] items-center truncate rounded-md bg-muted px-1.5 text-[11.5px] font-medium text-muted-foreground">
       {children}
     </span>
   );

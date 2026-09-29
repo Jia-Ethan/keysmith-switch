@@ -9,6 +9,8 @@ export interface ToastItem {
   message: string;
 }
 
+export const TOAST_DURATION_MS = 4200;
+
 let nextId = 1;
 
 export function useToasts() {
@@ -24,7 +26,7 @@ export function useToasts() {
       if (!message) return;
       const id = `t${nextId++}`;
       setToasts((current) => [...current.slice(-4), { id, kind, message }]);
-      window.setTimeout(() => dismiss(id), 4200);
+      window.setTimeout(() => dismiss(id), TOAST_DURATION_MS);
     },
     [dismiss],
   );
