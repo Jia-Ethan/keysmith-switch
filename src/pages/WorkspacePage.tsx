@@ -10,29 +10,22 @@ import { EmptyState } from "../components/EmptyState";
 import { Callout, PlanPreview } from "../components/PlanPreview";
 import { PromptList } from "../components/PromptList";
 import { QuickDeployPanel } from "../components/QuickDeployPanel";
-import { ScopeBar } from "../components/ScopeBar";
 import { ToolLogo } from "../components/ToolLogos";
 import { ZCodeBanner } from "../components/ZCodeBanner";
 import { IconAlert, IconPlus, IconSearch } from "../components/icons";
 import { Button, Disclosure, Input, Mono, cx } from "../components/ui";
-import { useHotkeys } from "../hooks/useHotkeys";
 import type { ToastApi } from "../hooks/useToasts";
-import { shortPath } from "../lib/format";
 import { applyHarnessOutcome, getHarnessStatus, loadHarnessStatus, useHarnessStatus } from "../lib/harnessState";
-import { shortcutLabel } from "../lib/platform";
 import { canConfirmPlan } from "../lib/planGate";
 import { toastSafeMessage } from "../lib/redact";
-import { pickDirectory } from "../lib/runtime";
-import { activeIdsFor, defaultScopeFor, isRecoveryState, mergeTools, scopeNeedsProjectDir } from "../lib/tools";
+import { activeIdsFor, isRecoveryState, mergeTools } from "../lib/tools";
 import { isZcodeUnavailable } from "../lib/zcode";
 import type {
   Activation,
-  Envelope,
   Operation,
   PlanResult,
   PromptSort,
   PromptSummary,
-  ScopeId,
   Settings,
   ToolId,
   ToolInfo,
@@ -43,8 +36,8 @@ type PlanKind = "activate" | "deactivate" | "recover";
 interface OpenPlan {
   kind: PlanKind;
   result: PlanResult;
-  scope: ScopeId;
-  projectDir: string;
+  /** The library prompt being deployed; null for removals and recoveries. */
+  promptId: string | null;
   title: string;
   /** Plans opened from the composer keep the draft dirty until they resolve. */
   source: "composer" | "library" | "machine";
@@ -67,8 +60,8 @@ function sortPrompts(prompts: PromptSummary[], sort: PromptSort): PromptSummary[
 
 /**
  * One agent's workspace: the live deployment on top, the prompt library below,
- * and the Quick Deploy composer one shortcut away. Every write still goes
- * through a reviewed adapter plan.
+ * and the Quick Deploy composer one click away. Every deployment is machine-wide
+ * (user scope) and every write still goes through a reviewed adapter plan.
  *
  * The page is keyed by tool in the app, so switching agents starts from clean
  * state; the machine read itself is remembered per run in `harnessState`.
@@ -78,7 +71,6 @@ export function WorkspacePage({
   settings,
   toast,
   onNavigate,
-  onRememberProject,
   onDirtyChange,
   libraryEpoch = 0,
 }: {
@@ -86,7 +78,6 @@ export function WorkspacePage({
   settings?: Settings;
   toast?: ToastApi;
   onNavigate?: (page: AppPage) => void;
-  onRememberProject?: (dir: string) => void;
   onDirtyChange?: (dirty: boolean) => void;
   libraryEpoch?: number;
 }) {
@@ -94,12 +85,7 @@ export function WorkspacePage({
   const entry = useHarnessStatus(tool);
   const defaultTitle = t("quickDeploy.defaultTitle");
   const [toolInfo, setToolInfo] = useState<ToolInfo>(() => mergeTools(null).find((item) => item.id === tool)!);
-  const [projectStatus, setProjectStatus] = useState<Envelope | null>(null);
-  const [projectStatusError, setProjectStatusError] = useState<string | null>(null);
-  const [scope, setScope] = useState<ScopeId>("user");
-  const [projectDir, setProjectDir] = useState("");
   const [reading, setReading] = useState(false);
-  const [statusEpoch, setStatusEpoch] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [prompts, setPrompts] = useState<PromptSummary[]>([]);
@@ -121,45 +107,31 @@ export function WorkspacePage({
   const [plan, setPlan] = useState<OpenPlan | null>(null);
   const [planError, setPlanError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [celebration, setCelebration] = useState<string | null>(null);
-  const searchRef = useRef<HTMLInputElement>(null);
+  /** Which action the person just started, so its own button shows progress. */
+  const [pending, setPending] = useState<string | null>(null);
+  const [celebration, setCelebration] = useState<{ kind: "deployed" | "removed"; subtitle: string } | null>(null);
   const promptSeq = useRef(0);
 
-  const supportedScopes = useMemo(
-    () => (toolInfo.supportedScopes.length ? toolInfo.supportedScopes : (["user"] as ScopeId[])),
-    [toolInfo],
-  );
-  const requireProject = scopeNeedsProjectDir(scope);
-  const trimmedDir = projectDir.trim();
-  const projectReady = !requireProject || Boolean(trimmedDir);
-  const unavailable = isZcodeUnavailable(toolInfo) || !toolInfo.available || projectStatus?.available === false;
+  const unavailable = isZcodeUnavailable(toolInfo) || !toolInfo.available;
 
-  const machine =
-    scope === "user"
-      ? entry?.error
-        ? "unknown"
-        : entry?.machine ?? "unknown"
-      : projectStatus && projectStatus.available
-        ? projectStatus.status === "active"
-          ? "deployed"
-          : projectStatus.status === "inactive" || projectStatus.status === "not-installed"
-            ? "undeployed"
-            : "unknown"
-        : "unknown";
-  const statusError = loadError ?? (scope === "user" ? entry?.error : projectStatusError ?? projectStatus?.error);
-  const recovery = scope !== "user" && isRecoveryState(projectStatus);
+  const machine = entry?.error ? "unknown" : entry?.machine ?? "unknown";
+  const statusError = loadError ?? entry?.error;
 
-  const activeIds = useMemo(
-    () => (activations ? activeIdsFor(activations, tool, scope, trimmedDir) : null),
-    [activations, scope, tool, trimmedDir],
-  );
+  // The activation record names the live prompt; the machine read backs it up
+  // when that record is missing (deployed by an older version, rebuilt index).
+  const livePromptId = machine === "deployed" ? entry?.promptId ?? null : null;
+  const activeIds = useMemo(() => {
+    if (!activations) return livePromptId ? [livePromptId] : null;
+    const ids = activeIdsFor(activations, tool, "user", "");
+    return livePromptId && !ids.includes(livePromptId) ? [...ids, livePromptId] : ids;
+  }, [activations, livePromptId, tool]);
   const deployedTitle = useMemo(() => {
-    if (!activeIds?.length) return null;
+    if (!activeIds?.length) return entry?.promptTitle ?? null;
     const hit = prompts.find((item) => activeIds.includes(item.id));
     if (hit) return hit.title;
     const activation = activations?.find((item) => item.promptId && activeIds.includes(item.promptId));
-    return activation?.promptTitle ?? null;
-  }, [activations, activeIds, prompts]);
+    return activation?.promptTitle ?? entry?.promptTitle ?? null;
+  }, [activations, activeIds, entry?.promptTitle, prompts]);
 
   const draftDirty =
     (title !== defaultTitle || Boolean(content)) && savedDraft !== `${title}\0${content}`;
@@ -171,7 +143,7 @@ export function WorkspacePage({
 
   useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
 
-  // Tool metadata and the default scope.
+  // Tool metadata.
   useEffect(() => {
     let cancelled = false;
     void api
@@ -181,7 +153,6 @@ export function WorkspacePage({
         const next = mergeTools(tools).find((item) => item.id === tool);
         if (!next) return;
         setToolInfo(next);
-        setScope(defaultScopeFor(tool, next.supportedScopes, settings?.defaultClaudeScope ?? "user"));
       })
       .catch((reason: unknown) => {
         if (!cancelled) setLoadError(toastSafeMessage(reason) || t("errors.loadFailed"));
@@ -189,9 +160,9 @@ export function WorkspacePage({
     return () => {
       cancelled = true;
     };
-  }, [settings?.defaultClaudeScope, tool]);
+  }, [tool]);
 
-  // User scope: read the machine once per run.
+  // Read the machine once per run.
   useEffect(() => {
     if (getHarnessStatus(tool)) return;
     let cancelled = false;
@@ -203,28 +174,6 @@ export function WorkspacePage({
       cancelled = true;
     };
   }, [tool]);
-
-  // Project / local scope: status for the chosen directory, debounced while typing.
-  useEffect(() => {
-    setProjectStatus(null);
-    setProjectStatusError(null);
-    if (!requireProject || !trimmedDir) return;
-    let cancelled = false;
-    const timer = window.setTimeout(() => {
-      void api
-        .toolStatus({ tool, scope, projectDir: trimmedDir })
-        .then((result) => {
-          if (!cancelled) setProjectStatus(result);
-        })
-        .catch((reason: unknown) => {
-          if (!cancelled) setProjectStatusError(toastSafeMessage(reason) || t("errors.loadFailed"));
-        });
-    }, 200);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [requireProject, scope, statusEpoch, tool, trimmedDir]);
 
   const loadPrompts = useCallback(async () => {
     const seq = ++promptSeq.current;
@@ -280,8 +229,7 @@ export function WorkspacePage({
     setReading(true);
     setLoadError(null);
     try {
-      if (scope === "user") await loadHarnessStatus(tool, true);
-      else setStatusEpoch((value) => value + 1);
+      await loadHarnessStatus(tool, true);
       setLocalEpoch((value) => value + 1);
     } finally {
       setReading(false);
@@ -319,26 +267,14 @@ export function WorkspacePage({
 
   const previewDraft = async () => {
     if (busy || !validateDraft()) return;
-    if (!projectReady) {
-      const reason = t("scope.needsProjectDir");
-      setComposerMessage(reason);
-      toast?.err(reason);
-      return;
-    }
     setBusy(true);
     setComposerMessage(null);
     try {
-      const plannedScope = scope;
-      const plannedDir = requireProject ? trimmedDir : "";
       const prompt = await api.createPastedPrompt({ tool, title: title.trim(), content });
       setSavedDraft(`${title}\0${content}`);
-      const result = await api.planActivate({
-        promptId: prompt.id,
-        scope: plannedScope,
-        projectDir: plannedDir || undefined,
-      });
+      const result = await api.planActivate({ promptId: prompt.id, scope: "user" });
       setPlanError(null);
-      setPlan({ kind: "activate", result, scope: plannedScope, projectDir: plannedDir, title: prompt.title, source: "composer" });
+      setPlan({ kind: "activate", result, promptId: prompt.id, title: prompt.title, source: "composer" });
     } catch (reason) {
       setComposerMessage(fail(reason, t("quickDeploy.failed")));
     } finally {
@@ -365,52 +301,50 @@ export function WorkspacePage({
 
   const deployFromLibrary = async (promptId: string) => {
     if (busy) return;
-    if (!projectReady) {
-      toast?.err(t("scope.needsProjectDir"));
-      return;
-    }
     setBusy(true);
+    setPending(`deploy:${promptId}`);
     try {
-      const plannedDir = requireProject ? trimmedDir : "";
-      const result = await api.planActivate({ promptId, scope, projectDir: plannedDir || undefined });
+      const result = await api.planActivate({ promptId, scope: "user" });
       const summary = prompts.find((item) => item.id === promptId);
       setPlanError(null);
-      setPlan({ kind: "activate", result, scope, projectDir: plannedDir, title: summary?.title ?? "", source: "library" });
+      setPlan({ kind: "activate", result, promptId, title: summary?.title ?? "", source: "library" });
     } catch (reason) {
       fail(reason, t("errors.planFailed"));
     } finally {
       setBusy(false);
+      setPending(null);
     }
   };
 
   const openRemovePlan = async () => {
-    if (!projectReady || busy) return;
+    if (busy) return;
     setBusy(true);
+    setPending("remove");
     try {
-      const plannedDir = requireProject ? trimmedDir : "";
-      const result = await api.planDeactivate({ tool, scope, projectDir: plannedDir || undefined });
+      const result = await api.planDeactivate({ tool, scope: "user" });
       setPlanError(null);
-      setPlan({ kind: "deactivate", result, scope, projectDir: plannedDir, title: deployedTitle ?? "", source: "machine" });
+      setPlan({ kind: "deactivate", result, promptId: null, title: deployedTitle ?? "", source: "machine" });
     } catch (reason) {
       fail(reason, t("quickDeploy.failed"));
     } finally {
       setBusy(false);
+      setPending(null);
     }
   };
 
   const openRecoverPlan = async () => {
     if (busy) return;
     setBusy(true);
+    setPending("recover");
     try {
-      const plannedScope = plan?.scope ?? scope;
-      const plannedDir = plan?.projectDir ?? (requireProject ? trimmedDir : "");
-      const result = await api.recoverTool({ tool, scope: plannedScope, projectDir: plannedDir || undefined });
+      const result = await api.recoverTool({ tool, scope: "user" });
       setPlanError(null);
-      setPlan({ kind: "recover", result, scope: plannedScope, projectDir: plannedDir, title: "", source: "machine" });
+      setPlan({ kind: "recover", result, promptId: null, title: "", source: "machine" });
     } catch (reason) {
       fail(reason, t("errors.recoverFailed"));
     } finally {
       setBusy(false);
+      setPending(null);
     }
   };
 
@@ -436,18 +370,16 @@ export function WorkspacePage({
         toast?.err(message);
         return;
       }
-      if (plan.scope === "user") {
-        if (plan.kind === "recover") void loadHarnessStatus(tool, true);
-        else applyHarnessOutcome(tool, plan.kind === "activate" ? "deploy" : "remove");
-      } else {
-        setStatusEpoch((value) => value + 1);
-      }
+      if (plan.kind === "recover") void loadHarnessStatus(tool, true);
+      else if (plan.kind === "activate") applyHarnessOutcome(tool, "deploy", { id: plan.promptId, title: plan.title });
+      else applyHarnessOutcome(tool, "remove");
       if (plan.source === "composer") {
         resetDraft();
         setComposerOpen(false);
       }
-      if (plan.kind === "activate") setCelebration(plan.title || t("quickDeploy.deployed"));
-      else toast?.ok(plan.kind === "deactivate" ? t("quickDeploy.removed") : t("plan.success"));
+      if (plan.kind === "activate") setCelebration({ kind: "deployed", subtitle: plan.title || t("quickDeploy.deployed") });
+      else if (plan.kind === "deactivate") setCelebration({ kind: "removed", subtitle: plan.title });
+      else toast?.ok(t("plan.success"));
       setPlan(null);
       setLocalEpoch((value) => value + 1);
     } catch (reason) {
@@ -463,13 +395,6 @@ export function WorkspacePage({
     setPlanError(null);
   };
 
-  useHotkeys([
-    { key: "n", mod: true, handler: () => openComposer() },
-    { key: "/", handler: () => searchRef.current?.focus() },
-    { key: "f", mod: true, handler: () => searchRef.current?.focus() },
-    { key: "r", mod: true, handler: () => void refresh() },
-  ], !composerOpen);
-
   const availableTags = useMemo(() => {
     const set = new Set<string>();
     for (const item of prompts) for (const value of item.tags) set.add(value);
@@ -478,7 +403,7 @@ export function WorkspacePage({
   }, [prompts, tag]);
 
   const selectPrompt = (id: string) => {
-    onNavigate?.({ kind: "prompt-view", tool, promptId: id, scope, projectDir: trimmedDir });
+    onNavigate?.({ kind: "prompt-view", tool, promptId: id, scope: "user", projectDir: "" });
   };
 
   const filtered = Boolean(query.trim() || tag);
@@ -498,53 +423,17 @@ export function WorkspacePage({
           name={toolName}
           machine={machine}
           reading={reading}
-          hint={requireProject && !projectReady ? t("hero.pickProject") : null}
           statusError={statusError}
-          scope={scope}
           deployedTitle={deployedTitle}
           unavailable={unavailable}
           busy={locked}
+          removing={pending === "remove"}
           onRefresh={() => void refresh()}
           onRemove={() => void openRemovePlan()}
-          removeDisabled={locked || !projectReady}
-        >
-          <ScopeBar
-            embedded
-            scope={scope}
-            supportedScopes={supportedScopes}
-            projectDir={projectDir}
-            recentProjectDirs={settings?.recentProjectDirs ?? []}
-            disabled={locked || unavailable}
-            onScopeChange={(next) => {
-              setScope(next);
-              setLoadError(null);
-            }}
-            onProjectDirChange={(dir) => {
-              setProjectDir(dir);
-              setLoadError(null);
-            }}
-            onBrowse={() => {
-              void pickDirectory().then((dir) => {
-                if (dir) {
-                  setProjectDir(dir);
-                  onRememberProject?.(dir);
-                }
-              });
-            }}
-          />
-        </AgentHero>
+          removeDisabled={locked}
+        />
 
         <ZCodeBanner tool={toolInfo} />
-
-        {recovery ? (
-          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-warning/35 bg-warning/10 px-4 py-2.5 text-[12.5px] text-warning" data-testid="tool-recovery-notice">
-            <IconAlert size={14} className="shrink-0" />
-            <span className="min-w-0 flex-1">{t("tool.recoveryRequired")}</span>
-            <Button size="xs" variant="outline" disabled={locked} data-testid="tool-recover" onClick={() => void openRecoverPlan()}>
-              {t("tool.recoveryAction")}
-            </Button>
-          </div>
-        ) : null}
 
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center gap-2">
@@ -554,7 +443,6 @@ export function WorkspacePage({
                 className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
               />
               <Input
-                ref={searchRef}
                 value={query}
                 aria-label={t("common.search")}
                 placeholder={t("prompts.searchPlaceholder")}
@@ -566,11 +454,8 @@ export function WorkspacePage({
                     else event.currentTarget.blur();
                   }
                 }}
-                className="pl-9 pr-10"
+                className="pl-9"
               />
-              {!query ? (
-                <kbd className="kbd pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground">/</kbd>
-              ) : null}
             </div>
             <Dropdown<PromptSort>
               label={t("prompts.sort")}
@@ -589,7 +474,6 @@ export function WorkspacePage({
               variant="primary"
               disabled={unavailable || locked}
               data-testid="quick-deploy-open"
-              title={`${t("quickDeploy.open")} (${shortcutLabel("n")})`}
               onClick={openComposer}
             >
               <IconPlus size={15} />
@@ -639,7 +523,7 @@ export function WorkspacePage({
           <EmptyState
             icon={<ToolLogo tool={tool} size={22} />}
             title={t("tool.unavailable")}
-            hint={toolInfo.unavailableReason ?? projectStatus?.unavailableReason ?? undefined}
+            hint={toolInfo.unavailableReason ?? undefined}
             testId="prompt-list-unavailable"
           />
         ) : (
@@ -651,7 +535,8 @@ export function WorkspacePage({
             filtered={filtered}
             onSelect={selectPrompt}
             onDeploy={(id) => void deployFromLibrary(id)}
-            deployDisabled={locked || !projectReady}
+            deployDisabled={locked}
+            deployingId={pending?.startsWith("deploy:") ? pending.slice("deploy:".length) : null}
             emptyAction={
               <Button variant="primary" onClick={openComposer} data-testid="prompt-empty-compose">
                 <IconPlus size={15} />
@@ -687,12 +572,11 @@ export function WorkspacePage({
         open={composerOpen}
         tool={tool}
         toolName={toolName}
-        scope={scope}
         title={title}
         content={content}
         busy={busy}
-        message={composerMessage ?? (requireProject && !projectReady ? t("scope.needsProjectDir") : null)}
-        messageTone={composerMessage ? "error" : "muted"}
+        message={composerMessage}
+        messageTone="error"
         canDeploy={toolInfo.available}
         defaultTitle={defaultTitle}
         onTitleChange={(value) => {
@@ -721,14 +605,7 @@ export function WorkspacePage({
               ? t("operations.recover")
               : t("quickDeploy.previewTitle")
         }
-        description={[
-          toolName,
-          t(`scope.${plan?.scope ?? scope}`),
-          plan?.projectDir ? shortPath(plan.projectDir, 40) : "",
-          plan?.title,
-        ]
-          .filter(Boolean)
-          .join(" · ")}
+        description={[toolName, plan?.title].filter(Boolean).join(" · ")}
         confirmLabel={
           plan?.kind === "deactivate"
             ? t("plan.confirmDeactivate")
@@ -766,8 +643,13 @@ export function WorkspacePage({
       {celebration ? (
         <DeployCelebration
           tool={tool}
-          title={t("quickDeploy.deployedTo", { tool: toolName })}
-          subtitle={celebration}
+          variant={celebration.kind}
+          title={
+            celebration.kind === "deployed"
+              ? t("quickDeploy.deployedTo", { tool: toolName })
+              : t("quickDeploy.removedFrom", { tool: toolName })
+          }
+          subtitle={celebration.subtitle}
           onDone={() => setCelebration(null)}
         />
       ) : null}

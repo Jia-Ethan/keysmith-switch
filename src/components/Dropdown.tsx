@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { IconCheck, IconChevronDown } from "./icons";
 import { cx } from "./ui";
 
@@ -11,13 +12,42 @@ const FOCUS_RING =
  *
  * The native `<select>` on desktop platforms opens a system overlay: it paints
  * over neighbouring controls and gives the choice its own look, so a settings
- * row cannot be read while the list is open. This keeps the list inside the page
- * instead — same width as its anchor, anchored below it, closed by Escape or by
- * clicking away.
+ * row cannot be read while the list is open. This keeps the list in the page
+ * instead — at least as wide as its anchor, closed by Escape or by clicking away.
+ *
+ * The list is rendered into `document.body` and positioned against the viewport.
+ * Settings rows sit in cards that clip their overflow, and an absolutely
+ * positioned list inside one is cut off at the card's edge. It opens below the
+ * trigger, or above it when there is more room there.
  */
 export interface DropdownOption<T extends string> {
   value: T;
   label: ReactNode;
+}
+
+const MENU_GAP = 4;
+const VIEWPORT_MARGIN = 8;
+const MENU_MAX_HEIGHT = 256;
+/** p-1 padding plus one 34px row per option. */
+const menuHeightFor = (count: number) => Math.min(MENU_MAX_HEIGHT, count * 34 + 8);
+
+/** Fixed-position style that keeps the list inside the window, flipping when it does not fit below. */
+function placeMenu(trigger: HTMLElement, count: number): CSSProperties {
+  const rect = trigger.getBoundingClientRect();
+  const wanted = menuHeightFor(count);
+  const below = window.innerHeight - rect.bottom - MENU_GAP - VIEWPORT_MARGIN;
+  const above = rect.top - MENU_GAP - VIEWPORT_MARGIN;
+  const flip = below < wanted && above > below;
+  const room = Math.max(96, Math.min(MENU_MAX_HEIGHT, flip ? above : below));
+  return {
+    position: "fixed",
+    right: Math.max(VIEWPORT_MARGIN, window.innerWidth - rect.right),
+    minWidth: rect.width,
+    maxHeight: room,
+    ...(flip
+      ? { bottom: window.innerHeight - rect.top + MENU_GAP }
+      : { top: rect.bottom + MENU_GAP }),
+  };
 }
 
 export function Dropdown<T extends string>({
@@ -44,7 +74,9 @@ export function Dropdown<T extends string>({
 }) {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(() => Math.max(0, options.findIndex((o) => o.value === value)));
+  const [menuStyle, setMenuStyle] = useState<CSSProperties | null>(null);
   const root = useRef<HTMLDivElement>(null);
+  const menu = useRef<HTMLUListElement>(null);
   const listId = useId();
 
   const selected = options.find((option) => option.value === value);
@@ -57,11 +89,30 @@ export function Dropdown<T extends string>({
   useEffect(() => {
     if (!open) return undefined;
     const onPointerDown = (event: MouseEvent) => {
-      if (!root.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (!root.current?.contains(target) && !menu.current?.contains(target)) setOpen(false);
     };
     document.addEventListener("mousedown", onPointerDown);
     return () => document.removeEventListener("mousedown", onPointerDown);
   }, [open]);
+
+  // Measure before paint, then follow the trigger while the page scrolls or resizes.
+  useLayoutEffect(() => {
+    if (!open) {
+      setMenuStyle(null);
+      return undefined;
+    }
+    const trigger = root.current?.querySelector<HTMLElement>("[data-dropdown-trigger]");
+    if (!trigger) return undefined;
+    const update = () => setMenuStyle(placeMenu(trigger, options.length));
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [open, options.length]);
 
   const openList = () => {
     setActive(Math.max(0, options.findIndex((option) => option.value === value)));
@@ -128,38 +179,43 @@ export function Dropdown<T extends string>({
         />
       </button>
 
-      {open ? (
-        <ul
-          id={listId}
-          role="listbox"
-          aria-label={label}
-          data-testid={menuTestId}
-          className="animate-disclosure absolute right-0 z-20 mt-1 max-h-64 min-w-full overflow-auto rounded-lg border border-border bg-card p-1 shadow-[0_8px_28px_hsl(var(--shadow)/0.12)]"
-        >
-          {options.map((option, index) => {
-            const isSelected = option.value === value;
-            return (
-              <li key={option.value}>
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={isSelected}
-                  data-testid={optionTestId?.(option.value)}
-                  onClick={() => commit(option.value)}
-                  onMouseEnter={() => setActive(index)}
-                  className={cx(
-                    "flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[14px]",
-                    index === active ? "bg-accent text-accent-foreground" : "text-foreground",
-                  )}
-                >
-                  <span className="min-w-0 flex-1 truncate">{option.label}</span>
-                  {isSelected ? <IconCheck size={13} className="shrink-0 text-primary" /> : null}
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      ) : null}
+      {open && menuStyle
+        ? createPortal(
+            <ul
+              ref={menu}
+              id={listId}
+              role="listbox"
+              aria-label={label}
+              data-testid={menuTestId}
+              style={menuStyle}
+              className="animate-disclosure z-[90] overflow-auto rounded-lg border border-border bg-card p-1 shadow-[0_8px_28px_hsl(var(--shadow)/0.16)]"
+            >
+              {options.map((option, index) => {
+                const isSelected = option.value === value;
+                return (
+                  <li key={option.value}>
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={isSelected}
+                      data-testid={optionTestId?.(option.value)}
+                      onClick={() => commit(option.value)}
+                      onMouseEnter={() => setActive(index)}
+                      className={cx(
+                        "flex h-[34px] w-full items-center gap-2 rounded-md px-2.5 text-left text-[14px]",
+                        index === active ? "bg-accent text-accent-foreground" : "text-foreground",
+                      )}
+                    >
+                      <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                      {isSelected ? <IconCheck size={13} className="shrink-0 text-primary" /> : null}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

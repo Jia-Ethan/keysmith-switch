@@ -4,8 +4,7 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { formatCount } from "../lib/format";
 import { trapTab } from "../lib/focus";
-import { isModKey, shortcutLabel } from "../lib/platform";
-import type { ScopeId, ToolId } from "../types";
+import type { ToolId } from "../types";
 import { IconClose, IconUpload } from "./icons";
 import { MarkdownEditor } from "./MarkdownEditor";
 import { ToolLogo } from "./ToolLogos";
@@ -43,7 +42,6 @@ export function QuickDeployPanel({
   open,
   tool,
   toolName,
-  scope,
   title,
   content,
   busy,
@@ -60,7 +58,6 @@ export function QuickDeployPanel({
   open: boolean;
   tool: ToolId;
   toolName: string;
-  scope: ScopeId;
   title: string;
   content: string;
   busy: boolean;
@@ -79,8 +76,8 @@ export function QuickDeployPanel({
   const fileRef = useRef<HTMLInputElement>(null);
   const [dropActive, setDropActive] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
-  const latest = useRef({ busy, onPreview, onClose, title, content, defaultTitle, onTitleChange, onContentChange });
-  latest.current = { busy, onPreview, onClose, title, content, defaultTitle, onTitleChange, onContentChange };
+  const latest = useRef({ busy, onClose, title, content, defaultTitle, onTitleChange, onContentChange });
+  latest.current = { busy, onClose, title, content, defaultTitle, onTitleChange, onContentChange };
 
   const importFile = async (file: File) => {
     setImportError(null);
@@ -119,16 +116,8 @@ export function QuickDeployPanel({
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     panel.querySelector<HTMLInputElement>("[data-testid='quick-deploy-title']")?.focus();
 
-    // Capture phase so the shortcut and file drops win over CodeMirror's own
-    // handlers (Mod-Enter would otherwise insert a blank line).
     const onKeyDown = (event: KeyboardEvent) => {
       if (trapTab(event, panel)) return;
-      if (isModKey(event) && event.key === "Enter") {
-        event.preventDefault();
-        event.stopPropagation();
-        if (!latest.current.busy) latest.current.onPreview();
-        return;
-      }
       if (event.key === "Escape" && !event.defaultPrevented) {
         const target = event.target as HTMLElement | null;
         // Escape inside CodeMirror closes its search panel first.
@@ -202,7 +191,7 @@ export function QuickDeployPanel({
           <div className="min-w-0 flex-1">
             <h2 className="text-[16px] font-semibold tracking-[-0.01em] text-foreground">{t("quickDeploy.title")}</h2>
             <p className="truncate text-[12.5px] text-muted-foreground">
-              {t("quickDeploy.lead", { tool: toolName })} · {t("hero.inScope", { scope: t(`scope.${scope}`) })}
+              {t("quickDeploy.lead", { tool: toolName })}
             </p>
           </div>
           <IconButton label={t("common.close")} size="iconSm" disabled={busy} onClick={onClose} data-testid="quick-deploy-close">
@@ -278,14 +267,12 @@ export function QuickDeployPanel({
           </Button>
           <Button
             variant="primary"
-            disabled={busy || !canDeploy}
+            loading={busy}
+            disabled={!canDeploy}
             data-testid="quick-deploy-submit"
             onClick={onPreview}
-            title={shortcutLabel("Enter")}
           >
-            {busy ? <span className="harness-spinner" aria-hidden="true" /> : null}
             {busy ? t("common.busy") : t("quickDeploy.preview")}
-            {!busy ? <kbd className="kbd ml-1 border-primary-foreground/60">{shortcutLabel("Enter")}</kbd> : null}
           </Button>
         </footer>
       </div>

@@ -53,15 +53,7 @@
     "deployed": "已部署"
   },
   "scope": {
-    "user": "用户",
-    "project": "项目",
-    "local": "本地",
-    "label": "当前目标范围",
-    "projectDir": "项目目录",
-    "projectDirPlaceholder": "绝对路径",
-    "browse": "选择目录",
-    "needsProjectDir": "project / local 需要绝对项目目录。",
-    "recent": "最近项目"
+    "needsProjectDir": "project / local 需要绝对项目目录。"
   },
   "tool": {
     "adapterVersion": "适配器",
@@ -380,20 +372,12 @@
     "stats": "{{chars}} 字符 · {{lines}} 行",
     "dropHint": "可直接拖入 .md 文件",
     "removed": "已移除部署",
-    "deployedTo": "已部署到 {{tool}}"
+    "deployedTo": "已部署到 {{tool}}",
+    "removedFrom": "已从 {{tool}} 移除"
   },
   "hero": {
-    "inScope": "{{scope}}范围",
     "statusError": "无法读取状态",
-    "pickProject": "请选择项目目录"
-  },
-  "shortcuts": {
-    "title": "快捷键",
-    "switchAgent": "切换 Agent",
-    "compose": "打开快速部署",
-    "preview": "生成部署预览（编辑时）",
-    "search": "搜索提示词",
-    "refresh": "刷新 Agent 状态",
-    "settings": "打开设置"
+    "livePrompt": "当前提示词",
+    "livePromptUnknown": "来源未记录"
   }
 }

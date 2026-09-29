@@ -190,6 +190,20 @@ describe("SettingsPage data safety", () => {
     expect(screen.getByTestId("check-update")).toBeDisabled();
   });
 
+  it("shows progress on the button and in the result area while a check runs", () => {
+    updaterState.checking = true;
+    render(<SettingsPage settings={DEFAULT_SETTINGS} onSave={vi.fn()} toast={toast} initialTab="about" />);
+    expect(screen.getByTestId("check-update")).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByTestId("check-update").querySelector(".spinner")).toBeInTheDocument();
+    expect(screen.getByTestId("update-checking")).toHaveTextContent("正在检查更新");
+  });
+
+  it("does not show the checking line once the check has finished", () => {
+    render(<SettingsPage settings={DEFAULT_SETTINGS} onSave={vi.fn()} toast={toast} initialTab="about" />);
+    expect(screen.getByTestId("check-update")).not.toHaveAttribute("aria-busy");
+    expect(screen.queryByTestId("update-checking")).not.toBeInTheDocument();
+  });
+
   it("requires dialog confirmation before updating and restarting", async () => {
     updaterState.update = {
       available: true,
@@ -409,6 +423,31 @@ describe("SettingsPage data safety", () => {
     expect(screen.queryByLabelText("静默启动")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Claude 默认范围")).not.toBeInTheDocument();
     expect(screen.queryByTestId("settings-nav-data")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("settings-shortcuts")).not.toBeInTheDocument();
+    expect(screen.queryByText("快捷键")).not.toBeInTheDocument();
+  });
+
+  it("acknowledges a saved setting quietly beside the title, not with a toast", async () => {
+    const onSave = vi.fn().mockResolvedValue(DEFAULT_SETTINGS);
+    render(
+      <SettingsPage settings={DEFAULT_SETTINGS} onSave={onSave} toast={toast} initialTab="general" />,
+    );
+
+    expect(screen.queryByTestId("settings-saved")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("radio", { name: "深色" }));
+    expect(await screen.findByTestId("settings-saved")).toHaveTextContent("设置已保存");
+    expect(toast.ok).not.toHaveBeenCalled();
+  });
+
+  it("still reports a failed save as an error toast", async () => {
+    const onSave = vi.fn().mockRejectedValue(new Error("disk full"));
+    render(
+      <SettingsPage settings={DEFAULT_SETTINGS} onSave={onSave} toast={toast} initialTab="general" />,
+    );
+
+    fireEvent.click(screen.getByRole("radio", { name: "深色" }));
+    await waitFor(() => expect(toast.err).toHaveBeenCalledTimes(1));
+    expect(screen.queryByTestId("settings-saved")).not.toBeInTheDocument();
   });
 
   it("opens the language list inside the page, not as a system overlay", async () => {
@@ -424,6 +463,8 @@ describe("SettingsPage data safety", () => {
     fireEvent.click(screen.getByTestId("settings-language"));
     expect(screen.getByTestId("settings-language-menu")).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "简体中文" })).toHaveAttribute("aria-selected", "true");
+    // Rendered outside the settings card, whose clipped overflow would cut it off.
+    expect(screen.getByTestId("settings-language-menu").parentElement).toBe(document.body);
 
     fireEvent.click(screen.getByTestId("settings-language-en"));
     await waitFor(() => expect(onSave).toHaveBeenCalledWith({ language: "en" }));

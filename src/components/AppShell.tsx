@@ -1,6 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useHarnessStatus } from "../lib/harnessState";
-import { shortcutLabel } from "../lib/platform";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { ScopeId, ToolId } from "../types";
@@ -200,7 +199,6 @@ export function AppShell({
                 tool={tool}
                 active={activeTool === tool}
                 indicatorReady={Boolean(indicator)}
-                shortcut={shortcutLabel(String(TOOL_IDS.indexOf(tool) + 1))}
                 onSelect={selectTool}
               />
             ))}
@@ -263,7 +261,7 @@ export function AppShell({
           <Button
             size="iconSm"
             variant={page.kind === "settings" ? "subtle" : "ghost"}
-            title={`${t("nav.settings")} (${shortcutLabel(",")})`}
+            title={t("nav.settings")}
             aria-label={t("nav.settings")}
             aria-current={page.kind === "settings" ? "page" : undefined}
             data-testid="nav-settings"
@@ -286,13 +284,11 @@ function NavButton({
   tool,
   active,
   indicatorReady,
-  shortcut,
   onSelect,
 }: {
   tool: ToolId;
   active: boolean;
   indicatorReady: boolean;
-  shortcut: string;
   onSelect: (tool: ToolId) => void;
 }) {
   const { t } = useTranslation();
@@ -304,7 +300,7 @@ function NavButton({
       data-testid={`nav-${tool}`}
       data-deployed={deployed || undefined}
       aria-current={active ? "page" : undefined}
-      title={`${t(`nav.${tool}`)} (${shortcut})`}
+      title={t(`nav.${tool}`)}
       onClick={() => onSelect(tool)}
       className={cx(
         NAV_BUTTON_CLASS,

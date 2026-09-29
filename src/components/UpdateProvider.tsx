@@ -14,6 +14,12 @@ import type { UpdateChannel, UpdateCheck, UpdateInstall } from "../types";
 import { PUBLIC_RELEASE_PAGE } from "../types";
 
 export const AUTO_CHECK_DELAY_MS = 1800;
+/**
+ * A check against a fast feed answers in a few milliseconds, too quickly for the
+ * person to see that anything happened. The checking state is held for at least
+ * this long so the click always reads as an action.
+ */
+export const MIN_CHECK_MS = 700;
 
 interface UpdateContextValue {
   update: UpdateCheck | null;
@@ -43,10 +49,13 @@ export function useUpdateOptional() {
 export function UpdateProvider({
   channel,
   autoCheck,
+  minCheckMs = MIN_CHECK_MS,
   children,
 }: {
   channel: UpdateChannel;
   autoCheck: boolean;
+  /** Shortest time the checking state is shown; tests pass 0. */
+  minCheckMs?: number;
   children: ReactNode;
 }) {
   const [update, setUpdate] = useState<UpdateCheck | null>(null);
@@ -61,6 +70,7 @@ export function UpdateProvider({
   const check = useCallback(async () => {
     if (checkingRef.current || installingRef.current) return;
     checkingRef.current = true;
+    const startedAt = Date.now();
     setChecking(true);
     setProgress(null);
     setError(null);
@@ -75,11 +85,13 @@ export function UpdateProvider({
       setUpdate(null);
       setError(err instanceof Error ? err.message : String(err));
     } finally {
+      const remaining = minCheckMs - (Date.now() - startedAt);
+      if (remaining > 0) await new Promise<void>((resolve) => window.setTimeout(resolve, remaining));
       setCheckCount((count) => count + 1);
       checkingRef.current = false;
       setChecking(false);
     }
-  }, [channel]);
+  }, [channel, minCheckMs]);
 
   const install = useCallback(async () => {
     if (!update?.available || update.installMode === "manual" || installingRef.current) return null;

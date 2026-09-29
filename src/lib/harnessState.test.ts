@@ -24,7 +24,29 @@ describe("harnessState", () => {
     await store.loadHarnessStatus("claude");
 
     expect(getHarnessState).toHaveBeenCalledTimes(1);
-    expect(store.getHarnessStatus("claude")).toEqual({ machine: "undeployed", error: null });
+    expect(store.getHarnessStatus("claude")).toEqual({
+      machine: "undeployed",
+      error: null,
+      promptId: null,
+      promptTitle: null,
+    });
+  });
+
+  it("keeps the prompt the backend names as live, and drops it once undeployed", async () => {
+    const store = await load();
+    getHarnessState.mockResolvedValue({
+      tool: "grok",
+      deployed: true,
+      error: null,
+      promptId: "p1",
+      promptTitle: "grok-unrestricted.md",
+    });
+    await store.loadHarnessStatus("grok");
+    expect(store.getHarnessStatus("grok")).toMatchObject({ promptId: "p1", promptTitle: "grok-unrestricted.md" });
+
+    getHarnessState.mockResolvedValue({ tool: "grok", deployed: false, error: null, promptId: "p1", promptTitle: "x" });
+    await store.loadHarnessStatus("grok", true);
+    expect(store.getHarnessStatus("grok")).toMatchObject({ machine: "undeployed", promptId: null, promptTitle: null });
   });
 
   it("keeps each tool's answer separate", async () => {
@@ -72,11 +94,21 @@ describe("harnessState", () => {
 
   it("records deploy and remove results without another read", async () => {
     const store = await load();
-    store.applyHarnessOutcome("grok", "deploy");
-    expect(store.getHarnessStatus("grok")).toEqual({ machine: "deployed", error: null });
+    store.applyHarnessOutcome("grok", "deploy", { id: "p1", title: "Rules" });
+    expect(store.getHarnessStatus("grok")).toEqual({
+      machine: "deployed",
+      error: null,
+      promptId: "p1",
+      promptTitle: "Rules",
+    });
 
-    store.applyHarnessOutcome("grok", "remove");
-    expect(store.getHarnessStatus("grok")).toEqual({ machine: "undeployed", error: null });
+    store.applyHarnessOutcome("grok", "remove", { id: "p1", title: "Rules" });
+    expect(store.getHarnessStatus("grok")).toEqual({
+      machine: "undeployed",
+      error: null,
+      promptId: null,
+      promptTitle: null,
+    });
     expect(getHarnessState).not.toHaveBeenCalled();
   });
 
@@ -86,7 +118,7 @@ describe("harnessState", () => {
 
     const entry = await store.loadHarnessStatus("zcode");
 
-    expect(entry).toEqual({ machine: "undeployed", error: "no backend" });
+    expect(entry).toEqual({ machine: "undeployed", error: "no backend", promptId: null, promptTitle: null });
     expect(store.getHarnessStatus("zcode")?.error).toBe("no backend");
   });
 

@@ -57,7 +57,7 @@ describe("UpdateProvider", () => {
     checkAppUpdate.mockReturnValue(new Promise((resolve) => { resolveCheck = resolve; }));
 
     render(
-      <UpdateProvider channel="stable" autoCheck={false}>
+      <UpdateProvider channel="stable" autoCheck={false} minCheckMs={0}>
         <UpdateHarness />
       </UpdateProvider>,
     );
@@ -70,11 +70,31 @@ describe("UpdateProvider", () => {
     expect(screen.getByText("0.1.2")).toBeInTheDocument();
   });
 
+  it("holds the checking state for the minimum time so a fast answer still reads as an action", async () => {
+    checkAppUpdate.mockResolvedValue({ ...availableUpdate, available: false, installMode: "none" as const });
+
+    render(
+      <UpdateProvider channel="stable" autoCheck={false} minCheckMs={250}>
+        <UpdateHarness />
+      </UpdateProvider>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "check" }));
+    await waitFor(() => expect(checkAppUpdate).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId("checking")).toHaveTextContent("true");
+
+    await waitFor(() => expect(screen.getByTestId("checking")).toHaveTextContent("false"));
+    expect(screen.getByTestId("check-count")).toHaveTextContent("1");
+  });
+
   it("refreshes the completion event for two identical up-to-date checks", async () => {
     const current = { ...availableUpdate, available: false, latestVersion: "0.1.4", currentVersion: "0.1.4", installMode: "none" as const };
     checkAppUpdate.mockResolvedValue(current);
     render(
-      <UpdateProvider channel="stable" autoCheck={false}>
+      <UpdateProvider channel="stable" autoCheck={false} minCheckMs={0}>
         <UpdateHarness />
       </UpdateProvider>,
     );
@@ -92,7 +112,7 @@ describe("UpdateProvider", () => {
     let resolveCheck!: (value: UpdateCheck) => void;
     checkAppUpdate.mockResolvedValueOnce(availableUpdate).mockReturnValueOnce(new Promise((resolve) => { resolveCheck = resolve; }));
     render(
-      <UpdateProvider channel="stable" autoCheck={false}>
+      <UpdateProvider channel="stable" autoCheck={false} minCheckMs={0}>
         <UpdateHarness />
       </UpdateProvider>,
     );
@@ -113,7 +133,7 @@ describe("UpdateProvider", () => {
     installAppUpdate.mockReturnValue(new Promise((resolve) => { resolveInstall = resolve; }));
 
     render(
-      <UpdateProvider channel="stable" autoCheck={false}>
+      <UpdateProvider channel="stable" autoCheck={false} minCheckMs={0}>
         <UpdateHarness />
       </UpdateProvider>,
     );
@@ -150,7 +170,7 @@ describe("UpdateProvider", () => {
     } satisfies UpdateInstall);
 
     render(
-      <UpdateProvider channel="stable" autoCheck={false}>
+      <UpdateProvider channel="stable" autoCheck={false} minCheckMs={0}>
         <UpdateHarness />
       </UpdateProvider>,
     );
@@ -177,7 +197,7 @@ describe("UpdateProvider", () => {
     });
 
     render(
-      <UpdateProvider channel="stable" autoCheck={false}>
+      <UpdateProvider channel="stable" autoCheck={false} minCheckMs={0}>
         <UpdateHarness />
       </UpdateProvider>,
     );
@@ -199,7 +219,7 @@ describe("UpdateProvider", () => {
       .mockRejectedValueOnce(new Error("network unavailable"));
 
     render(
-      <UpdateProvider channel="stable" autoCheck={false}>
+      <UpdateProvider channel="stable" autoCheck={false} minCheckMs={0}>
         <UpdateHarness />
       </UpdateProvider>,
     );

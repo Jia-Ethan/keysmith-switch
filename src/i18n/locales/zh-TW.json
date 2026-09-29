@@ -53,15 +53,7 @@
     "deployed": "已部署"
   },
   "scope": {
-    "user": "使用者",
-    "project": "專案",
-    "local": "本機",
-    "label": "目前目標範圍",
-    "projectDir": "專案目錄",
-    "projectDirPlaceholder": "絕對路徑",
-    "browse": "選擇目錄",
-    "needsProjectDir": "project / local 需要絕對專案目錄。",
-    "recent": "最近專案"
+    "needsProjectDir": "project / local 需要絕對專案目錄。"
   },
   "tool": {
     "adapterVersion": "適配器",
@@ -380,20 +372,12 @@
     "stats": "{{chars}} 字元 · {{lines}} 行",
     "dropHint": "可直接拖入 .md 檔案",
     "removed": "已移除部署",
-    "deployedTo": "已部署到 {{tool}}"
+    "deployedTo": "已部署到 {{tool}}",
+    "removedFrom": "已從 {{tool}} 移除"
   },
   "hero": {
-    "inScope": "{{scope}}範圍",
     "statusError": "無法讀取狀態",
-    "pickProject": "請選擇專案目錄"
-  },
-  "shortcuts": {
-    "title": "快速鍵",
-    "switchAgent": "切換 Agent",
-    "compose": "開啟快速部署",
-    "preview": "產生部署預覽（編輯時）",
-    "search": "搜尋提示詞",
-    "refresh": "重新整理 Agent 狀態",
-    "settings": "開啟設定"
+    "livePrompt": "目前提示詞",
+    "livePromptUnknown": "來源未記錄"
   }
 }

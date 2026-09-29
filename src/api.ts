@@ -175,6 +175,9 @@ export interface HarnessState {
   tool: ToolId;
   deployed: boolean;
   error: string | null;
+  /** The library prompt the machine is running, when the backend could identify it. */
+  promptId?: string | null;
+  promptTitle?: string | null;
 }
 
 export function getHarnessState(tool: ToolId): Promise<HarnessState> {

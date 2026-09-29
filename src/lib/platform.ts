@@ -1,4 +1,3 @@
-import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { isTauriRuntime } from "./runtime";
 
 export type Platform = "mac" | "windows" | "other";
@@ -21,20 +20,4 @@ export function applyPlatformAttributes(root: HTMLElement = document.documentEle
   root.dataset.platform = platform;
   if (platform === "mac" && isTauriRuntime()) root.dataset.titlebar = "overlay";
   else delete root.dataset.titlebar;
-}
-
-/** ⌘ on macOS, Ctrl everywhere else. */
-export function isModKey(event: KeyboardEvent | ReactKeyboardEvent): boolean {
-  return detectPlatform() === "mac" ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
-}
-
-export function modLabel(): string {
-  return detectPlatform() === "mac" ? "⌘" : "Ctrl";
-}
-
-/** Human label for a mod shortcut, e.g. "⌘1" or "Ctrl+1". */
-export function shortcutLabel(key: string): string {
-  const mod = modLabel();
-  const display = key === "Enter" ? "↵" : key.toUpperCase();
-  return mod === "⌘" ? `${mod}${display}` : `${mod}+${display}`;
 }

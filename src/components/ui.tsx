@@ -47,29 +47,50 @@ const BUTTON_SIZES = {
 export type ButtonVariant = keyof typeof BUTTON_VARIANTS;
 export type ButtonSize = keyof typeof BUTTON_SIZES;
 
+/** A small ring that turns; takes the surrounding text colour. */
+export function Spinner({ className }: { className?: string }) {
+  return <span aria-hidden="true" className={cx("spinner", className)} />;
+}
+
 export const Button = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLButtonElement> & {
   variant?: ButtonVariant;
   size?: ButtonSize;
+  /**
+   * The action was accepted and is still running. The button keeps its full
+   * look, swaps its icon for a spinner and ignores further clicks; unlike
+   * `disabled`, it does not dim, so the person sees it is working, not blocked.
+   */
+  loading?: boolean;
 }>(function Button({
   variant = "outline",
   size = "md",
+  loading = false,
   className,
+  onClick,
+  children,
   ...props
 }, ref) {
   return (
     <button
       ref={ref}
       type={props.type ?? "button"}
+      aria-busy={loading || undefined}
+      data-loading={loading ? "" : undefined}
+      onClick={loading ? undefined : onClick}
       className={cx(
         "inline-flex shrink-0 items-center whitespace-nowrap font-medium",
         "transition-[background-color,border-color,color,box-shadow,filter,transform] duration-150 active:scale-[0.97] disabled:active:scale-100",
         FOCUS_RING,
         BUTTON_SIZES[size],
         BUTTON_VARIANTS[variant],
+        loading && "cursor-progress [&>svg]:hidden",
         className,
       )}
       {...props}
-    />
+    >
+      {loading ? <Spinner /> : null}
+      {children}
+    </button>
   );
 });
 

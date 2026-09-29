@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import * as api from "../api";
@@ -6,11 +6,10 @@ import { ErrorBanner } from "../components/ErrorBanner";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Feedback } from "../components/Feedback";
 import { useUpdateOptional } from "../components/UpdateProvider";
-import { IconDownload, IconExternal, IconMonitor, IconMoon, IconRefresh, IconSun } from "../components/icons";
+import { IconCheck, IconDownload, IconExternal, IconMonitor, IconMoon, IconRefresh, IconSun } from "../components/icons";
 import { ToolLogo } from "../components/ToolLogos";
-import { Button, Mono, Segmented, SettingRow, SectionLabel, cx, useSlidingIndicator } from "../components/ui";
+import { Button, Mono, Segmented, SettingRow, SectionLabel, Spinner, cx, useSlidingIndicator } from "../components/ui";
 import keysmithIcon from "../assets/keysmith-icon.png";
-import { modLabel, shortcutLabel } from "../lib/platform";
 import { Dropdown } from "../components/Dropdown";
 import { useTheme, type ThemeMode } from "../hooks/useTheme";
 import type { ToastApi } from "../hooks/useToasts";
@@ -49,6 +48,8 @@ export function SettingsPage({
   const { theme, setTheme } = useTheme();
   const updater = useUpdateOptional();
   const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState<number | null>(null);
+  const savedCount = useRef(0);
   const [tab, setTab] = useState<TabId>("general");
   const [about, setAbout] = useState<AboutInfo | null>(null);
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
@@ -64,6 +65,13 @@ export function SettingsPage({
   useEffect(() => {
     setUpdateDialogOpen(false);
   }, [updater?.update?.latestVersion]);
+
+  // "Saved" is a quiet acknowledgement beside the title that fades on its own.
+  useEffect(() => {
+    if (saved === null) return undefined;
+    const timer = window.setTimeout(() => setSaved(null), 1800);
+    return () => window.clearTimeout(timer);
+  }, [saved]);
 
   useEffect(() => {
     let cancelled = false;
@@ -109,7 +117,8 @@ export function SettingsPage({
     setBusy(true);
     try {
       await onSave(next);
-      toast.ok(t("settings.saved"));
+      savedCount.current += 1;
+      setSaved(savedCount.current);
     } catch (err) {
       toast.err(err);
     } finally {
@@ -141,7 +150,20 @@ export function SettingsPage({
   return (
     <div className="mx-auto flex h-full min-h-0 w-full max-w-3xl flex-col gap-4">
       <div className="flex shrink-0 items-center justify-between gap-3">
-        <h1 className="text-[20px] font-semibold tracking-[-0.02em] text-foreground">{t("settings.title")}</h1>
+        <div className="flex min-w-0 items-center gap-3">
+          <h1 className="text-[20px] font-semibold tracking-[-0.02em] text-foreground">{t("settings.title")}</h1>
+          {saved !== null ? (
+            <span
+              key={saved}
+              role="status"
+              data-testid="settings-saved"
+              className="animate-toast-in inline-flex h-6 items-center gap-1 rounded-full bg-success/15 px-2.5 text-[12px] font-medium text-success"
+            >
+              <IconCheck size={12} />
+              {t("settings.saved")}
+            </span>
+          ) : null}
+        </div>
       <div
         ref={tabsRef}
         className="relative flex shrink-0 gap-0.5 overflow-x-auto rounded-xl border border-border/80 bg-muted/70 p-[3px]"
@@ -233,7 +255,6 @@ export function SettingsPage({
               }
             />
           </div>
-          <ShortcutList />
           </div>
         ) : null}
 
@@ -307,6 +328,7 @@ export function SettingsPage({
                   size="sm"
                   variant="outline"
                   data-testid="check-update"
+                  loading={updater?.checking}
                   disabled={!updater || updater.checking || updater.installing}
                   onClick={() => void updater?.check()}
                 >
@@ -315,7 +337,18 @@ export function SettingsPage({
                 </Button>
               </div>
 
-              {updater?.error && updater.update?.installMode !== "manual" ? (
+              {updater?.checking ? (
+                <p
+                  className="mt-3 flex animate-page-in items-center gap-2 text-sm text-muted-foreground"
+                  role="status"
+                  data-testid="update-checking"
+                >
+                  <Spinner />
+                  {t("about.checking")}
+                </p>
+              ) : null}
+
+              {updater?.error && !updater.checking && updater.update?.installMode !== "manual" ? (
                 <div className="mt-3 space-y-2" key={`error-${updater.checkCount}`}>
                   <ErrorBanner
                     message={updater.error}
@@ -335,7 +368,12 @@ export function SettingsPage({
               ) : null}
 
               {(!updater?.error || updater.update?.installMode === "manual") && !updater?.checking && updater?.update && !updater.update.available ? (
-                <p className="mt-3 animate-page-in text-sm text-primary" role="status" key={`current-${updater.checkCount}`}>
+                <p
+                  className="mt-3 flex animate-page-in items-center gap-1.5 text-sm text-primary"
+                  role="status"
+                  key={`current-${updater.checkCount}`}
+                >
+                  <IconCheck size={14} className="shrink-0" />
                   {updater.update.currentVersion} · {t("about.upToDate")}
                 </p>
               ) : null}
@@ -465,42 +503,5 @@ export function SettingsPage({
         </div>
       </ConfirmDialog>
     </div>
-  );
-}
-
-function ShortcutList() {
-  const { t } = useTranslation();
-  const rows: Array<{ label: string; keys: string[] }> = [
-    { label: t("shortcuts.switchAgent"), keys: [`${shortcutLabel("1")} – ${shortcutLabel("4")}`] },
-    { label: t("shortcuts.compose"), keys: [shortcutLabel("n")] },
-    { label: t("shortcuts.preview"), keys: [shortcutLabel("Enter")] },
-    { label: t("shortcuts.search"), keys: ["/", shortcutLabel("f")] },
-    { label: t("shortcuts.refresh"), keys: [shortcutLabel("r")] },
-    { label: t("shortcuts.settings"), keys: [shortcutLabel(",")] },
-  ];
-  return (
-    <section className="surface-card overflow-hidden" data-testid="settings-shortcuts" aria-label={t("shortcuts.title")}>
-      <div className="flex items-center justify-between border-b border-border/70 px-5 py-3">
-        <SectionLabel>{t("shortcuts.title")}</SectionLabel>
-        <span className="text-[11.5px] text-muted-foreground">{modLabel()}</span>
-      </div>
-      <dl className="divide-y divide-border/70">
-        {rows.map((row) => (
-          <div key={row.label} className="flex items-center justify-between gap-3 px-5 py-2.5 text-[13px]">
-            <dt className="text-foreground">{row.label}</dt>
-            <dd className="flex items-center gap-1.5">
-              {row.keys.map((key, index) => (
-                <Fragment key={key}>
-                  {index > 0 ? <span className="text-[11px] text-muted-foreground">/</span> : null}
-                  <kbd className="rounded-md border border-border bg-muted px-1.5 py-0.5 font-sans text-[11.5px] font-medium text-muted-foreground shadow-[0_1px_0_hsl(var(--border))]">
-                    {key}
-                  </kbd>
-                </Fragment>
-              ))}
-            </dd>
-          </div>
-        ))}
-      </dl>
-    </section>
   );
 }

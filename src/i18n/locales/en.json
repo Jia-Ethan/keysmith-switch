@@ -53,15 +53,7 @@
     "deployed": "Deployed"
   },
   "scope": {
-    "user": "User",
-    "project": "Project",
-    "local": "Local",
-    "label": "Current target scope",
-    "projectDir": "Project directory",
-    "projectDirPlaceholder": "Absolute path",
-    "browse": "Browse",
-    "needsProjectDir": "project / local require an absolute project directory.",
-    "recent": "Recent projects"
+    "needsProjectDir": "project / local require an absolute project directory."
   },
   "tool": {
     "adapterVersion": "Adapter",
@@ -380,20 +372,12 @@
     "stats": "{{chars}} characters · {{lines}} lines",
     "dropHint": "Drop a .md file to import",
     "removed": "Deployment removed",
-    "deployedTo": "Deployed to {{tool}}"
+    "deployedTo": "Deployed to {{tool}}",
+    "removedFrom": "Removed from {{tool}}"
   },
   "hero": {
-    "inScope": "{{scope}} scope",
     "statusError": "Status unavailable",
-    "pickProject": "Choose a project folder"
-  },
-  "shortcuts": {
-    "title": "Keyboard shortcuts",
-    "switchAgent": "Switch agent",
-    "compose": "Open Quick Deploy",
-    "preview": "Preview deployment (while editing)",
-    "search": "Search prompts",
-    "refresh": "Refresh agent status",
-    "settings": "Open settings"
+    "livePrompt": "Live prompt",
+    "livePromptUnknown": "Source not recorded"
   }
 }

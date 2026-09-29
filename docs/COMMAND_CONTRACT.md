@@ -68,7 +68,7 @@
 | `activate` | `{ operationId }` | `{ operationId, envelope }` |
 | `plan_deactivate` | `{ promptId?, tool, scope, projectDir? }` | `{ operationId, envelope }` |
 | `deactivate` | `{ operationId }` | `{ operationId, envelope }` |
-| `harness_state` | `{ tool }` | `{ tool, deployed, error }` |
+| `harness_state` | `{ tool }` | `{ tool, deployed, error, promptId?, promptTitle? }`（`promptId`/`promptTitle` 仅在已部署且能在库中识别时返回） |
 | `remove_harness` | `{ tool }` | `HarnessOutcome` |
 | `recover_tool` | `{ tool, scope?, projectDir? }` | `{ operationId, envelope }` |
 | `doctor` | `{ tool }` | `Envelope` |
