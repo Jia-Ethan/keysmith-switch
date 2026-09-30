@@ -320,6 +320,7 @@ fn normalize_codex(
         envelope.recovery_required = true;
         envelope.status = ToolStatus::RecoveryRequired;
     }
+    let mut status_dir: Option<String> = None;
     for line in text.lines() {
         let line = line.trim();
         if let Some(rest) = line.strip_prefix("[Warning]") {
@@ -340,11 +341,36 @@ fn normalize_codex(
         }
         if let Some(rest) = line.strip_prefix("── Status directory:") {
             let path = rest.trim().trim_end_matches('─').trim().to_string();
+            status_dir = Some(path.clone());
             envelope.target_paths.push(TargetPath {
                 path,
                 role: "codex-dir".into(),
                 exists: true,
             });
+        }
+        // The adapter names the prompt file Codex loads. Report it, so it can be
+        // read back; a value in angle brackets means "not set".
+        if let (Some(rest), Some(dir)) =
+            (line.strip_prefix("model_instructions_file:"), &status_dir)
+        {
+            let value = rest.trim();
+            if !value.is_empty() && !value.starts_with('<') {
+                let path = std::path::Path::new(dir).join(value);
+                let file_name = path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("");
+                let listed = text.lines().any(|item| {
+                    item.trim()
+                        .strip_prefix(file_name)
+                        .is_some_and(|tail| tail.starts_with(": regular file"))
+                });
+                envelope.target_paths.push(TargetPath {
+                    path: path.display().to_string(),
+                    role: "instruction".into(),
+                    exists: listed,
+                });
+            }
         }
         if let Some(rest) = line.strip_prefix("→ ") {
             envelope.planned_files.push(PlannedFile {

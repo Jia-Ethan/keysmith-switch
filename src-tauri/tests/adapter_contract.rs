@@ -510,3 +510,62 @@ fn claude_status_does_not_ask_for_runtime_alignment() {
         prepared.args
     );
 }
+
+/// The status text is what the vendored Codex adapter really prints (with `./`
+/// in front of the file name), so the instruction file is found from it.
+#[test]
+fn codex_status_reports_the_instruction_file_it_loads() {
+    use keysmith_switch_lib::adapter::normalize::normalize;
+    use keysmith_switch_lib::adapter::process::Captured;
+    use keysmith_switch_lib::adapter::Envelope;
+
+    let stdout = "\
+[Status] Found 1 Codex configuration location(s) (read-only inspection):
+
+── Status directory: /home/u/.codex ──
+    config.toml: regular file (/home/u/.codex/config.toml)
+    my-rules.md: regular file (/home/u/.codex/my-rules.md)
+    hooks.json: missing (/home/u/.codex/hooks.json)
+    model_instructions_file: ./my-rules.md
+    Config activation: active (the current config loads the managed prompt)
+    Transaction residue: none
+";
+    let run = |text: &str| {
+        let captured = Captured {
+            stdout: text.into(),
+            stderr: String::new(),
+            exit_code: 0,
+            timed_out: false,
+            truncated: false,
+            argv: vec!["--status".into()],
+        };
+        normalize(
+            ToolKind::Codex,
+            &AdapterCommand::Status {
+                scope: Scope::User,
+                project_dir: None,
+                name: None,
+            },
+            &captured,
+            Envelope::new(ToolKind::Codex, "status"),
+        )
+    };
+
+    let envelope = run(stdout);
+    assert_eq!(envelope.status, ToolStatus::Active);
+    let instruction: Vec<_> = envelope
+        .target_paths
+        .iter()
+        .filter(|target| target.role == "instruction")
+        .collect();
+    assert_eq!(instruction.len(), 1, "{:?}", envelope.target_paths);
+    assert!(instruction[0].path.ends_with("my-rules.md"));
+    assert!(instruction[0].exists);
+
+    // Nothing is reported when the config does not name a file.
+    let unset = run(&stdout.replace("./my-rules.md", "<未设置或无法识别>"));
+    assert!(!unset
+        .target_paths
+        .iter()
+        .any(|target| target.role == "instruction"));
+}

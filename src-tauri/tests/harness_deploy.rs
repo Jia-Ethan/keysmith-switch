@@ -400,3 +400,57 @@ async fn adopting_without_a_deployment_is_refused() {
         .unwrap()
         .is_empty());
 }
+
+#[tokio::test]
+async fn codex_live_prompt_is_read_from_the_file_its_config_loads() {
+    let (_tmp, store, opts) = setup(ToolKind::Codex);
+    let body = "You are careful.\nAsk before deleting.\n";
+    let outcome = deploy_harness_with(&store, ToolKind::Codex, &opts, Some(body.into()))
+        .await
+        .unwrap();
+    assert!(outcome.ok, "{outcome:?}");
+    keysmith_switch_lib::ops::delete_prompt(&store, &outcome.prompt_id.unwrap()).unwrap();
+
+    let before = harness_state(&store, ToolKind::Codex, &opts).await.unwrap();
+    assert!(before.deployed && before.prompt_id.is_none(), "{before:?}");
+
+    let id =
+        keysmith_switch_lib::harness::adopt_live_prompt(&store, ToolKind::Codex, "Adopted", &opts)
+            .await
+            .unwrap();
+    assert_eq!(store.get_prompt(&id).unwrap().content, body);
+
+    // The library now names what Codex runs, also on a later read of the machine.
+    let after = harness_state(&store, ToolKind::Codex, &opts).await.unwrap();
+    assert_eq!(after.prompt_id.as_deref(), Some(id.as_str()));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn codex_prompt_outside_the_codex_directory_is_never_read() {
+    let (tmp, store, opts) = setup(ToolKind::Codex);
+    let outcome = deploy_harness_with(&store, ToolKind::Codex, &opts, Some("managed\n".into()))
+        .await
+        .unwrap();
+    assert!(outcome.ok, "{outcome:?}");
+    keysmith_switch_lib::ops::delete_prompt(&store, &outcome.prompt_id.unwrap()).unwrap();
+
+    // The config now points at a file elsewhere on the machine.
+    let elsewhere = tmp.path().join("private-notes.md");
+    std::fs::write(&elsewhere, "not a prompt\n").unwrap();
+    let managed = opts
+        .home
+        .clone()
+        .unwrap()
+        .join(".codex/gpt-unrestricted.md");
+    std::fs::remove_file(&managed).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, &managed).unwrap();
+
+    let result =
+        keysmith_switch_lib::harness::adopt_live_prompt(&store, ToolKind::Codex, "x", &opts).await;
+    assert!(result.is_err());
+    assert!(store
+        .list_prompts(ToolKind::Codex, None, None, PromptSort::Updated)
+        .unwrap()
+        .is_empty());
+}
