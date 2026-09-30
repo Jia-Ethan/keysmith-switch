@@ -75,8 +75,11 @@ export function AgentHero({
       >
         {tool === "zcode" ? (
           // The ZCode mark is a filled tile; as a watermark only its letter reads.
-          <svg width={190} height={190} viewBox="0 0 24 24" fill="none" className="text-primary">
-            <path d="M8.8 9.2h6.4l-6.4 5.6h6.4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+          <svg width={190} height={190} viewBox="0 0 832 832" className="text-primary">
+            <path
+              fill="currentColor"
+              d="M404,632 L658,632 L658,570 L459,570 L448,574 L440,581Z M670,199 L467,199 L161,632 L364,632Z M173,261 L373,261 L385,256 L392,249 L427,199 L173,199Z"
+            />
           </svg>
         ) : (
           <ToolLogo tool={tool} size={190} />

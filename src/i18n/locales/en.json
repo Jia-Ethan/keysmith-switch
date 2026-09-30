@@ -50,7 +50,8 @@
     "conflict": "Conflict",
     "recovery-required": "Recovery required",
     "unavailable": "Unavailable",
-    "deployed": "Deployed"
+    "deployed": "Deployed",
+    "live": "Live"
   },
   "scope": {
     "needsProjectDir": "project / local require an absolute project directory."
@@ -76,6 +77,8 @@
     "active": "Deployed now",
     "inactive": "Library",
     "noneActive": "No active prompts",
+    "liveUnrecorded": "Prompt on this machine (not in library)",
+    "liveUnrecordedHint": "This prompt is in effect, but its source was not recorded and it is not in the library.",
     "noneInactive": "—",
     "noResults": "No matching prompts",
     "noResultsHint": "Try adjusting your search or filter",

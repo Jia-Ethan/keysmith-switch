@@ -20,6 +20,11 @@ export interface PromptListProps {
   loading?: boolean;
   /** true when a search query or tag filter is applied */
   filtered?: boolean;
+  /**
+   * The machine runs a prompt the library has no entry for. It gets a card of
+   * its own in the live group, so the list never contradicts the hero.
+   */
+  unrecordedLive?: boolean;
   emptyAction?: ReactNode;
   /** One-click deploy from a card. Omitted: cards only open the detail page. */
   onDeploy?: (id: string) => void;
@@ -35,6 +40,7 @@ export function PromptList({
   activeIds,
   loading = false,
   filtered = false,
+  unrecordedLive = false,
   emptyAction,
   onDeploy,
   deployDisabled = false,
@@ -58,6 +64,16 @@ export function PromptList({
             </li>
           ))}
         </ul>
+      </div>
+    );
+  }
+
+  const showLive = unrecordedLive && !filtered;
+
+  if (prompts.length === 0 && showLive) {
+    return (
+      <div className="flex flex-col gap-4" data-testid="prompt-list">
+        <Group title={t("prompts.active")} items={[]} selectedId={selectedId} onSelect={onSelect} activeGroup unrecordedLive />
       </div>
     );
   }
@@ -92,6 +108,9 @@ export function PromptList({
         >
           {t("prompts.activationUnknown")}
         </p>
+        {showLive ? (
+          <Group title={t("prompts.active")} items={[]} selectedId={selectedId} onSelect={onSelect} activeGroup unrecordedLive />
+        ) : null}
         <Group title={t("prompts.allPrompts")} items={prompts} selectedId={selectedId} onSelect={onSelect} />
       </div>
     );
@@ -103,8 +122,15 @@ export function PromptList({
 
   return (
     <div className="flex min-h-0 flex-col gap-6" data-testid="prompt-list">
-      {active.length > 0 ? (
-        <Group title={t("prompts.active")} items={active} selectedId={selectedId} onSelect={onSelect} activeGroup />
+      {active.length > 0 || showLive ? (
+        <Group
+          title={t("prompts.active")}
+          items={active}
+          selectedId={selectedId}
+          onSelect={onSelect}
+          activeGroup
+          unrecordedLive={showLive}
+        />
       ) : null}
       <Group
         title={t("prompts.inactive")}
@@ -125,6 +151,7 @@ function Group({
   selectedId,
   onSelect,
   activeGroup = false,
+  unrecordedLive = false,
   onDeploy,
   deployDisabled = false,
   deployingId = null,
@@ -134,6 +161,7 @@ function Group({
   selectedId: string | null;
   onSelect: (id: string) => void;
   activeGroup?: boolean;
+  unrecordedLive?: boolean;
   onDeploy?: (id: string) => void;
   deployDisabled?: boolean;
   deployingId?: string | null;
@@ -145,15 +173,16 @@ function Group({
         {activeGroup ? <span className="status-dot text-primary" data-live="" aria-hidden="true" /> : null}
         {title}
         <span className="rounded-full bg-muted px-1.5 py-px text-[11px] font-medium tabular-nums tracking-normal">
-          {items.length}
+          {items.length + (unrecordedLive ? 1 : 0)}
         </span>
       </h3>
-      {items.length === 0 ? (
+      {items.length === 0 && !unrecordedLive ? (
         <p className="rounded-xl border border-dashed border-border px-4 py-5 text-center text-[12.5px] text-muted-foreground">
           {activeGroup ? t("prompts.noneActive") : t("prompts.noneInactive")}
         </p>
       ) : (
         <ul className={cx("grid grid-cols-1 gap-3", activeGroup ? "" : "sm:grid-cols-2 xl:grid-cols-3")}>
+          {unrecordedLive ? <UnrecordedLiveCard /> : null}
           {items.map((item, index) => {
             const selected = selectedId === item.id;
             return (
@@ -191,7 +220,7 @@ function Group({
                     </span>
                     {activeGroup ? (
                       <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold text-primary-foreground">
-                        {t("status.deployed")}
+                        {t("status.live")}
                       </span>
                     ) : (
                       <span className="shrink-0 pt-0.5 text-[11.5px] tabular-nums text-muted-foreground">
@@ -248,5 +277,25 @@ function Group({
         </ul>
       )}
     </section>
+  );
+}
+
+/** The live prompt on the machine has no library entry, so nothing here opens or deploys. */
+function UnrecordedLiveCard() {
+  const { t } = useTranslation();
+  return (
+    <li className="animate-rise" data-testid="prompt-live-unrecorded">
+      <div className="flex h-full w-full flex-col rounded-2xl border border-primary/40 bg-[linear-gradient(135deg,rgb(var(--primary)/0.10),rgb(var(--primary)/0.02)_55%,transparent)] bg-card p-4 shadow-glow">
+        <div className="flex w-full items-start gap-2">
+          <span className="min-w-0 flex-1 truncate text-[16px] font-semibold tracking-[-0.01em] text-foreground">
+            {t("prompts.liveUnrecorded")}
+          </span>
+          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-primary px-2 py-0.5 text-[11px] font-semibold text-primary-foreground">
+            {t("status.live")}
+          </span>
+        </div>
+        <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted-foreground">{t("prompts.liveUnrecordedHint")}</p>
+      </div>
+    </li>
   );
 }

@@ -133,6 +133,15 @@ export function WorkspacePage({
     return activation?.promptTitle ?? entry?.promptTitle ?? null;
   }, [activations, activeIds, entry?.promptTitle, prompts]);
 
+  // Deployed on the machine but absent from the library: the live group gets a
+  // card of its own so the list never contradicts the hero.
+  const unrecordedLive =
+    machine === "deployed" &&
+    !unavailable &&
+    !promptsLoading &&
+    !promptsError &&
+    !prompts.some((item) => activeIds?.includes(item.id));
+
   const draftDirty =
     (title !== defaultTitle || Boolean(content)) && savedDraft !== `${title}\0${content}`;
   const dirty = draftDirty || plan?.source === "composer" || busy;
@@ -533,6 +542,7 @@ export function WorkspacePage({
             activeIds={activeIds}
             loading={promptsLoading}
             filtered={filtered}
+            unrecordedLive={unrecordedLive}
             onSelect={selectPrompt}
             onDeploy={(id) => void deployFromLibrary(id)}
             deployDisabled={locked}

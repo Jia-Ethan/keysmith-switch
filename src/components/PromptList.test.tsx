@@ -75,3 +75,46 @@ describe("PromptList activation grouping", () => {
     expect(screen.getByTestId("prompt-item-b")).toBeInTheDocument();
   });
 });
+
+describe("PromptList unrecorded live prompt", () => {
+  it("shows a live card instead of the empty state when the machine runs an unlisted prompt", () => {
+    render(<PromptList prompts={[]} selectedId={null} unrecordedLive onSelect={() => undefined} />);
+    const card = screen.getByTestId("prompt-live-unrecorded");
+    expect(card).toHaveTextContent("部署中");
+    expect(screen.getByText("当前部署").closest("section")).toContainElement(card);
+    expect(screen.queryByTestId("prompt-list-empty")).not.toBeInTheDocument();
+  });
+
+  it("keeps the live card above the library when other prompts exist", () => {
+    render(
+      <PromptList
+        prompts={[prompt({ id: "a", title: "Alpha" })]}
+        selectedId={null}
+        activeIds={[]}
+        unrecordedLive
+        onSelect={() => undefined}
+      />,
+    );
+    expect(screen.getByTestId("prompt-live-unrecorded")).toBeInTheDocument();
+    expect(screen.getByText("提示词库").closest("section")).toContainElement(screen.getByTestId("prompt-item-a"));
+  });
+
+  it("hides the live card while a search or tag filter is applied", () => {
+    render(<PromptList prompts={[]} selectedId={null} filtered unrecordedLive onSelect={() => undefined} />);
+    expect(screen.queryByTestId("prompt-live-unrecorded")).not.toBeInTheDocument();
+    expect(screen.getByTestId("prompt-list-no-results")).toBeInTheDocument();
+  });
+
+  it("badges a matched live prompt as deploying", () => {
+    render(
+      <PromptList
+        prompts={[prompt({ id: "a", title: "Alpha" })]}
+        selectedId={null}
+        activeIds={["a"]}
+        onSelect={() => undefined}
+      />,
+    );
+    expect(screen.getByTestId("prompt-item-a")).toHaveTextContent("部署中");
+    expect(screen.queryByTestId("prompt-live-unrecorded")).not.toBeInTheDocument();
+  });
+});

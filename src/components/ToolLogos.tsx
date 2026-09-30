@@ -1,8 +1,9 @@
 import type { ToolId } from "../types";
 import claudeSvg from "../assets/claude.svg";
 import codexSvg from "../assets/codex.svg";
+import zcodePng from "../assets/zcode.png";
 
-/** Tool brand icons. Using official-sourced SVG for Claude/Codex/Grok, custom for ZCode. */
+/** Tool brand icons. Using official-sourced SVG for Claude/Codex/Grok, the official app icon for ZCode. */
 export function ToolLogo({ tool, size = 20 }: { tool: ToolId; size?: number }) {
   switch (tool) {
     case "claude":
@@ -48,23 +49,5 @@ function GrokMark({ size }: { size: number }) {
 }
 
 function ZcodeMark({ size }: { size: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      aria-hidden="true"
-      className="shrink-0"
-    >
-      <rect x="4" y="4" width="16" height="16" rx="3" fill="#6D28D9" className="dark:fill-[#8B5CF6]" />
-      <path
-        d="M8.8 9.2h6.4l-6.4 5.6h6.4"
-        stroke="#F5F3FF"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
+  return <img src={zcodePng} width={size} height={size} alt="" aria-hidden="true" className="shrink-0" />;
 }
