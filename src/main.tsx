@@ -8,6 +8,12 @@ import { applyPlatformAttributes } from "./lib/platform";
 
 applyPlatformAttributes();
 
+// Design preview: `npm run dev`, then open /?mock=1. Dev builds only.
+if (import.meta.env.DEV && new URLSearchParams(window.location.search).has("mock")) {
+  const { installMockTauri } = await import("./dev/mockTauri");
+  installMockTauri();
+}
+
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <ErrorBoundary>

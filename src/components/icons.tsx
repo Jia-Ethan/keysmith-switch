@@ -299,3 +299,12 @@ export function IconSort(props: IconProps) {
     </Svg>
   );
 }
+
+export function IconTerminal(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="1.9" y="2.9" width="12.2" height="10.2" rx="2.2" />
+      <path d="m4.9 6.4 2 1.6-2 1.6M8.6 9.9h2.6" />
+    </Svg>
+  );
+}

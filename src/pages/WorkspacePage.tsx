@@ -16,6 +16,7 @@ import { IconAlert, IconPlus, IconSearch } from "../components/icons";
 import { Button, Disclosure, Input, Mono, cx } from "../components/ui";
 import type { ToastApi } from "../hooks/useToasts";
 import { applyHarnessOutcome, getHarnessStatus, loadHarnessStatus, useHarnessStatus } from "../lib/harnessState";
+import { DEPLOY_PROMPT_EVENT, QUICK_DEPLOY_EVENT } from "../lib/paletteEvents";
 import { canConfirmPlan } from "../lib/planGate";
 import { toastSafeMessage } from "../lib/redact";
 import { activeIdsFor, isRecoveryState, mergeTools } from "../lib/tools";
@@ -325,6 +326,54 @@ export function WorkspacePage({
     }
   };
 
+  /**
+   * Edit what the agent is running. A library prompt opens directly; a prompt the
+   * library does not have is read back from the machine first, and when that is
+   * not possible the composer opens so it can be pasted in.
+   */
+  const editLivePrompt = async () => {
+    if (busy) return;
+    const openEditor = (promptId: string) =>
+      onNavigate?.({ kind: "prompt-edit", tool, promptId, creating: false, scope: "user", projectDir: "" });
+    const libraryId = activeIds?.find((id) => prompts.some((item) => item.id === id));
+    if (libraryId) {
+      openEditor(libraryId);
+      return;
+    }
+    setBusy(true);
+    setPending("adopt");
+    try {
+      const detail = await api.adoptLivePrompt({ tool, title: t("prompts.adoptTitle", { tool: toolName }) });
+      // The library now names what the machine runs; the hero must not wait for a re-read.
+      applyHarnessOutcome(tool, "deploy", { id: detail.id, title: detail.title });
+      openEditor(detail.id);
+    } catch {
+      toast?.err(t("prompts.adoptFailed"));
+      setComposerMessage(null);
+      setComposerOpen(true);
+    } finally {
+      setBusy(false);
+      setPending(null);
+    }
+  };
+
+  // The command palette asks this workspace to open the composer or a deploy sheet.
+  const paletteRef = useRef({ openComposer, deployFromLibrary });
+  paletteRef.current = { openComposer, deployFromLibrary };
+  useEffect(() => {
+    const onQuickDeploy = () => paletteRef.current.openComposer();
+    const onDeployPrompt = (event: Event) => {
+      const id = (event as CustomEvent<string>).detail;
+      if (id) void paletteRef.current.deployFromLibrary(id);
+    };
+    window.addEventListener(QUICK_DEPLOY_EVENT, onQuickDeploy);
+    window.addEventListener(DEPLOY_PROMPT_EVENT, onDeployPrompt);
+    return () => {
+      window.removeEventListener(QUICK_DEPLOY_EVENT, onQuickDeploy);
+      window.removeEventListener(DEPLOY_PROMPT_EVENT, onDeployPrompt);
+    };
+  }, []);
+
   const openRemovePlan = async () => {
     if (busy) return;
     setBusy(true);
@@ -440,6 +489,8 @@ export function WorkspacePage({
           onRefresh={() => void refresh()}
           onRemove={() => void openRemovePlan()}
           removeDisabled={locked}
+          onEdit={() => void editLivePrompt()}
+          editing={pending === "adopt"}
         />
 
         <ZCodeBanner tool={toolInfo} />
@@ -543,6 +594,8 @@ export function WorkspacePage({
             loading={promptsLoading}
             filtered={filtered}
             unrecordedLive={unrecordedLive}
+            onAdoptLive={() => void editLivePrompt()}
+            adoptingLive={pending === "adopt"}
             onSelect={selectPrompt}
             onDeploy={(id) => void deployFromLibrary(id)}
             deployDisabled={locked}
@@ -610,10 +663,10 @@ export function WorkspacePage({
         icon={<ToolLogo tool={tool} size={22} />}
         title={
           plan?.kind === "deactivate"
-            ? t("plan.titleDeactivate")
+            ? t("plan.titleDeactivate", { tool: toolName })
             : plan?.kind === "recover"
               ? t("operations.recover")
-              : t("quickDeploy.previewTitle")
+              : t("plan.titleDeploy", { tool: toolName })
         }
         description={[toolName, plan?.title].filter(Boolean).join(" · ")}
         confirmLabel={
@@ -639,7 +692,15 @@ export function WorkspacePage({
           ) : null
         }
       >
-        {plan ? <PlanPreview envelope={plan.result.envelope} /> : null}
+        {plan ? (
+          <PlanPreview
+            envelope={plan.result.envelope}
+            tool={tool}
+            kind={plan.kind}
+            fromTitle={deployedTitle}
+            toTitle={plan.title}
+          />
+        ) : null}
         {planError ? (
           <div className="mt-3">
             <Callout tone="danger" icon={<IconAlert size={14} />}>

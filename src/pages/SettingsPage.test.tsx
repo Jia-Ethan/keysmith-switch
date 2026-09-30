@@ -421,7 +421,7 @@ describe("SettingsPage data safety", () => {
     expect(screen.queryByLabelText("关闭窗口进入托盘")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("开机启动")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("静默启动")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Claude 默认范围")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Claude Code 默认范围")).not.toBeInTheDocument();
     expect(screen.queryByTestId("settings-nav-data")).not.toBeInTheDocument();
     expect(screen.queryByTestId("settings-shortcuts")).not.toBeInTheDocument();
     expect(screen.queryByText("快捷键")).not.toBeInTheDocument();

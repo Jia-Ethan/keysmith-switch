@@ -67,6 +67,7 @@ pub fn run() {
             commands::plan_deactivate,
             commands::deactivate,
             commands::harness_state,
+            commands::adopt_live_prompt,
             commands::remove_harness,
             commands::recover_tool,
             commands::confirm_recover,

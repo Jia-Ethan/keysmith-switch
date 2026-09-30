@@ -6,7 +6,7 @@ use std::str::FromStr;
 use crate::error::{Error, Result};
 
 pub const ADAPTER_SCHEMA: &str = "keysmith-switch/adapter-v1";
-pub const APP_VERSION: &str = "0.2.3";
+pub const APP_VERSION: &str = "0.2.4";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -36,10 +36,10 @@ impl ToolKind {
 
     pub fn expected_version(self) -> &'static str {
         match self {
-            Self::Claude => "7.1",
-            Self::Codex => "0.3.8",
-            Self::Grok => "0.4.1",
-            Self::Zcode => "0.1.0",
+            Self::Claude => "7.2",
+            Self::Codex => "0.6.0",
+            Self::Grok => "0.6.1",
+            Self::Zcode => "0.3.2",
         }
     }
 

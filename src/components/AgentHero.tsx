@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { ToolId } from "../types";
-import { IconAlert, IconPower, IconRefresh } from "./icons";
+import { IconAlert, IconPencil, IconPower, IconRefresh } from "./icons";
 import { ToolLogo } from "./ToolLogos";
 import { Button, IconButton, cx } from "./ui";
 
@@ -27,6 +27,8 @@ export function AgentHero({
   onRefresh,
   onRemove,
   removeDisabled,
+  onEdit,
+  editing = false,
 }: {
   tool: ToolId;
   name: string;
@@ -44,6 +46,9 @@ export function AgentHero({
   onRefresh: () => void;
   onRemove: () => void;
   removeDisabled: boolean;
+  /** Open the live prompt in the editor. */
+  onEdit?: () => void;
+  editing?: boolean;
 }) {
   const { t } = useTranslation();
   const deployed = machine === "deployed";
@@ -59,78 +64,91 @@ export function AgentHero({
           ? "live"
           : "idle";
 
+  const showLive = deployed && !statusError && !unavailable && !hint && tone !== "reading";
+
   return (
     <section
-      className="surface-card animate-page-in relative overflow-hidden"
+      className="hero-stage animate-page-in relative overflow-hidden rounded-[28px] border border-border/70 bg-card"
       data-testid="agent-hero"
       data-machine={machine}
     >
+      <div aria-hidden="true" className="hero-aurora pointer-events-none absolute inset-0" />
+      {/* A sheen crosses the stage whenever what the agent runs changes. */}
+      <div key={`${tone}:${deployedTitle ?? ""}`} aria-hidden="true" className="hero-sheen pointer-events-none absolute inset-0" />
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(90%_140%_at_0%_0%,rgb(var(--primary)/0.14),transparent_55%)]"
-      />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute -right-8 -top-10 opacity-[0.07] blur-[1px] transition-opacity dark:opacity-[0.09]"
+        className="pointer-events-none absolute -right-10 -top-12 opacity-[0.06] blur-[1px] dark:opacity-[0.09]"
       >
         {tool === "zcode" ? (
           // The ZCode mark is a filled tile; as a watermark only its letter reads.
-          <svg width={190} height={190} viewBox="0 0 832 832" className="text-primary">
+          <svg width={240} height={240} viewBox="0 0 832 832" className="text-primary">
             <path
               fill="currentColor"
               d="M404,632 L658,632 L658,570 L459,570 L448,574 L440,581Z M670,199 L467,199 L161,632 L364,632Z M173,261 L373,261 L385,256 L392,249 L427,199 L173,199Z"
             />
           </svg>
         ) : (
-          <ToolLogo tool={tool} size={190} />
+          <ToolLogo tool={tool} size={240} />
         )}
       </div>
 
-      <div className="relative flex flex-wrap items-center gap-4 px-5 pb-4 pt-5">
-        <div
-          className={cx(
-            "flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-card ring-1 ring-border",
-            deployed ? "shadow-glow" : "shadow-pop",
-          )}
-        >
-          <ToolLogo tool={tool} size={30} />
+      <div className="relative flex flex-wrap items-center gap-5 px-7 py-7">
+        <div className="relative shrink-0">
+          {deployed ? <span aria-hidden="true" className="hero-orb-ring absolute inset-0 rounded-[24px]" /> : null}
+          <div
+            className={cx(
+              "relative flex h-[76px] w-[76px] items-center justify-center rounded-[24px] bg-card ring-1 ring-border transition-shadow duration-500",
+              deployed ? "shadow-glow" : "shadow-pop",
+            )}
+          >
+            <ToolLogo tool={tool} size={38} />
+          </div>
         </div>
 
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-[21px] font-semibold tracking-[-0.02em] text-foreground">{name}</h1>
+        <div className="min-w-0 flex-1" data-testid="agent-status" data-reading={reading || undefined}>
+          <div className="flex items-center gap-2.5">
+            <h1 className="truncate text-[13px] font-semibold tracking-[0.02em] text-muted-foreground">{name}</h1>
+            <StatusPill tone={tone}>
+              {statusError
+                ? t("hero.statusError")
+                : unavailable
+                  ? t("status.unavailable")
+                  : hint
+                    ? hint
+                    : tone === "reading"
+                      ? t("quickDeploy.reading")
+                      : deployed
+                        ? t("quickDeploy.deployedState")
+                        : t("quickDeploy.undeployedState")}
+            </StatusPill>
+          </div>
           {/* Re-keyed on every change of state so a deploy or removal visibly lands. */}
           <div key={`${tone}:${deployedTitle ?? ""}`} className="animate-page-in">
-            <div
-              className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px]"
-              data-testid="agent-status"
-              data-reading={reading || undefined}
-            >
-              <StatusPill tone={tone}>
-                {statusError
-                  ? t("hero.statusError")
-                  : unavailable
-                    ? t("status.unavailable")
-                    : hint
-                      ? hint
-                      : tone === "reading"
-                        ? t("quickDeploy.reading")
-                        : deployed
-                          ? t("quickDeploy.deployedState")
-                          : t("quickDeploy.undeployedState")}
-              </StatusPill>
-            </div>
-            {deployed && !statusError && !unavailable && !hint && tone !== "reading" ? (
-              <p className="mt-2 flex min-w-0 items-baseline gap-1.5 text-[13px]" data-testid="agent-live-prompt">
-                <span className="shrink-0 text-muted-foreground">{t("hero.livePrompt")}</span>
+            {showLive ? (
+              <p className="mt-2 min-w-0" data-testid="agent-live-prompt">
+                <span className="block text-[12.5px] text-muted-foreground">{t("hero.livePrompt")}</span>
                 {deployedTitle ? (
-                  <span className="min-w-0 truncate font-medium text-foreground" data-testid="agent-deployed-title">
+                  <span
+                    className="mt-0.5 block min-w-0 truncate text-[26px] font-semibold leading-tight tracking-[-0.025em] text-foreground"
+                    data-testid="agent-deployed-title"
+                  >
                     {deployedTitle}
                   </span>
                 ) : (
-                  <span className="min-w-0 truncate text-muted-foreground" data-testid="agent-deployed-unknown">
-                    · {t("hero.livePromptUnknown")}
+                  <span
+                    className="mt-0.5 block min-w-0 truncate text-[22px] font-semibold leading-tight tracking-[-0.02em] text-foreground"
+                    data-testid="agent-deployed-unknown"
+                  >
+                    {t("hero.livePromptUnknown")}
                   </span>
                 )}
+              </p>
+            ) : tone === "idle" && !hint ? (
+              <p className="mt-2 text-[22px] font-semibold leading-tight tracking-[-0.02em] text-foreground">
+                {t("hero.emptyTitle")}
+                <span className="mt-1 block text-[13px] font-normal tracking-normal text-muted-foreground">
+                  {t("hero.emptyHint")}
+                </span>
               </p>
             ) : null}
           </div>
@@ -143,22 +161,35 @@ export function AgentHero({
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
+          {showLive && onEdit ? (
+            <Button
+              size="md"
+              variant="outline"
+              loading={editing}
+              disabled={removeDisabled && !editing}
+              data-testid="hero-edit"
+              onClick={onEdit}
+            >
+              <IconPencil size={14} />
+              {t("hero.edit")}
+            </Button>
+          ) : null}
           {deployed ? (
             <Button
-              size="sm"
+              size="md"
               variant="danger"
               loading={removing}
               disabled={removeDisabled && !removing}
               data-testid="quick-deploy-remove"
               onClick={onRemove}
             >
-              <IconPower size={13} />
+              <IconPower size={14} />
               {t("quickDeploy.remove")}
             </Button>
           ) : null}
           <IconButton
             label={t("quickDeploy.refresh")}
-            size="iconSm"
+            size="icon"
             data-testid="harness-refresh"
             disabled={reading || busy}
             onClick={onRefresh}

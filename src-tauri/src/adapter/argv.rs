@@ -42,9 +42,9 @@ fn claude_args(command: &AdapterCommand) -> Result<PreparedCommand> {
             let mut args = vec!["status".into(), "--scope".into(), scope.as_str().into()];
             push_project_dir(&mut args, *scope, project_dir.as_deref())?;
             push_name(&mut args, name.as_deref());
-            if *scope == Scope::User {
-                args.push("--runtime".into());
-            }
+            // No `--runtime`: with it the adapter only counts the shell wrapper and
+            // settings alignment as installed, which a normal deploy does not write,
+            // so a prompt that was just deployed would read as not deployed.
             args.push("--json".into());
             Ok(PreparedCommand {
                 args,

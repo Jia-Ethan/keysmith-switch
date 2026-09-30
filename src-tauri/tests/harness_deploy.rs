@@ -363,3 +363,94 @@ async fn zcode_on_windows_fails_without_calling_the_sidecar() {
         .unwrap()
         .is_empty());
 }
+
+#[tokio::test]
+async fn adopting_refuses_text_that_does_not_match_the_live_fingerprint() {
+    // The fixture adapters report canned fingerprints, so no file hashes to them:
+    // nothing may be adopted on a guess.
+    let (_tmp, store, opts) = setup(ToolKind::Claude);
+    let outcome = deploy_harness_with(&store, ToolKind::Claude, &opts, Some("live body\n".into()))
+        .await
+        .unwrap();
+    assert!(outcome.ok, "{outcome:?}");
+    keysmith_switch_lib::ops::delete_prompt(&store, &outcome.prompt_id.unwrap()).unwrap();
+
+    let before = harness_state(&store, ToolKind::Claude, &opts)
+        .await
+        .unwrap();
+    assert!(before.deployed && before.prompt_id.is_none(), "{before:?}");
+
+    let result =
+        keysmith_switch_lib::harness::adopt_live_prompt(&store, ToolKind::Claude, "x", &opts).await;
+    assert!(result.is_err());
+    assert!(store
+        .list_prompts(ToolKind::Claude, None, None, PromptSort::Updated)
+        .unwrap()
+        .is_empty());
+}
+
+#[tokio::test]
+async fn adopting_without_a_deployment_is_refused() {
+    let (_tmp, store, opts) = setup(ToolKind::Claude);
+    let result =
+        keysmith_switch_lib::harness::adopt_live_prompt(&store, ToolKind::Claude, "x", &opts).await;
+    assert!(result.is_err());
+    assert!(store
+        .list_prompts(ToolKind::Claude, None, None, PromptSort::Updated)
+        .unwrap()
+        .is_empty());
+}
+
+#[tokio::test]
+async fn codex_live_prompt_is_read_from_the_file_its_config_loads() {
+    let (_tmp, store, opts) = setup(ToolKind::Codex);
+    let body = "You are careful.\nAsk before deleting.\n";
+    let outcome = deploy_harness_with(&store, ToolKind::Codex, &opts, Some(body.into()))
+        .await
+        .unwrap();
+    assert!(outcome.ok, "{outcome:?}");
+    keysmith_switch_lib::ops::delete_prompt(&store, &outcome.prompt_id.unwrap()).unwrap();
+
+    let before = harness_state(&store, ToolKind::Codex, &opts).await.unwrap();
+    assert!(before.deployed && before.prompt_id.is_none(), "{before:?}");
+
+    let id =
+        keysmith_switch_lib::harness::adopt_live_prompt(&store, ToolKind::Codex, "Adopted", &opts)
+            .await
+            .unwrap();
+    assert_eq!(store.get_prompt(&id).unwrap().content, body);
+
+    // The library now names what Codex runs, also on a later read of the machine.
+    let after = harness_state(&store, ToolKind::Codex, &opts).await.unwrap();
+    assert_eq!(after.prompt_id.as_deref(), Some(id.as_str()));
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn codex_prompt_outside_the_codex_directory_is_never_read() {
+    let (tmp, store, opts) = setup(ToolKind::Codex);
+    let outcome = deploy_harness_with(&store, ToolKind::Codex, &opts, Some("managed\n".into()))
+        .await
+        .unwrap();
+    assert!(outcome.ok, "{outcome:?}");
+    keysmith_switch_lib::ops::delete_prompt(&store, &outcome.prompt_id.unwrap()).unwrap();
+
+    // The config now points at a file elsewhere on the machine.
+    let elsewhere = tmp.path().join("private-notes.md");
+    std::fs::write(&elsewhere, "not a prompt\n").unwrap();
+    let managed = opts
+        .home
+        .clone()
+        .unwrap()
+        .join(".codex/gpt-unrestricted.md");
+    std::fs::remove_file(&managed).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, &managed).unwrap();
+
+    let result =
+        keysmith_switch_lib::harness::adopt_live_prompt(&store, ToolKind::Codex, "x", &opts).await;
+    assert!(result.is_err());
+    assert!(store
+        .list_prompts(ToolKind::Codex, None, None, PromptSort::Updated)
+        .unwrap()
+        .is_empty());
+}

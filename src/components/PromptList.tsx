@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { relativeTime } from "../lib/format";
 import type { PromptSummary } from "../types";
 import { EmptyState } from "./EmptyState";
-import { IconChevronRight, IconLibrary, IconRocket } from "./icons";
+import { IconChevronRight, IconLibrary, IconPencil, IconRocket } from "./icons";
 import { Button, cx, Tag } from "./ui";
 
 export interface PromptListProps {
@@ -25,6 +25,9 @@ export interface PromptListProps {
    * its own in the live group, so the list never contradicts the hero.
    */
   unrecordedLive?: boolean;
+  /** Take the unrecorded live prompt into the library and edit it. Omitted: the card only informs. */
+  onAdoptLive?: () => void;
+  adoptingLive?: boolean;
   emptyAction?: ReactNode;
   /** One-click deploy from a card. Omitted: cards only open the detail page. */
   onDeploy?: (id: string) => void;
@@ -41,6 +44,8 @@ export function PromptList({
   loading = false,
   filtered = false,
   unrecordedLive = false,
+  onAdoptLive,
+  adoptingLive = false,
   emptyAction,
   onDeploy,
   deployDisabled = false,
@@ -73,7 +78,7 @@ export function PromptList({
   if (prompts.length === 0 && showLive) {
     return (
       <div className="flex flex-col gap-4" data-testid="prompt-list">
-        <Group title={t("prompts.active")} items={[]} selectedId={selectedId} onSelect={onSelect} activeGroup unrecordedLive />
+        <Group title={t("prompts.active")} items={[]} selectedId={selectedId} onSelect={onSelect} activeGroup unrecordedLive onAdoptLive={onAdoptLive} adoptingLive={adoptingLive} deployDisabled={deployDisabled} />
       </div>
     );
   }
@@ -109,7 +114,7 @@ export function PromptList({
           {t("prompts.activationUnknown")}
         </p>
         {showLive ? (
-          <Group title={t("prompts.active")} items={[]} selectedId={selectedId} onSelect={onSelect} activeGroup unrecordedLive />
+          <Group title={t("prompts.active")} items={[]} selectedId={selectedId} onSelect={onSelect} activeGroup unrecordedLive onAdoptLive={onAdoptLive} adoptingLive={adoptingLive} deployDisabled={deployDisabled} />
         ) : null}
         <Group title={t("prompts.allPrompts")} items={prompts} selectedId={selectedId} onSelect={onSelect} />
       </div>
@@ -130,6 +135,9 @@ export function PromptList({
           onSelect={onSelect}
           activeGroup
           unrecordedLive={showLive}
+          onAdoptLive={onAdoptLive}
+          adoptingLive={adoptingLive}
+          deployDisabled={deployDisabled}
         />
       ) : null}
       <Group
@@ -152,6 +160,8 @@ function Group({
   onSelect,
   activeGroup = false,
   unrecordedLive = false,
+  onAdoptLive,
+  adoptingLive = false,
   onDeploy,
   deployDisabled = false,
   deployingId = null,
@@ -162,6 +172,8 @@ function Group({
   onSelect: (id: string) => void;
   activeGroup?: boolean;
   unrecordedLive?: boolean;
+  onAdoptLive?: () => void;
+  adoptingLive?: boolean;
   onDeploy?: (id: string) => void;
   deployDisabled?: boolean;
   deployingId?: string | null;
@@ -182,7 +194,7 @@ function Group({
         </p>
       ) : (
         <ul className={cx("grid grid-cols-1 gap-3", activeGroup ? "" : "sm:grid-cols-2 xl:grid-cols-3")}>
-          {unrecordedLive ? <UnrecordedLiveCard /> : null}
+          {unrecordedLive ? <UnrecordedLiveCard onAdopt={onAdoptLive} adopting={adoptingLive} disabled={deployDisabled} /> : null}
           {items.map((item, index) => {
             const selected = selectedId === item.id;
             return (
@@ -190,6 +202,7 @@ function Group({
                 key={item.id}
                 className="animate-rise group relative"
                 style={{ animationDelay: `${Math.min(index, 8) * 35}ms` }}
+                onPointerMove={trackPointer}
               >
                 <button
                   type="button"
@@ -197,7 +210,7 @@ function Group({
                   aria-current={selected ? "true" : undefined}
                   data-testid={`prompt-item-${item.id}`}
                   className={cx(
-                    "flex h-full w-full flex-col rounded-2xl border p-4 text-left",
+                    "card-spotlight flex h-full w-full flex-col rounded-2xl border p-4 text-left",
                     "transition-[border-color,box-shadow,transform,background-color] duration-200",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                     activeGroup
@@ -209,7 +222,8 @@ function Group({
                     selected && "ring-2 ring-primary/40",
                   )}
                 >
-                  <div className="flex w-full items-start gap-2">
+                  <div className="flex w-full items-center gap-2.5">
+                    <Monogram title={item.title} solid={activeGroup} />
                     <span
                       className={cx(
                         "min-w-0 flex-1 truncate font-semibold tracking-[-0.01em] text-foreground",
@@ -280,13 +294,47 @@ function Group({
   );
 }
 
-/** The live prompt on the machine has no library entry, so nothing here opens or deploys. */
-function UnrecordedLiveCard() {
+/** Feeds the card's spotlight: the glow follows the pointer across it. */
+function trackPointer(event: React.PointerEvent<HTMLElement>) {
+  const rect = event.currentTarget.getBoundingClientRect();
+  event.currentTarget.style.setProperty("--mx", `${event.clientX - rect.left}px`);
+  event.currentTarget.style.setProperty("--my", `${event.clientY - rect.top}px`);
+}
+
+/** A soft tile with the prompt's first character, so cards read as objects, not rows of text. */
+function Monogram({ title, solid = false }: { title: string; solid?: boolean }) {
+  const initial = Array.from(title.trim())[0]?.toUpperCase() ?? "•";
+  return (
+    <span
+      aria-hidden="true"
+      className={cx(
+        "flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] text-[14px] font-semibold transition-transform duration-300 group-hover:scale-105",
+        solid
+          ? "bg-primary text-primary-foreground shadow-[0_4px_12px_-4px_rgb(var(--primary)/0.7)]"
+          : "bg-gradient-to-br from-primary/20 to-primary/5 text-primary",
+      )}
+    >
+      {initial}
+    </span>
+  );
+}
+
+/** The live prompt on the machine has no library entry: one click takes it in and opens the editor. */
+function UnrecordedLiveCard({
+  onAdopt,
+  adopting,
+  disabled,
+}: {
+  onAdopt?: () => void;
+  adopting: boolean;
+  disabled: boolean;
+}) {
   const { t } = useTranslation();
   return (
-    <li className="animate-rise" data-testid="prompt-live-unrecorded">
+    <li className="animate-rise group" data-testid="prompt-live-unrecorded">
       <div className="flex h-full w-full flex-col rounded-2xl border border-primary/40 bg-[linear-gradient(135deg,rgb(var(--primary)/0.10),rgb(var(--primary)/0.02)_55%,transparent)] bg-card p-4 shadow-glow">
-        <div className="flex w-full items-start gap-2">
+        <div className="flex w-full items-center gap-2.5">
+          <Monogram title="⌘" solid />
           <span className="min-w-0 flex-1 truncate text-[16px] font-semibold tracking-[-0.01em] text-foreground">
             {t("prompts.liveUnrecorded")}
           </span>
@@ -295,6 +343,21 @@ function UnrecordedLiveCard() {
           </span>
         </div>
         <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted-foreground">{t("prompts.liveUnrecordedHint")}</p>
+        {onAdopt ? (
+          <div className="mt-3 flex justify-end">
+            <Button
+              size="sm"
+              variant="primary"
+              loading={adopting}
+              disabled={disabled && !adopting}
+              data-testid="prompt-live-adopt"
+              onClick={onAdopt}
+            >
+              <IconPencil size={13} />
+              {t("prompts.adoptAndEdit")}
+            </Button>
+          </div>
+        ) : null}
       </div>
     </li>
   );

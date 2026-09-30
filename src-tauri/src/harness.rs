@@ -77,10 +77,13 @@ fn deployed_prompt(
 ) -> Option<(String, String)> {
     if let Ok(Some(activation)) = store.find_activation(tool, Scope::User, None) {
         if activation.status == ToolStatus::Active {
+            // A prompt deleted from the library is not "the library prompt that
+            // is live": the machine then runs text the library no longer has.
             let prompt = activation
                 .prompt_id
                 .as_deref()
-                .and_then(|id| store.get_prompt(id).ok());
+                .and_then(|id| store.get_prompt(id).ok())
+                .filter(|prompt| prompt.deleted_at.is_none());
             if let Some(prompt) = prompt {
                 return Some((prompt.id, prompt.title));
             }
@@ -113,7 +116,7 @@ pub async fn harness_state(
         Ok(envelope) => {
             let deployed = envelope.status == ToolStatus::Active;
             let prompt = if deployed {
-                deployed_prompt(store, tool, envelope.current_fingerprint.as_deref())
+                deployed_prompt(store, tool, live_fingerprint(tool, &envelope).as_deref())
             } else {
                 None
             };
@@ -137,6 +140,98 @@ pub async fn harness_state(
             prompt_title: None,
         }),
     }
+}
+
+/// Roles the adapters use for the file that holds the live prompt itself.
+/// Directories (`config-root`, `codex-dir`, `managed_dir`) and wrappers are not
+/// prompt text and are never read.
+const LIVE_PROMPT_ROLES: [&str; 4] = ["memory", "instruction", "rule", "system_file"];
+
+/// Take the prompt that is live on the machine into the library so it can be
+/// edited, versioned and redeployed.
+///
+/// The text is only accepted when it is provably the live prompt: a file the
+/// adapter reported must hash to the same fingerprint the adapter reports for
+/// the deployment. When no file matches, nothing is guessed and an error says
+/// the prompt cannot be read back; the caller falls back to pasting it.
+pub async fn adopt_live_prompt(
+    store: &Store,
+    tool: ToolKind,
+    title: &str,
+    opts: &AdapterOptions,
+) -> Result<String> {
+    if let Some(reason) = tool.unavailable_reason() {
+        return Err(Error::unavailable(reason.to_string()));
+    }
+    let envelope = ops::tool_status(store, tool, Scope::User, None, opts).await?;
+    if envelope.status != ToolStatus::Active {
+        return Err(Error::invalid("no prompt is deployed for this tool"));
+    }
+    let fingerprint = live_fingerprint(tool, &envelope)
+        .ok_or_else(|| Error::command_failed("the live prompt cannot be read back"))?;
+    for target in &envelope.target_paths {
+        if !target.exists || !LIVE_PROMPT_ROLES.contains(&target.role.as_str()) {
+            continue;
+        }
+        let Some(body) = read_prompt_file(std::path::Path::new(&target.path)) else {
+            continue;
+        };
+        if content_sha(&body) == fingerprint {
+            return store_prompt_body(store, tool, title, &body, vec!["imported".to_string()]);
+        }
+    }
+    Err(Error::command_failed("the live prompt cannot be read back"))
+}
+
+/// The content fingerprint of the live prompt. Adapters report it; Codex does not,
+/// so there it is the hash of the file its config loads, provided that file sits
+/// inside the Codex directory (a config edited by hand to point elsewhere is not
+/// read as the prompt).
+fn live_fingerprint(tool: ToolKind, envelope: &crate::adapter::Envelope) -> Option<String> {
+    let reported = envelope
+        .current_fingerprint
+        .as_deref()
+        .map(|value| value.strip_prefix("sha256:").unwrap_or(value))
+        .filter(|value| !value.is_empty());
+    if let Some(value) = reported {
+        return Some(value.to_string());
+    }
+    if tool != ToolKind::Codex {
+        return None;
+    }
+    envelope
+        .target_paths
+        .iter()
+        .find(|target| {
+            target.exists
+                && target.role == "instruction"
+                && is_inside_codex_dir(envelope, &target.path)
+        })
+        .and_then(|target| read_prompt_file(std::path::Path::new(&target.path)))
+        .map(|body| content_sha(&body))
+}
+
+/// Whether `path` resolves to somewhere under a Codex directory the adapter reported,
+/// so a config edited by hand to point elsewhere is never read as the prompt.
+fn is_inside_codex_dir(envelope: &crate::adapter::Envelope, path: &str) -> bool {
+    let Ok(file) = std::fs::canonicalize(path) else {
+        return false;
+    };
+    envelope
+        .target_paths
+        .iter()
+        .filter(|target| target.role == "codex-dir")
+        .filter_map(|target| std::fs::canonicalize(&target.path).ok())
+        .any(|dir| file.starts_with(dir))
+}
+
+/// A regular, UTF-8, size-bounded file, or nothing.
+fn read_prompt_file(path: &std::path::Path) -> Option<String> {
+    let meta = std::fs::metadata(path).ok()?;
+    if !meta.is_file() || meta.len() as usize > MAX_PROMPT_BYTES {
+        return None;
+    }
+    String::from_utf8(std::fs::read(path).ok()?).ok()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

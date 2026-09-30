@@ -4,7 +4,9 @@ import { gatePlan } from "../lib/planGate";
 import { shortPath } from "../lib/format";
 import type { Envelope } from "../types";
 import { Disclosure, Mono, cx } from "./ui";
-import { IconAlert, IconArrowRight, IconFile, IconInfo, IconShield } from "./icons";
+import { IconAlert, IconArrowRight, IconCheck, IconFile, IconInfo, IconShield } from "./icons";
+import { ToolLogo } from "./ToolLogos";
+import type { ToolId } from "../types";
 
 type ActionTone = "add" | "change" | "remove" | "neutral";
 
@@ -52,26 +54,53 @@ function shortFingerprint(value: string | null): string {
   return algo ? `${algo}:${trimmed}` : trimmed;
 }
 
-export function PlanPreview({ envelope }: { envelope: Envelope }) {
+export interface PlanPreviewProps {
+  envelope: Envelope;
+  /** With the agent and the titles involved, the preview reads as a sentence instead of a report. */
+  tool?: ToolId;
+  kind?: "activate" | "deactivate" | "recover";
+  /** What the agent runs now, when known. */
+  fromTitle?: string | null;
+  /** What it will run after the plan. */
+  toTitle?: string | null;
+}
+
+/**
+ * A plan, said plainly first: what changes, that it is backed up, what to do
+ * when it cannot go ahead. Everything technical (files, backups, fingerprints)
+ * is one click away under "details" and never needed to decide.
+ */
+export function PlanPreview({ envelope, tool, kind = "activate", fromTitle, toTitle }: PlanPreviewProps) {
   const { t } = useTranslation();
   const gate = gatePlan(envelope);
   const drifted =
     envelope.status === "drift" ||
     envelope.status === "recovery-required" ||
     envelope.recoveryRequired;
+  const toolName = tool ? t(`nav.${tool}`) : "";
+  const ready = gate.ok && !drifted;
 
   return (
     <div className="space-y-4" data-testid="plan-preview">
-      <div className="flex flex-wrap items-center gap-1.5 text-[12px]">
-        <SummaryChip>{t("plan.summaryFiles", { count: envelope.plannedFiles.length })}</SummaryChip>
-        <SummaryChip>{t("plan.summaryBackups", { count: envelope.backups.length })}</SummaryChip>
-        {gate.ok && !drifted ? (
-          <SummaryChip tone="ok">
-            <IconShield size={12} />
-            {t("plan.reviewed")}
-          </SummaryChip>
-        ) : null}
-      </div>
+      {tool && kind !== "recover" ? (
+        <PlanFlow tool={tool} kind={kind} fromTitle={fromTitle} toTitle={toTitle} ready={ready} />
+      ) : null}
+
+      {ready ? (
+        <ul className="space-y-1.5 text-[13.5px] text-foreground" data-testid="plan-friendly">
+          <FriendlyLine>
+            {kind === "deactivate"
+              ? t("plan.friendlyOff", { tool: toolName })
+              : fromTitle
+                ? t("plan.friendlyReplace", { tool: toolName })
+                : t("plan.friendlyFresh", { tool: toolName })}
+          </FriendlyLine>
+          {envelope.backups.length > 0 ? <FriendlyLine>{t("plan.friendlySafe")}</FriendlyLine> : null}
+          {envelope.reloadRequired && kind !== "deactivate" ? (
+            <FriendlyLine>{t("plan.friendlyReload", { tool: toolName })}</FriendlyLine>
+          ) : null}
+        </ul>
+      ) : null}
 
       {drifted ? (
         <Callout tone="warn" icon={<IconAlert size={14} />}>
@@ -90,6 +119,122 @@ export function PlanPreview({ envelope }: { envelope: Envelope }) {
         </Callout>
       ) : null}
 
+      {envelope.conflicts.length > 0 ? (
+        <Callout tone="warn" icon={<IconAlert size={14} />}>
+          <ul className="space-y-0.5">
+            {envelope.conflicts.map((item, index) => {
+              const path = typeof item === "string" ? item : item.path;
+              const reason = typeof item === "string" ? item : item.reason;
+              return (
+                <li key={index} className="break-all">
+                  {shortPath(path)}
+                  {reason && reason !== path ? ` — ${reason}` : ""}
+                </li>
+              );
+            })}
+          </ul>
+        </Callout>
+      ) : null}
+
+      {envelope.warnings.length > 0 ? (
+        <Callout tone="warn" icon={<IconAlert size={14} />}>
+          <ul className="list-inside list-disc space-y-0.5">
+            {envelope.warnings.map((item, index) => (
+              <li key={index}>{item}</li>
+            ))}
+          </ul>
+        </Callout>
+      ) : null}
+
+      {envelope.reloadHint ? (
+        <Callout tone="info" icon={<IconInfo size={14} />}>
+          {envelope.reloadHint}
+        </Callout>
+      ) : null}
+
+      {envelope.error ? (
+        <Callout tone="danger" icon={<IconAlert size={14} />}>
+          {envelope.error}
+        </Callout>
+      ) : null}
+
+      <Disclosure title={t("plan.details")} testId="plan-details">
+        <PlanDetails envelope={envelope} />
+      </Disclosure>
+    </div>
+  );
+}
+
+function FriendlyLine({ children }: { children: ReactNode }) {
+  return (
+    <li className="flex items-start gap-2">
+      <span className="mt-[3px] flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-success/15 text-success">
+        <IconCheck size={11} />
+      </span>
+      <span className="min-w-0">{children}</span>
+    </li>
+  );
+}
+
+/** Before → after, with the agent in the middle and a current of light between the two. */
+function PlanFlow({
+  tool,
+  kind,
+  fromTitle,
+  toTitle,
+  ready,
+}: {
+  tool: ToolId;
+  kind: "activate" | "deactivate";
+  fromTitle?: string | null;
+  toTitle?: string | null;
+  ready: boolean;
+}) {
+  const { t } = useTranslation();
+  const off = kind === "deactivate";
+  return (
+    <div
+      className="plan-flow relative flex items-center gap-3 overflow-hidden rounded-2xl border border-border bg-muted/40 px-4 py-4"
+      data-ready={ready || undefined}
+      data-testid="plan-flow"
+    >
+      <FlowCard label={t("plan.flowNow")} title={fromTitle || t("plan.flowNothing")} dim={!fromTitle} />
+      <div className="relative flex shrink-0 flex-col items-center gap-1">
+        <span className="plan-flow-orb flex h-11 w-11 items-center justify-center rounded-2xl bg-card shadow-glow ring-1 ring-primary/25">
+          <ToolLogo tool={tool} size={24} />
+        </span>
+        <IconArrowRight size={14} className="plan-flow-arrow text-primary" />
+      </div>
+      <FlowCard
+        label={off ? t("plan.flowAfter") : t("plan.flowNext")}
+        title={off ? t("plan.flowNothing") : toTitle || "—"}
+        dim={off}
+        accent={!off}
+      />
+    </div>
+  );
+}
+
+function FlowCard({ label, title, dim, accent }: { label: string; title: string; dim?: boolean; accent?: boolean }) {
+  return (
+    <div
+      className={cx(
+        "min-w-0 flex-1 rounded-xl border px-3 py-2.5",
+        accent ? "border-primary/35 bg-primary/[0.07]" : "border-border bg-card",
+      )}
+    >
+      <p className="text-[11px] font-medium text-muted-foreground">{label}</p>
+      <p className={cx("mt-0.5 truncate text-[14px] font-semibold", dim ? "text-muted-foreground" : "text-foreground")} title={title}>
+        {title}
+      </p>
+    </div>
+  );
+}
+
+function PlanDetails({ envelope }: { envelope: Envelope }) {
+  const { t } = useTranslation();
+  return (
+    <div className="space-y-4">
       <Section title={t("plan.files")}>
         {envelope.plannedFiles.length === 0 ? (
           <p className="text-muted-foreground">{t("common.none")}</p>
@@ -147,23 +292,6 @@ export function PlanPreview({ envelope }: { envelope: Envelope }) {
         )}
       </Section>
 
-      {envelope.conflicts.length > 0 ? (
-        <Section title={t("plan.conflicts")}>
-          <ul className="space-y-1">
-            {envelope.conflicts.map((item, index) => {
-              const path = typeof item === "string" ? item : item.path;
-              const reason = typeof item === "string" ? item : item.reason;
-              return (
-                <li key={index} className="break-all text-destructive">
-                  <Mono className="text-destructive">{shortPath(path)}</Mono>
-                  {reason && reason !== path ? ` — ${reason}` : ""}
-                </li>
-              );
-            })}
-          </ul>
-        </Section>
-      ) : null}
-
       <Section title={t("plan.fingerprint")}>
         <div className="flex flex-wrap items-center gap-2 font-mono text-[12px]" data-testid="plan-fingerprints">
           <span
@@ -182,58 +310,25 @@ export function PlanPreview({ envelope }: { envelope: Envelope }) {
         </div>
       </Section>
 
-      {envelope.warnings.length > 0 ? (
-        <Callout tone="warn" icon={<IconAlert size={14} />}>
-          <p className="font-medium">{t("plan.warnings")}</p>
-          <ul className="mt-0.5 list-inside list-disc space-y-0.5">
-            {envelope.warnings.map((item, index) => (
-              <li key={index}>{item}</li>
-            ))}
-          </ul>
-        </Callout>
-      ) : null}
-
-      {envelope.reloadHint ? (
-        <Callout tone="info" icon={<IconInfo size={14} />}>
-          {t("plan.reloadHint")}: {envelope.reloadHint}
-        </Callout>
-      ) : null}
-
-      {envelope.error ? (
-        <Callout tone="danger" icon={<IconAlert size={14} />}>
-          {envelope.error}
-        </Callout>
-      ) : null}
-
-      <Disclosure title={t("common.details")} testId="plan-advanced">
-        <div className="space-y-2 text-[12.5px]">
-          <div>
-            <span className="text-muted-foreground">CLI:</span> <Mono>{envelope.cliPath ?? "—"}</Mono>
-          </div>
-          <div>
-            <span className="text-muted-foreground">argv:</span> <Mono>{envelope.argv.join(" ") || "—"}</Mono>
-          </div>
-          <div>
-            <span className="text-muted-foreground">{t("plan.fingerprintCurrent")}:</span>{" "}
-            <Mono>{envelope.currentFingerprint ?? "—"}</Mono>
-          </div>
-          <div>
-            <span className="text-muted-foreground">{t("plan.fingerprintTarget")}:</span>{" "}
-            <Mono>{envelope.targetFingerprint ?? "—"}</Mono>
-          </div>
-          <div>
-            <span className="text-muted-foreground">exit:</span> {envelope.exitCode}
-          </div>
-          {envelope.redactedStderr ? (
-            <div>
-              <span className="text-muted-foreground">stderr:</span>
-              <pre className="mt-1 overflow-auto whitespace-pre-wrap rounded-lg bg-muted px-2.5 py-2 font-mono leading-snug">
-                {envelope.redactedStderr}
-              </pre>
-            </div>
-          ) : null}
+      <div className="space-y-2 text-[12.5px]" data-testid="plan-advanced">
+        <div>
+          <span className="text-muted-foreground">CLI:</span> <Mono>{envelope.cliPath ?? "—"}</Mono>
         </div>
-      </Disclosure>
+        <div>
+          <span className="text-muted-foreground">argv:</span> <Mono>{envelope.argv.join(" ") || "—"}</Mono>
+        </div>
+        <div>
+          <span className="text-muted-foreground">exit:</span> {envelope.exitCode}
+        </div>
+        {envelope.redactedStderr ? (
+          <div>
+            <span className="text-muted-foreground">stderr:</span>
+            <pre className="mt-1 overflow-auto whitespace-pre-wrap rounded-lg bg-muted px-2.5 py-2 font-mono leading-snug">
+              {envelope.redactedStderr}
+            </pre>
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -244,19 +339,6 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
       <h3 className="text-[11.5px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{title}</h3>
       {children}
     </section>
-  );
-}
-
-function SummaryChip({ children, tone }: { children: ReactNode; tone?: "ok" }) {
-  return (
-    <span
-      className={cx(
-        "inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium",
-        tone === "ok" ? "bg-success/10 text-success" : "bg-muted text-muted-foreground",
-      )}
-    >
-      {children}
-    </span>
   );
 }
 

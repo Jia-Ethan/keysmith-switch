@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { AppShell, countVisibleNavItems, type AppPage } from "./AppShell";
+import { describe, expect, it, vi } from "vitest";
+import { AppShell, type AppPage } from "./AppShell";
 import { UpdateProvider } from "./UpdateProvider";
 
 function renderShell(page: AppPage, advancedEnabled = false) {
@@ -14,27 +14,6 @@ function renderShell(page: AppPage, advancedEnabled = false) {
   );
   return { onNavigate };
 }
-
-class TestResizeObserver {
-  static instances: TestResizeObserver[] = [];
-
-  readonly observe = vi.fn();
-  readonly disconnect = vi.fn();
-
-  constructor(private readonly callback: ResizeObserverCallback) {
-    TestResizeObserver.instances.push(this);
-  }
-
-  trigger() {
-    this.callback([], this as unknown as ResizeObserver);
-  }
-}
-
-afterEach(() => {
-  TestResizeObserver.instances = [];
-  vi.unstubAllGlobals();
-  vi.restoreAllMocks();
-});
 
 describe("AppShell tool navigation", () => {
   it("renders all four tool entries", () => {
@@ -82,51 +61,16 @@ describe("AppShell tool navigation", () => {
     expect(screen.getByTestId("nav-settings")).toBeInTheDocument();
   });
 
-  it("opens overflow navigation in a narrow slot and routes its items", () => {
-    vi.stubGlobal("ResizeObserver", TestResizeObserver);
-    vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockImplementation(function (
-      this: HTMLElement,
-    ) {
-      const id = this.getAttribute("data-nav-measure");
-      return id === "more" ? 48 : id ? 88 : 0;
-    });
-    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockImplementation(
-      function (this: HTMLElement) {
-        return this.querySelector('[data-nav-measure="more"]') ? 188 : 0;
-      },
-    );
-
-    const { onNavigate } = renderShell({ kind: "tool", tool: "claude" });
-    TestResizeObserver.instances[0]?.trigger();
-
-    fireEvent.click(screen.getByTestId("nav-more"));
-    expect(screen.getByRole("menu")).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId("nav-overflow-zcode"));
-    expect(onNavigate).toHaveBeenCalledWith({ kind: "tool", tool: "zcode" });
-  });
-});
-
-describe("countVisibleNavItems", () => {
-  const iconOnly = [44, 44, 44, 44];
-  const labeled = [108, 104, 92, 112];
-
-  it("keeps all four tools in a 1440-class slot", () => {
-    expect(countVisibleNavItems(720, labeled, 48)).toBe(4);
-    expect(countVisibleNavItems(520, iconOnly, 48)).toBe(4);
+  it("keeps every entry on the rail without an overflow menu", () => {
+    renderShell({ kind: "tool", tool: "claude" }, true);
+    expect(screen.queryByTestId("nav-more")).not.toBeInTheDocument();
+    expect(screen.getByRole("navigation")).toContainElement(screen.getByTestId("nav-zcode"));
+    expect(screen.getByRole("navigation")).toContainElement(screen.getByTestId("nav-settings"));
   });
 
-  it("keeps all four icon-only tools in a 1180-class slot", () => {
-    expect(countVisibleNavItems(360, iconOnly, 48)).toBe(4);
-  });
-
-  it("reserves overflow around 760-class and 520-class slots", () => {
-    expect(countVisibleNavItems(200, labeled, 48)).toBeLessThan(4);
-    expect(countVisibleNavItems(140, iconOnly, 48)).toBeGreaterThanOrEqual(1);
-    expect(countVisibleNavItems(140, iconOnly, 48)).toBeLessThan(4);
-  });
-
-  it("keeps at least one tool plus overflow in a 360-class slot", () => {
-    expect(countVisibleNavItems(96, iconOnly, 48)).toBe(1);
-    expect(countVisibleNavItems(80, labeled, 48)).toBe(1);
+  it("marks settings and advanced as the current page on their own pages", () => {
+    renderShell({ kind: "settings" }, true);
+    expect(screen.getByTestId("nav-settings")).toHaveAttribute("aria-current", "page");
+    expect(screen.getByTestId("nav-advanced")).not.toHaveAttribute("aria-current");
   });
 });
