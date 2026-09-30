@@ -13,7 +13,8 @@
     "advanced": "Advanced Tools",
     "toolsLabel": "Tools",
     "more": "More",
-    "updateAvailable": "Update available"
+    "updateAvailable": "Update available",
+    "extensions": "Extensions"
   },
   "common": {
     "ok": "OK",
@@ -421,6 +422,47 @@
       "actions": "Actions",
       "agents": "Agents",
       "prompts": "Deploy a prompt"
+    }
+  },
+  "extensions": {
+    "title": "Extension packs",
+    "lead": "Prompt packs published by the official source. They update on their own, apart from the app.",
+    "offTitle": "Turn on extension packs",
+    "offBody": "Keysmith Switch reads the official source only once this is on. It fetches the list and the packs you choose, and uploads nothing of yours.",
+    "notDeployed": "Installed prompts go into your library only. Nothing is deployed automatically.",
+    "enable": "Turn on",
+    "disable": "Turn off",
+    "refresh": "Check for updates",
+    "checking": "Checking…",
+    "lastChecked": "Last checked {{time}}",
+    "official": "Official",
+    "unofficial": "Unofficial",
+    "installed": "Installed v{{version}}",
+    "updateAvailable": "Update to v{{version}}",
+    "needsApp": "Needs app {{version}} or newer",
+    "install": "Install",
+    "update": "Update",
+    "uninstall": "Uninstall",
+    "uninstallBody": "This removes the prompts from this pack that you have not edited and that no agent is using. Edited or running ones stay.",
+    "items": "{{count}} prompts",
+    "empty": "No extension packs yet",
+    "emptyHint": "When something new is published, the Extensions button gets a dot.",
+    "notConfigured": "The official source is not open yet",
+    "notConfiguredHint": "Official packs will appear here once it opens. Nothing is fetched until then.",
+    "installedToast": "Added to your library: {{added}} new, not deployed",
+    "updatedToast": "Updated: {{updated}} changed, {{added}} new, {{copied}} saved beside your edits",
+    "removedToast": "Uninstalled: {{removed}} removed, {{kept}} kept",
+    "err": {
+      "offline": "Could not reach the source. Showing the last list.",
+      "invalid-signature": "The signature did not verify, so this was ignored: it is not from the official source.",
+      "too-new": "This source needs a newer version of the app.",
+      "invalid": "This pack broke the rules and was not installed.",
+      "incompatible": "This pack needs a newer app.",
+      "not-configured": "The official source is not open yet.",
+      "unknown-pack": "That pack is no longer in the source.",
+      "off": "Extension packs are off.",
+      "store": "That failed and nothing was changed.",
+      "default": "That failed and nothing was changed."
     }
   }
 }

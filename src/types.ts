@@ -165,6 +165,8 @@ export interface Settings {
   autoCheckUpdates: boolean;
   theme: ThemeMode;
   firstRunCompleted: boolean;
+  /** Extension packs read the network only when this is on. */
+  extensionsEnabled: boolean;
 }
 
 export type SettingsPatch = Partial<Settings>;
@@ -372,6 +374,47 @@ export const DEFAULT_SETTINGS: Settings = {
   autoCheckUpdates: true,
   theme: "system",
   firstRunCompleted: false,
+  extensionsEnabled: false,
 };
 
 export const TOOL_IDS: ToolId[] = ["claude", "codex", "grok", "zcode"];
+
+/** An extension pack as the interface shows it; the text is already in the app's language. */
+export interface ExtensionPack {
+  id: string;
+  version: string;
+  minAppVersion: string;
+  name: string;
+  description: string;
+  tools: ToolId[];
+  itemCount: number;
+  size: number;
+  official: boolean;
+  compatible: boolean;
+  installedVersion: string | null;
+  updateAvailable: boolean;
+}
+
+export interface ExtensionsView {
+  /** False until the official source has a signing key; nothing is read then. */
+  configured: boolean;
+  packs: ExtensionPack[];
+  updates: number;
+  /** A code such as "offline" when the last look failed; the packs are then the cached ones. */
+  error: string | null;
+  checkedAt: string | null;
+}
+
+export interface ExtensionReport {
+  added: number;
+  updated: number;
+  copied: number;
+  linked: number;
+  kept: number;
+  removed: number;
+}
+
+export interface ExtensionChange {
+  view: ExtensionsView;
+  report: ExtensionReport;
+}

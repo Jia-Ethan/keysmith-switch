@@ -423,6 +423,8 @@ pub struct Settings {
     pub auto_check_updates: bool,
     pub theme: String,
     pub first_run_completed: bool,
+    /// Extension packs read the network only when this is on.
+    pub extensions_enabled: bool,
 }
 
 impl Default for Settings {
@@ -437,6 +439,7 @@ impl Default for Settings {
             auto_check_updates: true,
             theme: "system".to_string(),
             first_run_completed: false,
+            extensions_enabled: false,
         }
     }
 }
@@ -453,6 +456,7 @@ pub struct SettingsPatch {
     pub auto_check_updates: Option<bool>,
     pub theme: Option<String>,
     pub first_run_completed: Option<bool>,
+    pub extensions_enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

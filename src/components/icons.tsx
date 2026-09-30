@@ -308,3 +308,12 @@ export function IconTerminal(props: IconProps) {
     </Svg>
   );
 }
+
+/** A jigsaw piece: the extensions entry. */
+export function IconPuzzle(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M6.2 2.6a1.5 1.5 0 0 1 3 0v.9h2.3c.5 0 .9.4.9.9v2.2h.9a1.5 1.5 0 0 1 0 3h-.9v2.4c0 .5-.4.9-.9.9H9.2v-.9a1.5 1.5 0 0 0-3 0v.9H3.9c-.5 0-.9-.4-.9-.9V9.5h.9a1.5 1.5 0 0 0 0-3H3V4.4c0-.5.4-.9.9-.9h2.3z" />
+    </Svg>
+  );
+}

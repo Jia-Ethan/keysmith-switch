@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde::Serialize;
-use tauri::State;
+use tauri::{Manager, State};
 
 use crate::adapter::process::{find_vendored_script, resolve_cli};
 use crate::adapter::{list_tools as adapter_list_tools, AdapterOptions, Envelope};
@@ -724,6 +724,7 @@ pub fn update_settings(
     auto_check_updates: Option<bool>,
     theme: Option<String>,
     first_run_completed: Option<bool>,
+    extensions_enabled: Option<bool>,
 ) -> Result<Settings> {
     let settings = state.store.update_settings(SettingsPatch {
         language,
@@ -735,6 +736,7 @@ pub fn update_settings(
         auto_check_updates,
         theme,
         first_run_completed,
+        extensions_enabled,
     })?;
     Ok(settings)
 }
@@ -1836,3 +1838,96 @@ fn parse_official_action(raw: &str) -> Result<OfficialAction> {
 
 #[allow(dead_code)]
 const _KEEP_DURATION: Duration = Duration::from_secs(1);
+
+// ----- extension packs -------------------------------------------------------------
+
+/// Run blocking work (the network) off the interface's thread, with the app's state.
+async fn blocking<T, F>(app: tauri::AppHandle, work: F) -> Result<T>
+where
+    T: Send + 'static,
+    F: FnOnce(&AppState) -> Result<T> + Send + 'static,
+{
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        work(&state)
+    })
+    .await
+    .map_err(|error| Error::message(format!("extensions task failed: {error}")))?
+}
+
+/// Extensions read the network only after the person has turned them on.
+fn require_extensions(state: &AppState) -> Result<String> {
+    let settings = state.store.get_settings()?;
+    if !settings.extensions_enabled {
+        return Err(Error::invalid("extensions:off:"));
+    }
+    Ok(settings.language)
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtensionChange {
+    pub view: crate::extensions::ExtensionsView,
+    pub report: crate::extensions::Report,
+}
+
+/// The last verified answer; never touches the network.
+#[tauri::command(rename_all = "camelCase")]
+pub fn extensions_state(state: State<'_, AppState>) -> Result<crate::extensions::ExtensionsView> {
+    let language = state.store.get_settings()?.language;
+    Ok(crate::extensions::state_view(
+        &state.store,
+        &crate::extensions::Source::official(),
+        &language,
+    ))
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn extensions_refresh(
+    app: tauri::AppHandle,
+) -> Result<crate::extensions::ExtensionsView> {
+    blocking(app, |state| {
+        let language = require_extensions(state)?;
+        Ok(crate::extensions::refresh(
+            &state.store,
+            &crate::extensions::CurlFetch,
+            &crate::extensions::Source::official(),
+            &language,
+        ))
+    })
+    .await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn extension_install(app: tauri::AppHandle, pack_id: String) -> Result<ExtensionChange> {
+    blocking(app, move |state| {
+        let language = require_extensions(state)?;
+        let (view, report) = crate::extensions::install(
+            &state.store,
+            &crate::extensions::CurlFetch,
+            &crate::extensions::Source::official(),
+            &pack_id,
+            &language,
+        )?;
+        Ok(ExtensionChange { view, report })
+    })
+    .await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn extension_uninstall(
+    app: tauri::AppHandle,
+    pack_id: String,
+) -> Result<ExtensionChange> {
+    blocking(app, move |state| {
+        let language = require_extensions(state)?;
+        let (view, report) = crate::extensions::uninstall(
+            &state.store,
+            &crate::extensions::Source::official(),
+            &pack_id,
+            &language,
+        )?;
+        Ok(ExtensionChange { view, report })
+    })
+    .await
+}

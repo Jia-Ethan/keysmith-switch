@@ -214,6 +214,8 @@ impl Store {
             return Err(error);
         }
         drop(conn);
+        // Installed packs describe prompts that are gone now.
+        crate::extensions::clear_state(self);
 
         let mut cleanup_errors = Vec::new();
         for (_, staged) in moved {
@@ -746,6 +748,9 @@ impl Store {
         if let Some(value) = patch.first_run_completed {
             settings.first_run_completed = value;
         }
+        if let Some(value) = patch.extensions_enabled {
+            settings.extensions_enabled = value;
+        }
         let conn = self.conn()?;
         write_settings(&conn, &settings)?;
         Ok(settings)
@@ -1078,6 +1083,7 @@ fn write_settings(conn: &Connection, settings: &Settings) -> Result<()> {
             "firstRunCompleted",
             settings.first_run_completed.to_string(),
         ),
+        ("extensionsEnabled", settings.extensions_enabled.to_string()),
     ];
     for (key, value) in pairs {
         conn.execute(
@@ -1120,6 +1126,7 @@ fn apply_setting(settings: &mut Settings, key: &str, value: &str) {
             }
         }
         "firstRunCompleted" => settings.first_run_completed = truthy(value),
+        "extensionsEnabled" => settings.extensions_enabled = truthy(value),
         _ => {}
     }
 }

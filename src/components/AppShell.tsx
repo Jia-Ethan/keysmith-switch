@@ -5,8 +5,9 @@ import { useTranslation } from "react-i18next";
 import type { ScopeId, ToolId } from "../types";
 import { TOOL_IDS } from "../types";
 import { NoticeDot, cx, useSlidingIndicator } from "./ui";
-import { IconSearch, IconSettings, IconTerminal } from "./icons";
+import { IconPuzzle, IconSearch, IconSettings, IconTerminal } from "./icons";
 import { paletteShortcutLabel } from "./CommandPalette";
+import { useExtensionsOptional } from "./ExtensionsProvider";
 import { useUpdateOptional } from "./UpdateProvider";
 import { ToolLogo } from "./ToolLogos";
 import keysmithIcon from "../assets/keysmith-icon.png";
@@ -23,6 +24,7 @@ export type AppPage =
       projectDir: string;
     }
   | { kind: "settings"; tab?: string }
+  | { kind: "extensions" }
   | { kind: "advanced" };
 
 const RAIL_BUTTON =
@@ -49,6 +51,7 @@ export function AppShell({
 }) {
   const { t } = useTranslation();
   const hasUpdate = Boolean(useUpdateOptional()?.hasUpdate);
+  const extensions = useExtensionsOptional();
   const railRef = useRef<HTMLElement>(null);
   const activeTool = page.kind === "tool" ? page.tool : null;
   const railKey = page.kind === "tool" ? page.tool : page.kind;
@@ -94,6 +97,18 @@ export function AppShell({
             />
           ))}
           <div className="mt-auto flex flex-col items-center gap-1">
+            {extensions ? (
+              <UtilityButton
+                testId="nav-extensions"
+                label={extensions.updates > 0 ? `${t("nav.extensions")} · ${t("nav.updateAvailable")}` : t("nav.extensions")}
+                badge={extensions.updates > 0}
+                active={page.kind === "extensions"}
+                indicatorReady={Boolean(indicator)}
+                onClick={() => onNavigate({ kind: "extensions" })}
+              >
+                <IconPuzzle size={19} />
+              </UtilityButton>
+            ) : null}
             {onOpenPalette ? (
               <UtilityButton
                 testId="nav-palette"

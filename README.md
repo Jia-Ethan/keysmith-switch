@@ -93,3 +93,13 @@ Bug、需求与破限建议统一提交至 [GitHub Discussions](https://github.c
 ## 适配器版本
 
 每个 Agent 的适配器（`third_party/keysmith/`）和应用要求的版本（`ToolKind::expected_version`）必须一致，否则确认部署会被拒绝。`src-tauri/tests/version_pins.rs` 在两者不一致时让测试失败。升级适配器时一起改这两处以及 `src-tauri/tests/fixtures/cli/` 里的默认版本号。
+
+## 拓展包
+
+拓展包是官方发布的提示词包，可以单独更新，不影响 App 本身的更新。源仓库是 [`keysmith-switch-extensions`](https://github.com/Jia-Ethan/keysmith-switch-extensions)，格式见其中的 `SPEC.md`。
+
+- 默认关闭。在左侧栏的“拓展”页打开后，App 才会联网读取官方拓展源；关闭时不会读取网络。
+- 拓展包只含数据，没有可执行代码。清单由拓展包专用的密钥签名，App 用内置公钥验证；界面上的“官方”只取决于验签结果。
+- 安装只会把提示词加入提示词库，不会自动部署。你改过的提示词更新时不会被覆盖，新的内容另存一份。
+- 有新版本时，“拓展”按钮上会出现红点。
+- 官方公钥放在 `src-tauri/extensions/OFFICIAL_PUBKEY.txt`；为空时官方源视为未开放，不联网。测试用的钥匙是 `src-tauri/fixtures/extensions/TEST_ONLY.key`（有意公开，只用于测试），可用 `scripts/make-extension-fixtures.py` 重新生成夹具。
