@@ -400,5 +400,21 @@
     "emptyTitle": "No prompt deployed yet",
     "emptyHint": "Pick one below or create a new one. One click and it is live.",
     "edit": "Edit"
+  },
+  "palette": {
+    "title": "Command palette",
+    "placeholder": "Search actions, agents or prompts…",
+    "empty": "No matches",
+    "quickDeploy": "New prompt for {{tool}}",
+    "goTo": "Switch to {{tool}}",
+    "deployHint": "Deploy",
+    "navigate": "Navigate",
+    "run": "Run",
+    "open": "Search and quick actions",
+    "group": {
+      "actions": "Actions",
+      "agents": "Agents",
+      "prompts": "Deploy a prompt"
+    }
   }
 }

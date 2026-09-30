@@ -400,5 +400,21 @@
     "emptyTitle": "还没有部署提示词",
     "emptyHint": "从下方挑一条，或新建一条，一键就能用上。",
     "edit": "编辑"
+  },
+  "palette": {
+    "title": "命令面板",
+    "placeholder": "搜索操作、Agent 或提示词…",
+    "empty": "没有匹配的结果",
+    "quickDeploy": "新建提示词并部署到 {{tool}}",
+    "goTo": "切换到 {{tool}}",
+    "deployHint": "部署",
+    "navigate": "选择",
+    "run": "执行",
+    "open": "搜索与快捷操作",
+    "group": {
+      "actions": "操作",
+      "agents": "Agent",
+      "prompts": "部署提示词"
+    }
   }
 }

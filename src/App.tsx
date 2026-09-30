@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { AppShell, type AppPage } from "./components/AppShell";
+import { CommandPalette } from "./components/CommandPalette";
 import { DataRecoveryDialog } from "./components/DataRecoveryDialog";
 import { ErrorBanner } from "./components/ErrorBanner";
 import { FirstRunDialog } from "./components/FirstRunDialog";
@@ -26,6 +27,7 @@ export function App() {
   const toast = useToasts();
   const [page, setPage] = useState<AppPage>({ kind: "tool", tool: "claude" });
   const [dirty, setDirty] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [startup, setStartup] = useState<FirstRunReport | null>(null);
   const [libraryEpoch, setLibraryEpoch] = useState(0);
 
@@ -100,12 +102,29 @@ export function App() {
     [dirty, t],
   );
 
+  // ⌘K / Ctrl+K toggles the palette from anywhere.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && !event.altKey && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setPaletteOpen((open) => !open);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   return (
     <UpdateProvider
       channel={settingsState.settings.updateChannel}
       autoCheck={settingsState.settings.autoCheckUpdates}
     >
-      <AppShell page={visiblePage} onNavigate={navigate} advancedEnabled={advancedEnabled}>
+      <AppShell
+        page={visiblePage}
+        onNavigate={navigate}
+        advancedEnabled={advancedEnabled}
+        onOpenPalette={() => setPaletteOpen(true)}
+      >
         {settingsState.error ? (
           <div className="shrink-0 px-4 pt-3 sm:px-6">
             <ErrorBanner
@@ -199,6 +218,12 @@ export function App() {
           </div>
         ) : null}
       </AppShell>
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        page={visiblePage}
+        onNavigate={navigate}
+      />
       <ToastHost toasts={toast.toasts} dismiss={toast.dismiss} />
       <FirstRunDialog
         open={Boolean(startup?.firstRun)}

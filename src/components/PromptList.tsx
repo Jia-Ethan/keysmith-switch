@@ -202,6 +202,7 @@ function Group({
                 key={item.id}
                 className="animate-rise group relative"
                 style={{ animationDelay: `${Math.min(index, 8) * 35}ms` }}
+                onPointerMove={trackPointer}
               >
                 <button
                   type="button"
@@ -209,7 +210,7 @@ function Group({
                   aria-current={selected ? "true" : undefined}
                   data-testid={`prompt-item-${item.id}`}
                   className={cx(
-                    "flex h-full w-full flex-col rounded-2xl border p-4 text-left",
+                    "card-spotlight flex h-full w-full flex-col rounded-2xl border p-4 text-left",
                     "transition-[border-color,box-shadow,transform,background-color] duration-200",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                     activeGroup
@@ -291,6 +292,13 @@ function Group({
       )}
     </section>
   );
+}
+
+/** Feeds the card's spotlight: the glow follows the pointer across it. */
+function trackPointer(event: React.PointerEvent<HTMLElement>) {
+  const rect = event.currentTarget.getBoundingClientRect();
+  event.currentTarget.style.setProperty("--mx", `${event.clientX - rect.left}px`);
+  event.currentTarget.style.setProperty("--my", `${event.clientY - rect.top}px`);
 }
 
 /** A soft tile with the prompt's first character, so cards read as objects, not rows of text. */

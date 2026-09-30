@@ -5,7 +5,8 @@ import { useTranslation } from "react-i18next";
 import type { ScopeId, ToolId } from "../types";
 import { TOOL_IDS } from "../types";
 import { cx, useSlidingIndicator } from "./ui";
-import { IconSettings, IconTerminal } from "./icons";
+import { IconSearch, IconSettings, IconTerminal } from "./icons";
+import { paletteShortcutLabel } from "./CommandPalette";
 import { ToolLogo } from "./ToolLogos";
 import keysmithIcon from "../assets/keysmith-icon.png";
 
@@ -35,11 +36,14 @@ export function AppShell({
   page,
   onNavigate,
   advancedEnabled,
+  onOpenPalette,
   children,
 }: {
   page: AppPage;
   onNavigate: (page: AppPage) => void;
   advancedEnabled: boolean;
+  /** Opens the command palette; the rail shows its button only when this is given. */
+  onOpenPalette?: () => void;
   children: ReactNode;
 }) {
   const { t } = useTranslation();
@@ -81,6 +85,17 @@ export function AppShell({
             />
           ))}
           <div className="mt-auto flex flex-col items-center gap-1">
+            {onOpenPalette ? (
+              <UtilityButton
+                testId="nav-palette"
+                label={`${t("palette.open")} (${paletteShortcutLabel()})`}
+                active={false}
+                indicatorReady
+                onClick={onOpenPalette}
+              >
+                <IconSearch size={18} />
+              </UtilityButton>
+            ) : null}
             {advancedEnabled ? (
               <UtilityButton
                 testId="nav-advanced"

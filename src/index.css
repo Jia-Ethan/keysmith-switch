@@ -699,3 +699,68 @@ html[data-titlebar="overlay"] .titlebar-inset {
     animation: none !important;
   }
 }
+
+/* Primary buttons catch the light as the pointer arrives. */
+.btn-shine::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(105deg, transparent 35%, rgb(255 255 255 / 0.28) 50%, transparent 65%);
+  transform: translateX(-120%);
+}
+
+.btn-shine:hover:not(:disabled)::after {
+  transform: translateX(120%);
+  transition: transform 650ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Cards glow where the pointer is. */
+.card-spotlight {
+  position: relative;
+  overflow: hidden;
+}
+
+.card-spotlight::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 250ms ease;
+  background: radial-gradient(220px circle at var(--mx, 50%) var(--my, 50%), rgb(var(--primary) / 0.13), transparent 70%);
+}
+
+.card-spotlight:hover::before {
+  opacity: 1;
+}
+
+.card-spotlight > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* One sheen across the hero when its state lands (and on first paint). */
+.hero-sheen {
+  background: linear-gradient(110deg, transparent 30%, rgb(var(--primary) / 0.16) 50%, transparent 70%);
+  transform: translateX(-100%);
+  animation: hero-sheen-pass 1100ms cubic-bezier(0.22, 1, 0.36, 1) 80ms 1 both;
+}
+
+@keyframes hero-sheen-pass {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-sheen {
+    animation: none !important;
+    opacity: 0;
+  }
+
+  .btn-shine:hover:not(:disabled)::after {
+    transition: none;
+  }
+}

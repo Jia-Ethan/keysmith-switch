@@ -73,6 +73,8 @@ export function AgentHero({
       data-machine={machine}
     >
       <div aria-hidden="true" className="hero-aurora pointer-events-none absolute inset-0" />
+      {/* A sheen crosses the stage whenever what the agent runs changes. */}
+      <div key={`${tone}:${deployedTitle ?? ""}`} aria-hidden="true" className="hero-sheen pointer-events-none absolute inset-0" />
       <div
         aria-hidden="true"
         className="pointer-events-none absolute -right-10 -top-12 opacity-[0.06] blur-[1px] dark:opacity-[0.09]"

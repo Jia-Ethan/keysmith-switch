@@ -19,7 +19,7 @@ const FOCUS_RING =
 
 const BUTTON_VARIANTS = {
   primary: cx(
-    "bg-primary text-primary-foreground",
+    "btn-shine relative overflow-hidden bg-primary text-primary-foreground",
     "shadow-[inset_0_1px_0_rgb(255_255_255/0.16),0_1px_2px_rgb(var(--primary)/0.35),0_6px_16px_-6px_rgb(var(--primary)/0.55)]",
     "hover:brightness-[1.07] disabled:hover:brightness-100",
   ),

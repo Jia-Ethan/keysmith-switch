@@ -16,6 +16,7 @@ import { IconAlert, IconPlus, IconSearch } from "../components/icons";
 import { Button, Disclosure, Input, Mono, cx } from "../components/ui";
 import type { ToastApi } from "../hooks/useToasts";
 import { applyHarnessOutcome, getHarnessStatus, loadHarnessStatus, useHarnessStatus } from "../lib/harnessState";
+import { DEPLOY_PROMPT_EVENT, QUICK_DEPLOY_EVENT } from "../lib/paletteEvents";
 import { canConfirmPlan } from "../lib/planGate";
 import { toastSafeMessage } from "../lib/redact";
 import { activeIdsFor, isRecoveryState, mergeTools } from "../lib/tools";
@@ -355,6 +356,23 @@ export function WorkspacePage({
       setPending(null);
     }
   };
+
+  // The command palette asks this workspace to open the composer or a deploy sheet.
+  const paletteRef = useRef({ openComposer, deployFromLibrary });
+  paletteRef.current = { openComposer, deployFromLibrary };
+  useEffect(() => {
+    const onQuickDeploy = () => paletteRef.current.openComposer();
+    const onDeployPrompt = (event: Event) => {
+      const id = (event as CustomEvent<string>).detail;
+      if (id) void paletteRef.current.deployFromLibrary(id);
+    };
+    window.addEventListener(QUICK_DEPLOY_EVENT, onQuickDeploy);
+    window.addEventListener(DEPLOY_PROMPT_EVENT, onDeployPrompt);
+    return () => {
+      window.removeEventListener(QUICK_DEPLOY_EVENT, onQuickDeploy);
+      window.removeEventListener(DEPLOY_PROMPT_EVENT, onDeployPrompt);
+    };
+  }, []);
 
   const openRemovePlan = async () => {
     if (busy) return;
