@@ -6,7 +6,7 @@ import os
 import sys
 from pathlib import Path
 
-VERSION = os.environ.get("FIXTURE_VERSION", "0.3.8")
+VERSION = os.environ.get("FIXTURE_VERSION", "0.6.0")
 FAIL = os.environ.get("FIXTURE_FAIL")
 
 

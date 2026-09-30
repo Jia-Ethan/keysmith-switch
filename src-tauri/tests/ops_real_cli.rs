@@ -101,3 +101,52 @@ async fn real_vendored_claude_and_grok_in_temp_home() {
         }
     }
 }
+
+/// The real adapters accept a deployment (their version is the pinned one) and then
+/// read it back as deployed and named. ZCode is left out: its adapter also
+/// registers a login item, which a test must not do.
+#[tokio::test]
+async fn real_adapters_deploy_and_read_back_as_deployed() {
+    if !python3_available() {
+        return;
+    }
+    for (tool, rel) in [
+        (ToolKind::Claude, "claude/claude-instruct.py"),
+        (ToolKind::Codex, "codex/codex-instruct.py"),
+        (ToolKind::Grok, "grok/grok-keysmith.py"),
+    ] {
+        let Some(cli) = vendor(rel) else { return };
+        let tmp = tempfile::tempdir().unwrap();
+        let user_home = tmp.path().join("home");
+        std::fs::create_dir_all(&user_home).unwrap();
+        if tool == ToolKind::Codex {
+            // Codex only manages an existing config directory.
+            std::fs::create_dir_all(user_home.join(".codex")).unwrap();
+            std::fs::write(user_home.join(".codex/config.toml"), "model = \"gpt-5\"\n").unwrap();
+        }
+        let paths = AppPaths::from_home(tmp.path().join("switch"));
+        paths.ensure().unwrap();
+        let store = Store::open(&paths).unwrap();
+        let opts = AdapterOptions {
+            home: Some(user_home),
+            cli_override: Some(cli),
+            ..AdapterOptions::default()
+        };
+
+        let deployed = keysmith_switch_lib::harness::deploy_harness_with(
+            &store,
+            tool,
+            &opts,
+            Some("# Real prompt\nAsk before deleting.\n".into()),
+        )
+        .await
+        .unwrap();
+        assert!(deployed.ok, "{tool:?}: {deployed:?}");
+
+        let state = keysmith_switch_lib::harness::harness_state(&store, tool, &opts)
+            .await
+            .unwrap();
+        assert!(state.deployed, "{tool:?}: {state:?}");
+        assert_eq!(state.prompt_id, deployed.prompt_id, "{tool:?}");
+    }
+}

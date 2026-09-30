@@ -36,10 +36,10 @@ impl ToolKind {
 
     pub fn expected_version(self) -> &'static str {
         match self {
-            Self::Claude => "7.1",
-            Self::Codex => "0.3.8",
-            Self::Grok => "0.4.1",
-            Self::Zcode => "0.1.0",
+            Self::Claude => "7.2",
+            Self::Codex => "0.6.0",
+            Self::Grok => "0.6.1",
+            Self::Zcode => "0.3.2",
         }
     }
 

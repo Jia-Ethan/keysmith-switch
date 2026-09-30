@@ -87,3 +87,7 @@ Bug、需求与破限建议统一提交至 [GitHub Discussions](https://github.c
 ## 许可
 
 [PolyForm Noncommercial 1.0.0](LICENSE)：源码公开，个人使用、学习和研究可以自由使用；商业使用需另行取得授权。`v0.2.2` 及更早版本按 MIT 发布，不受影响。改编自 CC Switch 的三个文件仍保留其 MIT 声明，见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+## 适配器版本
+
+每个 Agent 的适配器（`third_party/keysmith/`）和应用要求的版本（`ToolKind::expected_version`）必须一致，否则确认部署会被拒绝。`src-tauri/tests/version_pins.rs` 在两者不一致时让测试失败。升级适配器时一起改这两处以及 `src-tauri/tests/fixtures/cli/` 里的默认版本号。

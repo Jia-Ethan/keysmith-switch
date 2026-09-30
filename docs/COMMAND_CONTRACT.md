@@ -21,7 +21,7 @@
   "preview": true,
   "available": true,
   "unavailableReason": null,
-  "adapterVersion": "7.1",
+  "adapterVersion": "7.2",
   "cliPath": "/abs/path",
   "argv": ["python3", "...", "status", "--json"],
   "exitCode": 0,

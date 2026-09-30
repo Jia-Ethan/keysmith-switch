@@ -5,7 +5,7 @@ export const TOOL_CATALOG: ToolInfo[] = [
   {
     id: "claude",
     name: "Claude Code",
-    adapterVersion: "7.1",
+    adapterVersion: "7.2",
     available: true,
     unavailableReason: null,
     supportedScopes: ["user", "project", "local"],
@@ -14,7 +14,7 @@ export const TOOL_CATALOG: ToolInfo[] = [
   {
     id: "codex",
     name: "Codex",
-    adapterVersion: "0.3.8",
+    adapterVersion: "0.6.0",
     available: true,
     unavailableReason: null,
     supportedScopes: ["user"],
@@ -23,7 +23,7 @@ export const TOOL_CATALOG: ToolInfo[] = [
   {
     id: "grok",
     name: "Grok Build",
-    adapterVersion: "0.4.1",
+    adapterVersion: "0.6.1",
     available: true,
     unavailableReason: null,
     supportedScopes: ["user"],
@@ -32,7 +32,7 @@ export const TOOL_CATALOG: ToolInfo[] = [
   {
     id: "zcode",
     name: "ZCode",
-    adapterVersion: "0.1.0",
+    adapterVersion: "0.3.2",
     available: true,
     unavailableReason: null,
     supportedScopes: ["user"],
