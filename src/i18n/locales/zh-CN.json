@@ -353,7 +353,7 @@
     "preview": "生成部署预览",
     "previewTitle": "快速部署预览",
     "confirm": "确认部署",
-    "remove": "移除当前部署",
+    "remove": "停用",
     "refresh": "刷新 Agent 状态",
     "reading": "正在读取 Agent 状态…",
     "deployedState": "当前已部署",
@@ -380,7 +380,9 @@
   },
   "hero": {
     "statusError": "无法读取状态",
-    "livePrompt": "当前提示词",
-    "livePromptUnknown": "来源未记录"
+    "livePrompt": "正在使用",
+    "livePromptUnknown": "机器上现有的提示词",
+    "emptyTitle": "还没有部署提示词",
+    "emptyHint": "从下方挑一条，或新建一条，一键就能用上。"
   }
 }

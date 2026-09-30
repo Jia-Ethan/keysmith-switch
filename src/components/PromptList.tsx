@@ -209,7 +209,8 @@ function Group({
                     selected && "ring-2 ring-primary/40",
                   )}
                 >
-                  <div className="flex w-full items-start gap-2">
+                  <div className="flex w-full items-center gap-2.5">
+                    <Monogram title={item.title} solid={activeGroup} />
                     <span
                       className={cx(
                         "min-w-0 flex-1 truncate font-semibold tracking-[-0.01em] text-foreground",
@@ -280,13 +281,32 @@ function Group({
   );
 }
 
+/** A soft tile with the prompt's first character, so cards read as objects, not rows of text. */
+function Monogram({ title, solid = false }: { title: string; solid?: boolean }) {
+  const initial = Array.from(title.trim())[0]?.toUpperCase() ?? "•";
+  return (
+    <span
+      aria-hidden="true"
+      className={cx(
+        "flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] text-[14px] font-semibold transition-transform duration-300 group-hover:scale-105",
+        solid
+          ? "bg-primary text-primary-foreground shadow-[0_4px_12px_-4px_rgb(var(--primary)/0.7)]"
+          : "bg-gradient-to-br from-primary/20 to-primary/5 text-primary",
+      )}
+    >
+      {initial}
+    </span>
+  );
+}
+
 /** The live prompt on the machine has no library entry, so nothing here opens or deploys. */
 function UnrecordedLiveCard() {
   const { t } = useTranslation();
   return (
-    <li className="animate-rise" data-testid="prompt-live-unrecorded">
+    <li className="animate-rise group" data-testid="prompt-live-unrecorded">
       <div className="flex h-full w-full flex-col rounded-2xl border border-primary/40 bg-[linear-gradient(135deg,rgb(var(--primary)/0.10),rgb(var(--primary)/0.02)_55%,transparent)] bg-card p-4 shadow-glow">
-        <div className="flex w-full items-start gap-2">
+        <div className="flex w-full items-center gap-2.5">
+          <Monogram title="⌘" solid />
           <span className="min-w-0 flex-1 truncate text-[16px] font-semibold tracking-[-0.01em] text-foreground">
             {t("prompts.liveUnrecorded")}
           </span>

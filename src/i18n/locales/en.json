@@ -353,7 +353,7 @@
     "preview": "Preview deployment",
     "previewTitle": "Quick Deploy preview",
     "confirm": "Confirm deployment",
-    "remove": "Remove current deployment",
+    "remove": "Turn off",
     "refresh": "Refresh Agent status",
     "reading": "Reading Agent status…",
     "deployedState": "Currently deployed",
@@ -380,7 +380,9 @@
   },
   "hero": {
     "statusError": "Status unavailable",
-    "livePrompt": "Live prompt",
-    "livePromptUnknown": "Source not recorded"
+    "livePrompt": "Now using",
+    "livePromptUnknown": "The prompt already on this machine",
+    "emptyTitle": "No prompt deployed yet",
+    "emptyHint": "Pick one below or create a new one. One click and it is live."
   }
 }

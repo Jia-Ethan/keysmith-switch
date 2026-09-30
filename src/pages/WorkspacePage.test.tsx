@@ -444,7 +444,7 @@ describe("Workspace: prompt library", () => {
     listPrompts.mockResolvedValue({ prompts: [prompt({ id: "a", title: "Other" })] });
     await renderPage();
     await waitFor(() => expect(screen.getByTestId("agent-status")).toHaveTextContent("当前已部署"));
-    expect(await screen.findByTestId("agent-deployed-unknown")).toHaveTextContent("来源未记录");
+    expect(await screen.findByTestId("agent-deployed-unknown")).toHaveTextContent("机器上现有的提示词");
     expect(screen.queryByTestId("agent-deployed-title")).not.toBeInTheDocument();
   });
 

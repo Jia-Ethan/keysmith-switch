@@ -177,7 +177,7 @@ button[data-loading]:disabled {
   opacity: 1;
 }
 
-/* macOS overlay title bar: leave room for the traffic lights, keep text unselectable. */
+/* macOS overlay title bar: full-screen panels leave room for the traffic lights. */
 html[data-titlebar="overlay"] .app-header {
   padding-left: 88px;
 }
@@ -185,6 +185,50 @@ html[data-titlebar="overlay"] .app-header {
 .app-header {
   -webkit-user-select: none;
   user-select: none;
+}
+
+/* The rail starts below the traffic lights. */
+.app-rail {
+  padding-top: 20px;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+html[data-titlebar="overlay"] .app-rail {
+  padding-top: 46px;
+}
+
+.app-drag-strip {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* The active agent's halo glides between rail entries with a small overshoot. */
+.rail-indicator {
+  background: linear-gradient(180deg, rgb(var(--primary) / 0.14), rgb(var(--primary) / 0.05));
+  box-shadow:
+    inset 0 0 0 1px rgb(var(--primary) / 0.22),
+    0 10px 24px -14px rgb(var(--primary) / 0.7);
+  transition:
+    top 460ms cubic-bezier(0.34, 1.4, 0.64, 1),
+    height 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    left 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    width 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.rail-tile {
+  transition:
+    transform 360ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    background-color 200ms ease,
+    box-shadow 300ms ease;
+}
+
+.rail-tile-active {
+  transform: scale(1.08);
+  background: hsl(var(--card));
+  box-shadow:
+    0 0 0 1px rgb(var(--primary) / 0.3),
+    0 8px 20px -6px rgb(var(--primary) / 0.55);
 }
 
 @layer components {
@@ -558,4 +602,46 @@ html[data-titlebar="overlay"] .app-header {
 /* Sheets that start near the top edge clear the macOS traffic lights. */
 html[data-titlebar="overlay"] .titlebar-inset {
   padding-top: 44px;
+}
+
+/* Agent stage: two slow aurora blobs in the agent's colour behind the hero. */
+.hero-aurora {
+  background:
+    radial-gradient(60% 120% at 0% 0%, rgb(var(--primary) / 0.2), transparent 60%),
+    radial-gradient(50% 100% at 100% 100%, rgb(var(--primary) / 0.1), transparent 65%);
+  animation: aurora-drift 14s ease-in-out infinite alternate;
+}
+
+@keyframes aurora-drift {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    transform: translate3d(2.5%, -3%, 0) scale(1.06);
+  }
+}
+
+/* A halo that leaves the logo tile once every few seconds while a prompt is live. */
+.hero-orb-ring {
+  border: 1.5px solid rgb(var(--primary) / 0.5);
+  animation: orb-ping 3.2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+@keyframes orb-ping {
+  0% {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+  70%,
+  100% {
+    opacity: 0;
+    transform: scale(1.32);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-aurora,
+  .hero-orb-ring {
+    animation: none !important;
+  }
 }
