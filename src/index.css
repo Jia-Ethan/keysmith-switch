@@ -764,3 +764,256 @@ html[data-titlebar="overlay"] .titlebar-inset {
     transition: none;
   }
 }
+
+/*
+ * The app icon is already a finished squircle, so it sits on the rail as it is:
+ * no second tile around it, a soft shadow under it, and a little lift and tilt on
+ * hover so it feels like something to press.
+ */
+.brand-mark {
+  display: flex;
+  border-radius: 13px;
+  filter: drop-shadow(0 6px 10px hsl(var(--shadow) / 0.22)) drop-shadow(0 1px 1px hsl(var(--shadow) / 0.2));
+  transition:
+    transform 380ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    filter 300ms ease;
+}
+
+.brand-mark:hover {
+  transform: translateY(-2px) rotate(-5deg) scale(1.05);
+  filter: drop-shadow(0 10px 14px rgb(var(--primary) / 0.35)) drop-shadow(0 1px 1px hsl(var(--shadow) / 0.2));
+}
+
+.brand-mark:active {
+  transform: scale(0.94);
+}
+
+.brand-mark-static {
+  filter: drop-shadow(0 12px 18px rgb(var(--primary) / 0.28)) drop-shadow(0 1px 2px hsl(var(--shadow) / 0.2));
+}
+
+/* The new-version dot. */
+.notice-dot {
+  border-radius: 9999px;
+  background: hsl(var(--destructive));
+  box-shadow: 0 0 0 2px hsl(var(--background));
+  animation: notice-pop 520ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.notice-dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: hsl(var(--destructive));
+  animation: notice-ring 2.4s cubic-bezier(0.16, 1, 0.3, 1) 600ms infinite;
+}
+
+@keyframes notice-pop {
+  from {
+    transform: scale(0);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+@keyframes notice-ring {
+  0% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  70%,
+  100% {
+    opacity: 0;
+    transform: scale(2.6);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notice-dot,
+  .notice-dot::after {
+    animation: none !important;
+  }
+}
+
+/* About > update: one orb whose icon, colour and ring follow the state. */
+.update-orb {
+  background: hsl(var(--muted));
+  color: hsl(var(--muted-foreground));
+  transition:
+    background-color 380ms ease,
+    color 380ms ease,
+    transform 480ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.update-orb[data-state="checking"] {
+  background: rgb(var(--primary) / 0.1);
+  color: rgb(var(--primary));
+}
+
+.update-orb[data-state="upToDate"] {
+  background: hsl(var(--success) / 0.14);
+  color: hsl(var(--success));
+  transform: scale(1.06);
+}
+
+.update-orb[data-state="available"] {
+  background: rgb(var(--primary) / 0.15);
+  color: rgb(var(--primary));
+  transform: scale(1.06);
+}
+
+.update-orb[data-state="error"] {
+  background: hsl(var(--destructive) / 0.1);
+  color: hsl(var(--destructive));
+}
+
+.update-orb-icon {
+  position: absolute;
+  display: flex;
+  opacity: 0;
+  transform: scale(0.5) rotate(-40deg);
+  transition:
+    opacity 260ms ease,
+    transform 480ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.update-orb[data-state="idle"] .update-orb-icon[data-for="idle"],
+.update-orb[data-state="checking"] .update-orb-icon[data-for="checking"],
+.update-orb[data-state="upToDate"] .update-orb-icon[data-for="upToDate"],
+.update-orb[data-state="available"] .update-orb-icon[data-for="available"],
+.update-orb[data-state="error"] .update-orb-icon[data-for="error"] {
+  opacity: 1;
+  transform: none;
+}
+
+.update-orb-spin {
+  animation: harness-spin 900ms cubic-bezier(0.5, 0.1, 0.5, 0.9) infinite;
+}
+
+/* The check draws itself when it arrives. */
+.update-orb-check path {
+  stroke-dasharray: 18;
+  stroke-dashoffset: 18;
+  transition: stroke-dashoffset 520ms cubic-bezier(0.65, 0, 0.35, 1) 160ms;
+}
+
+.update-orb[data-state="upToDate"] .update-orb-check path {
+  stroke-dashoffset: 0;
+}
+
+/* A halo leaves the orb while a new version is waiting, and a ring turns while looking. */
+.update-orb-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.update-orb[data-state="available"] .update-orb-ring {
+  border: 1.5px solid rgb(var(--primary) / 0.55);
+  animation: orb-ping 2.6s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+.update-orb[data-state="checking"] .update-orb-ring {
+  inset: -3px;
+  opacity: 1;
+  background: conic-gradient(from 0deg, transparent 0 55%, rgb(var(--primary) / 0.7));
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px));
+  animation: harness-spin 1.1s linear infinite;
+}
+
+.update-text-in {
+  animation: update-text-rise 340ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes update-text-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* An indeterminate bar under the row: always in place, only its light moves. */
+.update-bar {
+  height: 3px;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: hsl(var(--muted));
+  opacity: 0;
+  transition: opacity 300ms ease;
+}
+
+.update-bar[data-active] {
+  opacity: 1;
+}
+
+.update-bar > span {
+  display: block;
+  height: 100%;
+  width: 38%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, rgb(var(--primary)), transparent);
+  animation: update-bar-run 1.15s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+@keyframes update-bar-run {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(263%);
+  }
+}
+
+/* Height grows from nothing instead of popping in. */
+.reveal {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 420ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 300ms ease;
+}
+
+.reveal[data-expanded] {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .update-orb-ring,
+  .update-orb-spin,
+  .update-text-in,
+  .update-bar > span {
+    animation: none !important;
+  }
+
+  .update-orb[data-state="checking"] .update-orb-ring {
+    opacity: 0.5;
+  }
+
+  .update-orb-check path {
+    transition: none;
+  }
+
+  .update-orb[data-state="upToDate"] .update-orb-check path {
+    stroke-dashoffset: 0;
+  }
+
+  .update-bar > span {
+    width: 100%;
+    opacity: 0.4;
+  }
+
+  .reveal {
+    transition: none;
+  }
+}

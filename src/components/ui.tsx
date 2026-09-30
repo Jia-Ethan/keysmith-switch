@@ -418,3 +418,14 @@ export function Tag({ children }: { children: ReactNode }) {
     </span>
   );
 }
+
+/** The new-version dot: it lands with a pop and keeps a slow ring going out from it. */
+export function NoticeDot({ className }: { className?: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      data-testid="notice-dot"
+      className={cx("notice-dot pointer-events-none absolute -right-0.5 -top-0.5 h-[11px] w-[11px]", className)}
+    />
+  );
+}

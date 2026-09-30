@@ -86,7 +86,9 @@ function summary(p: PromptDetail) {
 async function handle(cmd: string, args: Record<string, any> = {}): Promise<unknown> {
   switch (cmd) {
     case "get_settings":
-      return { language: "zh-CN", updateChannel: "stable", advancedToolsEnabled: false, defaultClaudeScope: "user", recentProjectDirs: [], updaterEndpointOverride: null, autoCheckUpdates: false, theme: "system", firstRunCompleted: true };
+      return { language: "zh-CN", updateChannel: "stable", advancedToolsEnabled: false, defaultClaudeScope: "user", recentProjectDirs: [], updaterEndpointOverride: null, autoCheckUpdates: true, theme: "system", firstRunCompleted: true };
+    case "get_about":
+      return { app: { name: "Keysmith Switch", version: "0.2.3", channel: "stable", preview: false, signed: false, identifier: "com.jia-ethan.keysmith-switch", website: "", github: "" }, adapters: [], official: [] };
     case "get_startup_report":
       return { firstRun: false, candidates: [], recovery: null, sidecar: { pythonRequired: false, tools: [] } };
     case "list_tools":
@@ -148,8 +150,27 @@ async function handle(cmd: string, args: Record<string, any> = {}): Promise<unkn
       } else delete store.live[op.tool];
       return delay({ operationId: args.operationId, envelope: envelope(op.tool, cmd, { preview: false }) }, 700);
     }
-    case "check_app_update":
-      return { available: false };
+    case "check_app_update": {
+      // ?update=1 pretends a newer release is out; without it the app is current.
+      const newer = new URLSearchParams(window.location.search).has("update");
+      return delay(
+        {
+          available: newer,
+          currentVersion: "0.2.3",
+          latestVersion: newer ? "0.2.4" : null,
+          notes: null,
+          size: newer ? 40_956_249 : null,
+          channel: "stable",
+          restartRequired: newer,
+          progress: null,
+          error: null,
+          releasePage: "https://github.com/Jia-Ethan/keysmith-switch-releases/releases",
+          installMode: "inApp",
+          reason: null,
+        },
+        1400,
+      );
+    }
     default:
       return {};
   }

@@ -1,18 +1,39 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { AppShell, type AppPage } from "./AppShell";
 import { UpdateProvider } from "./UpdateProvider";
 
-function renderShell(page: AppPage, advancedEnabled = false) {
+const checkAppUpdate = vi.fn();
+vi.mock("../api", () => ({
+  checkAppUpdate: (...args: unknown[]) => checkAppUpdate(...args),
+  getHarnessState: vi.fn().mockResolvedValue({ tool: "claude", deployed: false, error: null }),
+}));
+
+const releaseInfo = {
+  currentVersion: "0.2.3",
+  latestVersion: "0.2.4",
+  notes: null,
+  size: null,
+  channel: "stable",
+  restartRequired: true,
+  progress: null,
+  error: null,
+  releasePage: "https://example.test/releases",
+  installMode: "inApp",
+  reason: null,
+};
+
+function renderShell(page: AppPage, advancedEnabled = false, autoCheck = false) {
   const onNavigate = vi.fn();
-  render(
-    <UpdateProvider channel="stable" autoCheck={false}>
+  const view = render(
+    <UpdateProvider channel="stable" autoCheck={autoCheck} minCheckMs={0}>
       <AppShell page={page} onNavigate={onNavigate} advancedEnabled={advancedEnabled}>
         <div>content</div>
       </AppShell>
     </UpdateProvider>,
   );
-  return { onNavigate };
+  return { onNavigate, unmount: view.unmount };
 }
 
 describe("AppShell tool navigation", () => {
@@ -72,5 +93,25 @@ describe("AppShell tool navigation", () => {
     renderShell({ kind: "settings" }, true);
     expect(screen.getByTestId("nav-settings")).toHaveAttribute("aria-current", "page");
     expect(screen.getByTestId("nav-advanced")).not.toHaveAttribute("aria-current");
+  });
+
+  it("opens the About page from the app icon", () => {
+    const { onNavigate } = renderShell({ kind: "tool", tool: "claude" });
+    fireEvent.click(screen.getByTestId("nav-brand"));
+    expect(onNavigate).toHaveBeenCalledWith({ kind: "settings", tab: "about" });
+  });
+
+  it("shows a dot on settings when a newer version is out, and none otherwise", async () => {
+    checkAppUpdate.mockResolvedValue({ ...releaseInfo, available: false });
+    const first = renderShell({ kind: "tool", tool: "claude" }, false, true);
+    await waitFor(() => expect(checkAppUpdate).toHaveBeenCalled(), { timeout: 4000 });
+    expect(screen.queryByTestId("notice-dot")).not.toBeInTheDocument();
+    first.unmount();
+
+    checkAppUpdate.mockResolvedValue({ ...releaseInfo, available: true });
+    renderShell({ kind: "tool", tool: "claude" }, false, true);
+    const dot = await screen.findByTestId("notice-dot", undefined, { timeout: 4000 });
+    expect(screen.getByTestId("nav-settings")).toContainElement(dot);
+    expect(screen.getByTestId("nav-settings")).toHaveAttribute("aria-label", "设置 · 有新版本");
   });
 });

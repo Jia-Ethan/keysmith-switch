@@ -11,6 +11,7 @@ const installUpdate = vi.fn();
 const openExternal = vi.fn();
 let updaterState: {
   update: UpdateCheck | null;
+  hasUpdate: boolean;
   checking: boolean;
   installing: boolean;
   progress: number | null;
@@ -63,6 +64,7 @@ describe("SettingsPage data safety", () => {
     });
     updaterState = {
       update: null,
+      hasUpdate: false,
       checking: false,
       installing: false,
       progress: null,
@@ -483,4 +485,52 @@ describe("SettingsPage data safety", () => {
     expect(onSave).not.toHaveBeenCalled();
   });
 
+  const availableInfo: UpdateCheck = {
+    available: true,
+    currentVersion: "0.2.3",
+    latestVersion: "0.2.4",
+    notes: null,
+    size: null,
+    channel: "stable",
+    restartRequired: true,
+    progress: null,
+    error: null,
+    releasePage: "https://example.test/releases",
+    installMode: "inApp",
+    reason: null,
+  };
+
+  it("marks the About tab with a dot while a newer version is waiting", () => {
+    updaterState.update = availableInfo;
+    updaterState.hasUpdate = true;
+    render(<SettingsPage settings={DEFAULT_SETTINGS} onSave={vi.fn()} toast={toast} />);
+    expect(screen.getByTestId("settings-nav-about")).toContainElement(screen.getByTestId("notice-dot"));
+    expect(screen.getByTestId("settings-nav-general")).not.toContainElement(screen.getByTestId("notice-dot"));
+  });
+
+  it("shows no dot on the About tab when the app is current", () => {
+    updaterState.update = { ...availableInfo, available: false, latestVersion: null };
+    render(<SettingsPage settings={DEFAULT_SETTINGS} onSave={vi.fn()} toast={toast} initialTab="about" />);
+    expect(screen.queryByTestId("notice-dot")).not.toBeInTheDocument();
+    expect(screen.getByTestId("update-section")).toHaveAttribute("data-state", "upToDate");
+  });
+
+  it("keeps the last answer on screen, dimmed, while a new check runs", () => {
+    updaterState.update = availableInfo;
+    const ui = () => <SettingsPage settings={DEFAULT_SETTINGS} onSave={vi.fn()} toast={toast} initialTab="about" />;
+    const view = render(ui());
+    expect(screen.getByTestId("update-section")).toHaveAttribute("data-state", "available");
+
+    // A new check clears the answer in the provider; the page must not collapse and reopen,
+    // and the dot must not blink out (the provider keeps knowing a release is out).
+    updaterState.update = null;
+    updaterState.hasUpdate = true;
+    updaterState.checking = true;
+    view.rerender(ui());
+    expect(screen.getByTestId("settings-nav-about")).toContainElement(screen.getByTestId("notice-dot"));
+    expect(screen.getByTestId("update-section")).toHaveAttribute("data-state", "checking");
+    expect(screen.getByTestId("install-update")).toBeInTheDocument();
+    expect(screen.getByTestId("install-update").closest(".pointer-events-none")).not.toBeNull();
+    expect(screen.getByTestId("update-checking")).toHaveTextContent("正在检查更新");
+  });
 });

@@ -20,15 +20,29 @@ export const AUTO_CHECK_DELAY_MS = 1800;
  * this long so the click always reads as an action.
  */
 export const MIN_CHECK_MS = 700;
+/** A running app looks again for a release this often, and when it regains focus after this long. */
+export const RECHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+export const RECHECK_ON_FOCUS_AFTER_MS = 60 * 60 * 1000;
 
 interface UpdateContextValue {
   update: UpdateCheck | null;
+  /**
+   * A newer release is known. Unlike `update`, it survives a new check being under
+   * way, so a badge does not blink out and back every time someone looks again.
+   */
+  hasUpdate: boolean;
   checking: boolean;
   installing: boolean;
   progress: number | null;
   error: string | null;
   checkCount: number;
-  check: () => Promise<void>;
+  /** When the last check finished (any kind), or null before the first. */
+  lastCheckedAt: number | null;
+  /**
+   * `silent` looks in the background: it never shows the checking state, never
+   * clears what is known and never reports a failure. It only ever adds news.
+   */
+  check: (options?: { silent?: boolean }) => Promise<void>;
   install: () => Promise<UpdateInstall | null>;
 }
 
@@ -59,16 +73,34 @@ export function UpdateProvider({
   children: ReactNode;
 }) {
   const [update, setUpdate] = useState<UpdateCheck | null>(null);
+  const [hasUpdate, setHasUpdate] = useState(false);
   const [checking, setChecking] = useState(false);
   const [installing, setInstalling] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [checkCount, setCheckCount] = useState(0);
+  const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(null);
+  const lastCheckedRef = useRef<number | null>(null);
   const checkingRef = useRef(false);
   const installingRef = useRef(false);
 
-  const check = useCallback(async () => {
+  const check = useCallback(async (options?: { silent?: boolean }) => {
     if (checkingRef.current || installingRef.current) return;
+    if (options?.silent) {
+      try {
+        const result = await api.checkAppUpdate(channel);
+        // A person's own check, or an install, started meanwhile and owns the state.
+        if (checkingRef.current || installingRef.current || result.error) return;
+        const now = Date.now();
+        lastCheckedRef.current = now;
+        setLastCheckedAt(now);
+        setUpdate(result);
+        setHasUpdate(result.available);
+      } catch {
+        // Nobody asked; a failed look is not news.
+      }
+      return;
+    }
     checkingRef.current = true;
     const startedAt = Date.now();
     setChecking(true);
@@ -80,6 +112,8 @@ export function UpdateProvider({
       setUpdate(result);
       if (result.error) {
         setError(result.error);
+      } else {
+        setHasUpdate(result.available);
       }
     } catch (err) {
       setUpdate(null);
@@ -87,6 +121,9 @@ export function UpdateProvider({
     } finally {
       const remaining = minCheckMs - (Date.now() - startedAt);
       if (remaining > 0) await new Promise<void>((resolve) => window.setTimeout(resolve, remaining));
+      const now = Date.now();
+      lastCheckedRef.current = now;
+      setLastCheckedAt(now);
       setCheckCount((count) => count + 1);
       checkingRef.current = false;
       setChecking(false);
@@ -145,6 +182,21 @@ export function UpdateProvider({
     return () => window.clearTimeout(timer);
   }, [autoCheck, check]);
 
+  // A window left open for days would never hear of a release: look again now and then.
+  useEffect(() => {
+    if (!autoCheck) return;
+    const timer = window.setInterval(() => void check({ silent: true }), RECHECK_INTERVAL_MS);
+    const onFocus = () => {
+      const last = lastCheckedRef.current;
+      if (last !== null && Date.now() - last >= RECHECK_ON_FOCUS_AFTER_MS) void check({ silent: true });
+    };
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [autoCheck, check]);
+
   useEffect(() => {
     if (!isTauriRuntime()) return;
     let cancelled = false;
@@ -169,8 +221,8 @@ export function UpdateProvider({
   }, []);
 
   const value = useMemo<UpdateContextValue>(
-    () => ({ update, checking, installing, progress, error, checkCount, check, install }),
-    [update, checking, installing, progress, error, checkCount, check, install],
+    () => ({ update, hasUpdate, checking, installing, progress, error, checkCount, lastCheckedAt, check, install }),
+    [update, hasUpdate, checking, installing, progress, error, checkCount, lastCheckedAt, check, install],
   );
 
   return <UpdateContext.Provider value={value}>{children}</UpdateContext.Provider>;
