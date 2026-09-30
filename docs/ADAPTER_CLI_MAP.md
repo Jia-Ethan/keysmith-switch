@@ -2,7 +2,7 @@
 
 统一 command 到四个钉选 CLI 的 argv。所有参数均为独立 argv 元素。
 
-## Claude (`third_party/keysmith/claude/claude-instruct.py`)
+## Claude Code (`third_party/keysmith/claude/claude-instruct.py`)
 
 | 统一命令 | argv |
 | --- | --- |

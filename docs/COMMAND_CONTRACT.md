@@ -6,7 +6,7 @@
 
 `claude` | `codex` | `grok` | `zcode`
 
-- Claude scopes: `user` | `project` | `local`（project/local 必须有绝对 `projectDir`）
+- Claude Code scopes: `user` | `project` | `local`（project/local 必须有绝对 `projectDir`）
 - Codex / Grok scopes: 仅 `user`
 - ZCode scopes: 仅 `user`；仅 macOS。Windows 返回 `available: false`，原因明确，不执行安装命令
 
