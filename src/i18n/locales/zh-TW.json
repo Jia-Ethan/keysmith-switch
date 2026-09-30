@@ -13,7 +13,8 @@
     "advanced": "進階工具",
     "toolsLabel": "工具導覽",
     "more": "更多",
-    "updateAvailable": "有新版本"
+    "updateAvailable": "有新版本",
+    "extensions": "拓展"
   },
   "common": {
     "ok": "確定",
@@ -421,6 +422,47 @@
       "actions": "操作",
       "agents": "Agent",
       "prompts": "部署提示詞"
+    }
+  },
+  "extensions": {
+    "title": "拓展包",
+    "lead": "官方發布的提示詞包。它們可以單獨更新，不影響 App 本身。",
+    "offTitle": "開啟拓展包",
+    "offBody": "開啟後，Keysmith Switch 才會連網讀取官方拓展源。只讀取清單和你選擇安裝的包，不會上傳你的任何內容。",
+    "notDeployed": "裝入的提示詞只會放進提示詞庫，不會自動部署。",
+    "enable": "開啟拓展包",
+    "disable": "關閉",
+    "refresh": "檢查更新",
+    "checking": "正在檢查…",
+    "lastChecked": "上次檢查 {{time}}",
+    "official": "官方",
+    "unofficial": "非官方",
+    "installed": "已安裝 v{{version}}",
+    "updateAvailable": "可更新到 v{{version}}",
+    "needsApp": "需要 App {{version}} 或更高版本",
+    "install": "安裝",
+    "update": "更新",
+    "uninstall": "解除安裝",
+    "uninstallBody": "會移除這個包裡沒改過、也沒在使用的提示詞。你改過的和正在使用的會保留。",
+    "items": "{{count}} 條提示詞",
+    "empty": "官方還沒有發布拓展包",
+    "emptyHint": "有新的拓展包時，拓展按鈕會出現紅點。",
+    "notConfigured": "官方拓展源還沒有開放",
+    "notConfiguredHint": "開放後你會在這裡看到官方拓展包。現在不會連網。",
+    "installedToast": "已加入提示詞庫：新增 {{added}} 條，未部署",
+    "updatedToast": "已更新：更新 {{updated}} 條，新增 {{added}} 條，另存 {{copied}} 條",
+    "removedToast": "已解除安裝：移除 {{removed}} 條，保留 {{kept}} 條",
+    "err": {
+      "offline": "無法連線到拓展源，顯示的是上次的列表。",
+      "invalid-signature": "簽章驗證失敗，已忽略這份內容：它不是官方發布的。",
+      "too-new": "這份拓展源需要更新 App 後才能讀取。",
+      "invalid": "這個包的內容不合規，已拒絕安裝。",
+      "incompatible": "這個包需要更新 App 才能安裝。",
+      "not-configured": "官方拓展源還沒有開放。",
+      "unknown-pack": "拓展源裡已經沒有這個包了。",
+      "off": "拓展包還沒有開啟。",
+      "store": "操作失敗，沒有做任何改動。",
+      "default": "操作失敗，沒有做任何改動。"
     }
   }
 }

@@ -5,6 +5,7 @@ pub mod db;
 pub mod desktop;
 pub mod diff;
 pub mod error;
+pub mod extensions;
 pub mod feedback;
 pub mod harness;
 pub mod lock;
@@ -67,6 +68,10 @@ pub fn run() {
             commands::plan_deactivate,
             commands::deactivate,
             commands::harness_state,
+            commands::extensions_state,
+            commands::extensions_refresh,
+            commands::extension_install,
+            commands::extension_uninstall,
             commands::adopt_live_prompt,
             commands::remove_harness,
             commands::recover_tool,

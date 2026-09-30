@@ -2,10 +2,14 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { AppShell, type AppPage } from "./AppShell";
+import { ExtensionsProvider } from "./ExtensionsProvider";
 import { UpdateProvider } from "./UpdateProvider";
 
 const checkAppUpdate = vi.fn();
+const extensionsState = vi.fn();
 vi.mock("../api", () => ({
+  extensionsState: (...args: unknown[]) => extensionsState(...args),
+  extensionsRefresh: vi.fn().mockResolvedValue({ configured: true, packs: [], updates: 0, error: null, checkedAt: null }),
   checkAppUpdate: (...args: unknown[]) => checkAppUpdate(...args),
   getHarnessState: vi.fn().mockResolvedValue({ tool: "claude", deployed: false, error: null }),
 }));
@@ -113,5 +117,25 @@ describe("AppShell tool navigation", () => {
     const dot = await screen.findByTestId("notice-dot", undefined, { timeout: 4000 });
     expect(screen.getByTestId("nav-settings")).toContainElement(dot);
     expect(screen.getByTestId("nav-settings")).toHaveAttribute("aria-label", "设置 · 有新版本");
+  });
+
+  it("shows the Extensions button only where the provider is, with a dot for updates", async () => {
+    renderShell({ kind: "tool", tool: "claude" });
+    expect(screen.queryByTestId("nav-extensions")).not.toBeInTheDocument();
+
+    extensionsState.mockResolvedValue({ configured: true, packs: [], updates: 2, error: null, checkedAt: null });
+    const onNavigate = vi.fn();
+    render(
+      <ExtensionsProvider enabled onEnabledChange={vi.fn()}>
+        <AppShell page={{ kind: "extensions" }} onNavigate={onNavigate} advancedEnabled={false}>
+          <div>content</div>
+        </AppShell>
+      </ExtensionsProvider>,
+    );
+    const button = await screen.findByTestId("nav-extensions");
+    await waitFor(() => expect(button.querySelector('[data-testid="notice-dot"]')).not.toBeNull());
+    expect(button).toHaveAttribute("aria-current", "page");
+    fireEvent.click(button);
+    expect(onNavigate).toHaveBeenCalledWith({ kind: "extensions" });
   });
 });

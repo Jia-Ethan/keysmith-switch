@@ -1,0 +1,26 @@
+{
+  "generated_at": "2026-09-30T00:00:00Z",
+  "packs": [
+    {
+      "description": {
+        "en": "Fixture pack for tests"
+      },
+      "id": "fixture.pack",
+      "item_count": 1,
+      "kind": "prompts",
+      "min_app_version": "0.2.5",
+      "name": {
+        "en": "Fixture fixture.pack",
+        "zh-CN": "测试包 fixture.pack"
+      },
+      "sha256": "f53f5ac9346e68030f77c2227baa9fa02ca42d4241b7be9b0e6bf078a198a264",
+      "size": 553,
+      "tools": [
+        "claude"
+      ],
+      "url": "https://github.com/Jia-Ethan/keysmith-switch-extensions/releases/download/test-v3/fixture.pack-0.1.0.zip",
+      "version": "0.1.0"
+    }
+  ],
+  "schema": 2
+}

@@ -76,6 +76,19 @@ function envelope(tool: ToolId, command: string, over: Partial<Envelope> = {}): 
   };
 }
 
+const settings: Record<string, unknown> = { language: "zh-CN", updateChannel: "stable", advancedToolsEnabled: false, defaultClaudeScope: "user", recentProjectDirs: [], updaterEndpointOverride: null, autoCheckUpdates: true, theme: "system", firstRunCompleted: true, extensionsEnabled: new URLSearchParams(window.location.search).has("ext") };
+
+// ?ext=1 starts with extensions on; ?ext=update also pretends one pack has a newer version.
+const extUpdate = new URLSearchParams(window.location.search).get("ext") === "update";
+const extPacks = [
+  { id: "keysmith.example", version: extUpdate ? "0.2.0" : "0.1.0", minAppVersion: "0.2.5", name: "示例包", description: "用来演示拓展包格式的示例，不建议长期使用；正式内容会另外发布。", tools: ["claude", "codex"], itemCount: 2, size: 1312, official: true, compatible: true, installedVersion: extUpdate ? "0.1.0" : (null as string | null), updateAvailable: false },
+  { id: "keysmith.future", version: "1.0.0", minAppVersion: "9.0.0", name: "需要新版 App 的包", description: "这个包要求比现在更新的 App。", tools: ["claude"], itemCount: 5, size: 8800, official: true, compatible: false, installedVersion: null as string | null, updateAvailable: false },
+];
+function extView() {
+  const packs = extPacks.map((p) => ({ ...p, updateAvailable: p.compatible && p.installedVersion !== null && p.installedVersion !== p.version }));
+  return { configured: true, packs, updates: packs.filter((p) => p.updateAvailable).length, error: null, checkedAt: now() };
+}
+
 const delay = <T,>(value: T, ms = 260) => new Promise<T>((resolve) => setTimeout(() => resolve(value), ms));
 
 function summary(p: PromptDetail) {
@@ -86,7 +99,26 @@ function summary(p: PromptDetail) {
 async function handle(cmd: string, args: Record<string, any> = {}): Promise<unknown> {
   switch (cmd) {
     case "get_settings":
-      return { language: "zh-CN", updateChannel: "stable", advancedToolsEnabled: false, defaultClaudeScope: "user", recentProjectDirs: [], updaterEndpointOverride: null, autoCheckUpdates: true, theme: "system", firstRunCompleted: true };
+      return settings;
+    case "update_settings": {
+      Object.assign(settings, args);
+      return settings;
+    }
+    case "extensions_state":
+      return extView();
+    case "extensions_refresh":
+      return delay(extView(), 1100);
+    case "extension_install": {
+      const pack = extPacks.find((p) => p.id === args.packId)!;
+      const report = { added: pack.installedVersion ? 0 : pack.itemCount, updated: pack.installedVersion ? 1 : 0, copied: 0, linked: 0, kept: 0, removed: 0 };
+      pack.installedVersion = pack.version;
+      return delay({ view: extView(), report }, 1200);
+    }
+    case "extension_uninstall": {
+      const pack = extPacks.find((p) => p.id === args.packId)!;
+      pack.installedVersion = null;
+      return delay({ view: extView(), report: { added: 0, updated: 0, copied: 0, linked: 0, kept: 1, removed: 1 } }, 700);
+    }
     case "get_about":
       return { app: { name: "Keysmith Switch", version: "0.2.3", channel: "stable", preview: false, signed: false, identifier: "com.jia-ethan.keysmith-switch", website: "", github: "" }, adapters: [], official: [] };
     case "get_startup_report":

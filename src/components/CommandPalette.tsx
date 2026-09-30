@@ -8,7 +8,7 @@ import { detectPlatform } from "../lib/platform";
 import type { PromptSummary, ToolId } from "../types";
 import { TOOL_IDS } from "../types";
 import type { AppPage } from "./AppShell";
-import { IconPlus, IconRocket, IconSearch, IconSettings } from "./icons";
+import { IconPlus, IconPuzzle, IconRocket, IconSearch, IconSettings } from "./icons";
 import { ToolLogo } from "./ToolLogos";
 import { cx } from "./ui";
 
@@ -101,6 +101,16 @@ export function CommandPalette({
         },
       });
     }
+    list.push({
+      id: "extensions",
+      group: "actions",
+      label: t("nav.extensions"),
+      icon: <IconPuzzle size={15} />,
+      run: () => {
+        onClose();
+        onNavigate({ kind: "extensions" });
+      },
+    });
     list.push({
       id: "settings",
       group: "actions",

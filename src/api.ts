@@ -30,6 +30,8 @@ import type {
   ScopeId,
   Settings,
   SettingsPatch,
+  ExtensionChange,
+  ExtensionsView,
   ToolId,
   ToolInfo,
   UpdateChannel,
@@ -333,4 +335,22 @@ export function quitApp(): Promise<OkResult> {
 
 export function markFirstRunDone(): Promise<Settings> {
   return call("mark_first_run_done", {});
+}
+
+/** The last verified list of extension packs; never touches the network. */
+export function extensionsState(): Promise<ExtensionsView> {
+  return call("extensions_state", {});
+}
+
+/** Ask the network. Needs extensions to be switched on. */
+export function extensionsRefresh(): Promise<ExtensionsView> {
+  return call("extensions_refresh", {});
+}
+
+export function installExtension(packId: string): Promise<ExtensionChange> {
+  return call("extension_install", { packId });
+}
+
+export function uninstallExtension(packId: string): Promise<ExtensionChange> {
+  return call("extension_uninstall", { packId });
 }

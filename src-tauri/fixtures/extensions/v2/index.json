@@ -1,0 +1,47 @@
+{
+  "generated_at": "2026-09-30T00:00:00Z",
+  "packs": [
+    {
+      "description": {
+        "en": "Fixture pack for tests"
+      },
+      "id": "fixture.future",
+      "item_count": 1,
+      "kind": "prompts",
+      "min_app_version": "99.0.0",
+      "name": {
+        "en": "Fixture fixture.future",
+        "zh-CN": "测试包 fixture.future"
+      },
+      "sha256": "08e2c2449413ef49077a2f5db5e5a8c2009580541e17eea60c78f12c6b9c8c38",
+      "size": 560,
+      "tools": [
+        "claude"
+      ],
+      "url": "https://github.com/Jia-Ethan/keysmith-switch-extensions/releases/download/test-v2/fixture.future-1.0.0.zip",
+      "version": "1.0.0"
+    },
+    {
+      "description": {
+        "en": "Fixture pack for tests"
+      },
+      "id": "fixture.pack",
+      "item_count": 3,
+      "kind": "prompts",
+      "min_app_version": "0.2.5",
+      "name": {
+        "en": "Fixture fixture.pack",
+        "zh-CN": "测试包 fixture.pack"
+      },
+      "sha256": "881f9225faf3d4f94eada51d1fe381efc64d3e878988eab096d344c8d12bb4e5",
+      "size": 951,
+      "tools": [
+        "claude",
+        "codex"
+      ],
+      "url": "https://github.com/Jia-Ethan/keysmith-switch-extensions/releases/download/test-v2/fixture.pack-0.2.0.zip",
+      "version": "0.2.0"
+    }
+  ],
+  "schema": 1
+}
