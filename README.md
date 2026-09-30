@@ -12,7 +12,7 @@ Claude Code 指开源的 Claude Code 命令行工具（`@anthropic-ai/claude-cod
 
 ## 状态
 
-公开稳定版是 [`v0.2.4`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.2.4)；`v0.2.5`（换了更精致的左上角图标，检查更新的动画更流畅，有新版本时设置处会出现红点提醒，[#43](https://github.com/Jia-Ethan/keysmith-switch/pull/43)）正在准备中，尚未创建 tag 或安装包。`v0.2.4` 修复确认部署被适配器版本检查拒绝、Claude Code 部署后显示为未部署；全新的侧边栏界面、⌘K 命令面板，以及可编辑机器上正在使用的提示词，[#41](https://github.com/Jia-Ethan/keysmith-switch/pull/41)；[`v0.2.3`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.2.3) 机器上已部署但库里没有对应条目时显示“部署中”卡片、ZCode 换回官方图标、授权改为 PolyForm Noncommercial 1.0.0（[#39](https://github.com/Jia-Ethan/keysmith-switch/pull/39)）；[`v0.2.2`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.2.2) 显示当前生效的提示词、去掉范围与快捷键、补全操作反馈（[#37](https://github.com/Jia-Ethan/keysmith-switch/pull/37)）；[`v0.2.1`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.2.1) 修复了反馈表单并更换设置图标（[#34](https://github.com/Jia-Ethan/keysmith-switch/pull/34)）；[`v0.2.0`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.2.0) 带来了界面改版 [#30](https://github.com/Jia-Ethan/keysmith-switch/pull/30)。上一版 [`v0.1.9`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.1.9) 带来了 Quick Deploy [#28](https://github.com/Jia-Ethan/keysmith-switch/pull/28)。
+公开稳定版是 [`v0.2.5`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.2.5)，换了更精致的左上角图标，检查更新的动画更流畅，有新版本时设置处会出现红点提醒，[#43](https://github.com/Jia-Ethan/keysmith-switch/pull/43)；[`v0.2.4`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.2.4) 修复确认部署被适配器版本检查拒绝、Claude Code 部署后显示为未部署；全新的侧边栏界面、⌘K 命令面板，以及可编辑机器上正在使用的提示词，[#41](https://github.com/Jia-Ethan/keysmith-switch/pull/41)；[`v0.2.3`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.2.3) 机器上已部署但库里没有对应条目时显示“部署中”卡片、ZCode 换回官方图标、授权改为 PolyForm Noncommercial 1.0.0（[#39](https://github.com/Jia-Ethan/keysmith-switch/pull/39)）；[`v0.2.2`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.2.2) 显示当前生效的提示词、去掉范围与快捷键、补全操作反馈（[#37](https://github.com/Jia-Ethan/keysmith-switch/pull/37)）；[`v0.2.1`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.2.1) 修复了反馈表单并更换设置图标（[#34](https://github.com/Jia-Ethan/keysmith-switch/pull/34)）；[`v0.2.0`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.2.0) 带来了界面改版 [#30](https://github.com/Jia-Ethan/keysmith-switch/pull/30)。上一版 [`v0.1.9`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.1.9) 带来了 Quick Deploy [#28](https://github.com/Jia-Ethan/keysmith-switch/pull/28)。
 
 `v0.1.4` 接替四个独立桌面安装包。之后只维护 Keysmith Switch。已发出的 Claude Code、Grok、Codex、Zcode 桌面包保持原样，不撤回，也不改成各自仓库的 Latest。
 
@@ -35,10 +35,10 @@ Claude Code 指开源的 Claude Code 命令行工具（`@anthropic-ai/claude-cod
 
 ## 下载
 
-当前可下载的稳定版是 [`v0.2.4`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.2.4)。
+当前可下载的稳定版是 [`v0.2.5`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.2.5)。
 
-- macOS Apple Silicon（M 系列，含 Mac Studio M4 Max）：`Keysmith.Switch_0.2.4_aarch64.dmg`
-- Windows x64：`Keysmith.Switch_0.2.4_x64-setup.exe`
+- macOS Apple Silicon（M 系列，含 Mac Studio M4 Max）：`Keysmith.Switch_0.2.5_aarch64.dmg`
+- Windows x64：`Keysmith.Switch_0.2.5_x64-setup.exe`
 
 已安装的用户可以在应用内检查更新；未来版本仍需完成独立发布流程。
 
