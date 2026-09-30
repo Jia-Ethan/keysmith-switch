@@ -4,9 +4,10 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { ScopeId, ToolId } from "../types";
 import { TOOL_IDS } from "../types";
-import { cx, useSlidingIndicator } from "./ui";
+import { NoticeDot, cx, useSlidingIndicator } from "./ui";
 import { IconSearch, IconSettings, IconTerminal } from "./icons";
 import { paletteShortcutLabel } from "./CommandPalette";
+import { useUpdateOptional } from "./UpdateProvider";
 import { ToolLogo } from "./ToolLogos";
 import keysmithIcon from "../assets/keysmith-icon.png";
 
@@ -47,6 +48,7 @@ export function AppShell({
   children: ReactNode;
 }) {
   const { t } = useTranslation();
+  const hasUpdate = Boolean(useUpdateOptional()?.hasUpdate);
   const railRef = useRef<HTMLElement>(null);
   const activeTool = page.kind === "tool" ? page.tool : null;
   const railKey = page.kind === "tool" ? page.tool : page.kind;
@@ -58,9 +60,16 @@ export function AppShell({
         data-tauri-drag-region=""
         className="app-rail glass relative z-30 flex w-[88px] shrink-0 flex-col items-center border-r border-border/70 pb-3"
       >
-        <div data-tauri-drag-region="" className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-card shadow-[0_1px_2px_hsl(var(--shadow)/0.12)] ring-1 ring-border">
-          <img src={keysmithIcon} alt={t("app.name")} className="h-6 w-6" draggable={false} />
-        </div>
+        <button
+          type="button"
+          data-testid="nav-brand"
+          title={t("nav.about")}
+          aria-label={t("nav.about")}
+          onClick={() => onNavigate({ kind: "settings", tab: "about" })}
+          className="brand-mark mb-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <img src={keysmithIcon} alt="" className="h-11 w-11" draggable={false} />
+        </button>
 
         <nav
           ref={railRef}
@@ -109,7 +118,8 @@ export function AppShell({
             ) : null}
             <UtilityButton
               testId="nav-settings"
-              label={t("nav.settings")}
+              label={hasUpdate ? `${t("nav.settings")} · ${t("nav.updateAvailable")}` : t("nav.settings")}
+              badge={hasUpdate}
               active={page.kind === "settings"}
               indicatorReady={Boolean(indicator)}
               onClick={() => onNavigate({ kind: "settings" })}
@@ -179,6 +189,7 @@ function RailButton({
 function UtilityButton({
   testId,
   label,
+  badge = false,
   active,
   indicatorReady,
   onClick,
@@ -186,6 +197,8 @@ function UtilityButton({
 }: {
   testId: string;
   label: string;
+  /** A small red dot: something here wants a look. */
+  badge?: boolean;
   active: boolean;
   indicatorReady: boolean;
   onClick: () => void;
@@ -208,6 +221,7 @@ function UtilityButton({
       )}
     >
       {children}
+      {badge ? <NoticeDot /> : null}
     </button>
   );
 }

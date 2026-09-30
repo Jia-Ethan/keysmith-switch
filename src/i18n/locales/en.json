@@ -12,7 +12,8 @@
     "about": "About",
     "advanced": "Advanced Tools",
     "toolsLabel": "Tools",
-    "more": "More"
+    "more": "More",
+    "updateAvailable": "Update available"
   },
   "common": {
     "ok": "OK",
@@ -314,7 +315,12 @@
     "openOfficialInstaller": "Open official installer",
     "zcodeMacOnly": "Official ZCode is macOS-only.",
     "adapterExternal": "External path",
-    "tagline": "Local prompt manager and quick deploy for coding agents"
+    "tagline": "Local prompt manager and quick deploy for coding agents",
+    "idleHint": "Check whether a new version is out",
+    "checkingHint": "Contacting the update server…",
+    "checkedAt": "Last checked {{time}}",
+    "checkFailed": "Could not check for updates",
+    "checkFailedHint": "Your current version is unchanged"
   },
   "feedback": {
     "title": "Feedback",

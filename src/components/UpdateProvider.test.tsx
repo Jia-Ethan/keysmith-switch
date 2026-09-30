@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { UpdateCheck, UpdateInstall } from "../types";
 import { UpdateProvider, useUpdate } from "./UpdateProvider";
 
@@ -35,6 +35,7 @@ function UpdateHarness() {
   return (
     <div>
       <button type="button" onClick={() => void updater.check()}>check</button>
+      <button type="button" onClick={() => void updater.check({ silent: true })}>silent</button>
       <button type="button" onClick={() => void updater.install()}>install</button>
       <output data-testid="update-version">{updater.update?.latestVersion ?? "none"}</output>
       <output data-testid="install-mode">{updater.update?.installMode ?? "none"}</output>
@@ -43,6 +44,7 @@ function UpdateHarness() {
       <output data-testid="update-error">{updater.error ?? "none"}</output>
       <output data-testid="check-count">{updater.checkCount}</output>
       <output data-testid="checking">{String(updater.checking)}</output>
+      <output data-testid="has-update">{String(updater.hasUpdate)}</output>
     </div>
   );
 }
@@ -231,5 +233,129 @@ describe("UpdateProvider", () => {
     await waitFor(() => expect(screen.getByTestId("update-error")).toHaveTextContent("network unavailable"));
     expect(screen.getByTestId("update-version")).toHaveTextContent("none");
     expect(screen.getByTestId("install-mode")).toHaveTextContent("none");
+  });
+});
+
+describe("UpdateProvider background checks", () => {
+  beforeEach(() => {
+    checkAppUpdate.mockReset();
+    installAppUpdate.mockReset();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("learns of a release without ever showing the checking state", async () => {
+    checkAppUpdate.mockResolvedValue(availableUpdate);
+    render(
+      <UpdateProvider channel="stable" autoCheck={false} minCheckMs={0}>
+        <UpdateHarness />
+      </UpdateProvider>,
+    );
+    fireEvent.click(screen.getByText("silent"));
+    await waitFor(() => expect(screen.getByTestId("update-version")).toHaveTextContent("0.1.2"));
+    expect(screen.getByTestId("checking")).toHaveTextContent("false");
+    expect(screen.getByTestId("check-count")).toHaveTextContent("0");
+  });
+
+  it("keeps a known release and shows no error when a background look fails", async () => {
+    checkAppUpdate.mockResolvedValueOnce(availableUpdate);
+    render(
+      <UpdateProvider channel="stable" autoCheck={false} minCheckMs={0}>
+        <UpdateHarness />
+      </UpdateProvider>,
+    );
+    fireEvent.click(screen.getByText("silent"));
+    await waitFor(() => expect(screen.getByTestId("update-version")).toHaveTextContent("0.1.2"));
+
+    checkAppUpdate.mockRejectedValueOnce(new Error("offline"));
+    fireEvent.click(screen.getByText("silent"));
+    await waitFor(() => expect(checkAppUpdate).toHaveBeenCalledTimes(2));
+    checkAppUpdate.mockResolvedValueOnce({ ...availableUpdate, available: false, error: "feed unreachable" });
+    fireEvent.click(screen.getByText("silent"));
+    await waitFor(() => expect(checkAppUpdate).toHaveBeenCalledTimes(3));
+
+    expect(screen.getByTestId("update-version")).toHaveTextContent("0.1.2");
+    expect(screen.getByTestId("update-error")).toHaveTextContent("none");
+  });
+
+  it("looks again when the window regains focus after an hour, not sooner", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "setInterval", "clearTimeout", "clearInterval", "Date"] });
+    checkAppUpdate.mockResolvedValue({ ...availableUpdate, available: false });
+    render(
+      <UpdateProvider channel="stable" autoCheck minCheckMs={0}>
+        <UpdateHarness />
+      </UpdateProvider>,
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(checkAppUpdate).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
+      window.dispatchEvent(new Event("focus"));
+    });
+    expect(checkAppUpdate).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60 * 60 * 1000);
+      window.dispatchEvent(new Event("focus"));
+    });
+    expect(checkAppUpdate).toHaveBeenCalledTimes(2);
+  });
+
+  it("checks on a schedule while the app stays open", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "setInterval", "clearTimeout", "clearInterval", "Date"] });
+    checkAppUpdate.mockResolvedValue({ ...availableUpdate, available: false });
+    render(
+      <UpdateProvider channel="stable" autoCheck minCheckMs={0}>
+        <UpdateHarness />
+      </UpdateProvider>,
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    const afterStart = checkAppUpdate.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6 * 60 * 60 * 1000);
+    });
+    expect(checkAppUpdate.mock.calls.length).toBe(afterStart + 1);
+  });
+
+  it("does not look in the background when automatic checks are off", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "setInterval", "clearTimeout", "clearInterval", "Date"] });
+    render(
+      <UpdateProvider channel="stable" autoCheck={false} minCheckMs={0}>
+        <UpdateHarness />
+      </UpdateProvider>,
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(7 * 60 * 60 * 1000);
+      window.dispatchEvent(new Event("focus"));
+    });
+    expect(checkAppUpdate).not.toHaveBeenCalled();
+  });
+
+  it("keeps knowing a release is out while a new check runs, and drops it once one says otherwise", async () => {
+    checkAppUpdate.mockResolvedValueOnce(availableUpdate);
+    render(
+      <UpdateProvider channel="stable" autoCheck={false} minCheckMs={0}>
+        <UpdateHarness />
+      </UpdateProvider>,
+    );
+    fireEvent.click(screen.getByText("silent"));
+    await waitFor(() => expect(screen.getByTestId("has-update")).toHaveTextContent("true"));
+
+    let release!: (value: UpdateCheck) => void;
+    checkAppUpdate.mockReturnValueOnce(new Promise<UpdateCheck>((resolve) => { release = resolve; }));
+    fireEvent.click(screen.getByText("check"));
+    await waitFor(() => expect(screen.getByTestId("checking")).toHaveTextContent("true"));
+    expect(screen.getByTestId("update-version")).toHaveTextContent("none");
+    expect(screen.getByTestId("has-update")).toHaveTextContent("true");
+
+    await act(async () => release({ ...availableUpdate, available: false }));
+    await waitFor(() => expect(screen.getByTestId("has-update")).toHaveTextContent("false"));
   });
 });

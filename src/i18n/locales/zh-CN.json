@@ -12,7 +12,8 @@
     "about": "关于",
     "advanced": "高级工具",
     "toolsLabel": "工具导航",
-    "more": "更多"
+    "more": "更多",
+    "updateAvailable": "有新版本"
   },
   "common": {
     "ok": "确定",
@@ -314,7 +315,12 @@
     "openOfficialInstaller": "打开官方安装页",
     "zcodeMacOnly": "ZCode 官方工具仅 macOS 可用。",
     "adapterExternal": "外部路径",
-    "tagline": "本机 Agent 提示词管理与快速部署"
+    "tagline": "本机 Agent 提示词管理与快速部署",
+    "idleHint": "点击右侧按钮，看看有没有新版本",
+    "checkingHint": "正在连接更新服务器…",
+    "checkedAt": "上次检查 {{time}}",
+    "checkFailed": "没能检查更新",
+    "checkFailedHint": "当前版本保持不变"
   },
   "feedback": {
     "title": "反馈",

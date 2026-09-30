@@ -5,10 +5,11 @@ import * as api from "../api";
 import { ErrorBanner } from "../components/ErrorBanner";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Feedback } from "../components/Feedback";
+import { UpdateSection } from "../components/UpdateSection";
 import { useUpdateOptional } from "../components/UpdateProvider";
-import { IconCheck, IconDownload, IconExternal, IconMonitor, IconMoon, IconRefresh, IconSun } from "../components/icons";
+import { IconCheck, IconExternal, IconMonitor, IconMoon, IconSun } from "../components/icons";
 import { ToolLogo } from "../components/ToolLogos";
-import { Button, Mono, Segmented, SettingRow, SectionLabel, Spinner, cx, useSlidingIndicator } from "../components/ui";
+import { Button, Mono, NoticeDot, Segmented, SettingRow, SectionLabel, cx, useSlidingIndicator } from "../components/ui";
 import keysmithIcon from "../assets/keysmith-icon.png";
 import { Dropdown } from "../components/Dropdown";
 import { useTheme, type ThemeMode } from "../hooks/useTheme";
@@ -16,7 +17,6 @@ import type { ToastApi } from "../hooks/useToasts";
 import { formatBytes } from "../lib/format";
 import { openExternal } from "../lib/runtime";
 import type { AboutInfo, Language, Settings, SettingsPatch, ToolId } from "../types";
-import { PUBLIC_RELEASE_PAGE } from "../types";
 
 type TabId = "general" | "tools" | "about";
 
@@ -199,6 +199,7 @@ export function SettingsPage({
               )}
             >
               {t(`settings.tab.${item}`)}
+              {item === "about" && updater?.hasUpdate ? <NoticeDot className="right-1 top-1" /> : null}
             </button>
           );
         })}
@@ -293,9 +294,7 @@ export function SettingsPage({
                 className="pointer-events-none absolute inset-0 bg-[radial-gradient(70%_120%_at_50%_0%,rgb(var(--primary)/0.14),transparent_70%)]"
               />
               <div className="relative flex flex-col items-center text-center">
-                <span className="flex h-16 w-16 items-center justify-center rounded-[20px] bg-card shadow-glow ring-1 ring-border">
-                  <img src={keysmithIcon} alt="" className="h-11 w-11" aria-hidden="true" draggable={false} />
-                </span>
+                <img src={keysmithIcon} alt="" className="brand-mark-static h-[72px] w-[72px]" aria-hidden="true" draggable={false} />
                 <h2 className="mt-3 text-[18px] font-semibold tracking-[-0.01em] text-foreground">{t("app.name")}</h2>
                 <p className="mt-0.5 text-[12.5px] text-muted-foreground">{t("about.tagline")}</p>
                 <span className="mt-2 rounded-full bg-muted px-2.5 py-0.5 font-mono text-[11.5px] text-muted-foreground">
@@ -314,128 +313,7 @@ export function SettingsPage({
               </div>
             </section>
           <div className="surface-card overflow-hidden">
-            <section className="border-b border-border p-4 sm:p-5" data-testid="update-section">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <SectionLabel>{t("about.appUpdate")}</SectionLabel>
-                  <p className="mt-1 text-sm text-foreground">
-                    {updater?.update?.available
-                      ? `${updater.update.currentVersion} → ${updater.update.latestVersion ?? "—"}`
-                      : updater?.update?.currentVersion ?? about?.app.version ?? "—"}
-                  </p>
-                </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  data-testid="check-update"
-                  loading={updater?.checking}
-                  disabled={!updater || updater.checking || updater.installing}
-                  onClick={() => void updater?.check()}
-                >
-                  <IconRefresh />
-                  {updater?.checking ? t("about.checking") : t("about.checkUpdate")}
-                </Button>
-              </div>
-
-              {updater?.checking ? (
-                <p
-                  className="mt-3 flex animate-page-in items-center gap-2 text-sm text-muted-foreground"
-                  role="status"
-                  data-testid="update-checking"
-                >
-                  <Spinner />
-                  {t("about.checking")}
-                </p>
-              ) : null}
-
-              {updater?.error && !updater.checking && updater.update?.installMode !== "manual" ? (
-                <div className="mt-3 space-y-2" key={`error-${updater.checkCount}`}>
-                  <ErrorBanner
-                    message={updater.error}
-                    onRetry={() => void updater.check()}
-                    retryLabel={t("common.retry")}
-                  />
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    data-testid="open-update-release-on-error"
-                    onClick={() => void openExternal(updater.update?.releasePage || PUBLIC_RELEASE_PAGE)}
-                  >
-                    <IconExternal />
-                    {t("about.openReleasePage")}
-                  </Button>
-                </div>
-              ) : null}
-
-              {(!updater?.error || updater.update?.installMode === "manual") && !updater?.checking && updater?.update && !updater.update.available ? (
-                <p
-                  className="mt-3 flex animate-page-in items-center gap-1.5 text-sm text-primary"
-                  role="status"
-                  key={`current-${updater.checkCount}`}
-                >
-                  <IconCheck size={14} className="shrink-0" />
-                  {updater.update.currentVersion} · {t("about.upToDate")}
-                </p>
-              ) : null}
-
-              {(!updater?.error || updater.update?.installMode === "manual") && !updater?.checking && updater?.update?.available ? (
-                <div className="mt-3 flex animate-page-in flex-wrap items-center gap-3 border-t border-border pt-3" key={`available-${updater.checkCount}`}>
-                  <div>
-                    <p className="text-sm font-medium text-primary">
-                      {t("about.updateAvailable")} · {updater.update.latestVersion ?? "—"}
-                      {typeof updater.update.size === "number" && updater.update.size > 0
-                        ? ` · ${formatBytes(updater.update.size)}`
-                        : ""}
-                    </p>
-                    {updater.update.installMode === "manual" ? (
-                      <div className="mt-1 max-w-2xl">
-                        <p className="text-sm text-muted-foreground" data-testid="manual-update-message">
-                          {t(updater.update.reason === "signatureKeyMismatch"
-                            ? "about.manualSignatureKeyMismatch"
-                            : updater.update.reason === "bootstrapRequired"
-                              ? "about.manualBootstrapRequired"
-                              : "about.manualUpdateRequired")}
-                        </p>
-                        {updater.update.detail?.message ? (
-                          <details className="mt-2" data-testid="update-error-details">
-                            <summary className="cursor-pointer text-xs text-muted-foreground">
-                              {t("about.updateDetails")}
-                            </summary>
-                            <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-border bg-muted/40 px-2.5 py-1.5 font-mono text-[12px] leading-snug text-muted-foreground">
-                              {updater.update.detail.message}
-                            </pre>
-                          </details>
-                        ) : null}
-                      </div>
-                    ) : null}
-                  </div>
-                  <div className="ml-auto">
-                    {updater.update.installMode === "manual" ? (
-                      <Button
-                        size="sm"
-                        variant="primary"
-                        data-testid="open-update-release"
-                        onClick={() => void openExternal(updater.update!.releasePage)}
-                      >
-                        <IconExternal />
-                        {t("about.openReleasePage")}
-                      </Button>
-                    ) : (
-                      <Button
-                        size="sm"
-                        variant="primary"
-                        data-testid="install-update"
-                        disabled={updater.installing}
-                        onClick={() => setUpdateDialogOpen(true)}
-                      >
-                        <IconDownload />
-                        {t("about.installAndRestart")}
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              ) : null}
-            </section>
+            <UpdateSection updater={updater} fallbackVersion={about?.app.version} onInstall={() => setUpdateDialogOpen(true)} />
 
             <Feedback />
 
