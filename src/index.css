@@ -645,3 +645,57 @@ html[data-titlebar="overlay"] .titlebar-inset {
     animation: none !important;
   }
 }
+
+/* Deploy sheet: the agent sits between before and after, with a slow current between them. */
+.plan-flow-orb {
+  animation: orb-float 2.8s ease-in-out infinite;
+}
+
+.plan-flow-arrow {
+  animation: arrow-nudge 1.6s ease-in-out infinite;
+}
+
+.plan-flow[data-ready] {
+  background-image: linear-gradient(100deg, transparent 30%, rgb(var(--primary) / 0.08) 50%, transparent 70%);
+  background-size: 250% 100%;
+  animation: flow-sweep 3.4s ease-in-out infinite;
+}
+
+@keyframes orb-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes arrow-nudge {
+  0%,
+  100% {
+    transform: translateX(-2px);
+    opacity: 0.5;
+  }
+  50% {
+    transform: translateX(3px);
+    opacity: 1;
+  }
+}
+
+@keyframes flow-sweep {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plan-flow-orb,
+  .plan-flow-arrow,
+  .plan-flow[data-ready] {
+    animation: none !important;
+  }
+}

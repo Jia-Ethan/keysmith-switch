@@ -295,7 +295,7 @@ describe("Workspace: Quick Deploy composer", () => {
     fillDraft("New title", "Be concise.");
     fireEvent.click(screen.getByTestId("quick-deploy-submit"));
     await waitFor(() => expect(planActivate).toHaveBeenCalledWith({ promptId: "existing-1", scope: "user", projectDir: undefined }));
-    expect(screen.getByRole("dialog", { name: "快速部署预览" })).toHaveTextContent("Original import");
+    expect(screen.getByRole("dialog", { name: "部署到 Codex" })).toHaveTextContent("Original import");
   });
 
   it("refreshes user status explicitly without a second initial read", async () => {
@@ -408,7 +408,7 @@ describe("Workspace: prompt library", () => {
     fireEvent.click(await screen.findByTestId("prompt-deploy-b"));
     await waitFor(() => expect(planActivate).toHaveBeenCalledWith({ promptId: "b", scope: "user" }));
     expect(createPastedPrompt).not.toHaveBeenCalled();
-    const dialog = await screen.findByRole("dialog", { name: "快速部署预览" });
+    const dialog = await screen.findByRole("dialog", { name: "部署到 Codex" });
     expect(dialog).toHaveTextContent("Spare");
     fireEvent.click(screen.getByTestId("quick-deploy-confirm"));
     await waitFor(() => expect(activate).toHaveBeenCalledWith("op-1"));

@@ -194,7 +194,7 @@ export function PromptDetailPage({
       <ConfirmDialog
         open={Boolean(plan)}
         wide
-        title={plan?.kind === "deactivate" ? t("plan.titleDeactivate") : t("plan.titleActivate")}
+        title={plan?.kind === "deactivate" ? t("plan.titleDeactivate", { tool: t(`nav.${tool}`) }) : t("plan.titleActivate")}
         description={currentDetailRef.current?.title}
         confirmLabel={plan?.kind === "deactivate" ? t("plan.confirmDeactivate") : t("plan.confirmActivate")}
         cancelLabel={t("common.cancel")}
@@ -209,7 +209,15 @@ export function PromptDetailPage({
         }}
         onConfirm={() => void confirmPlan()}
       >
-        {plan ? <PlanPreview envelope={plan.result.envelope} /> : null}
+        {plan ? (
+          <PlanPreview
+            envelope={plan.result.envelope}
+            tool={tool}
+            kind={plan.kind}
+            fromTitle={plan.kind === "deactivate" ? currentDetailRef.current?.title : null}
+            toTitle={currentDetailRef.current?.title}
+          />
+        ) : null}
         {planError ? (
           <div className="mt-3 rounded-2xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-destructive">
             <p className="font-medium">{t("plan.failed")}</p>

@@ -610,10 +610,10 @@ export function WorkspacePage({
         icon={<ToolLogo tool={tool} size={22} />}
         title={
           plan?.kind === "deactivate"
-            ? t("plan.titleDeactivate")
+            ? t("plan.titleDeactivate", { tool: toolName })
             : plan?.kind === "recover"
               ? t("operations.recover")
-              : t("quickDeploy.previewTitle")
+              : t("plan.titleDeploy", { tool: toolName })
         }
         description={[toolName, plan?.title].filter(Boolean).join(" · ")}
         confirmLabel={
@@ -639,7 +639,15 @@ export function WorkspacePage({
           ) : null
         }
       >
-        {plan ? <PlanPreview envelope={plan.result.envelope} /> : null}
+        {plan ? (
+          <PlanPreview
+            envelope={plan.result.envelope}
+            tool={tool}
+            kind={plan.kind}
+            fromTitle={deployedTitle}
+            toTitle={plan.title}
+          />
+        ) : null}
         {planError ? (
           <div className="mt-3">
             <Callout tone="danger" icon={<IconAlert size={14} />}>
