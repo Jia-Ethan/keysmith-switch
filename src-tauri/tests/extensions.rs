@@ -16,27 +16,12 @@ fn fixtures() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures")
 }
 
-fn test_key() -> String {
-    std::fs::read_to_string(fixtures().join("extensions/TEST_ONLY.key.pub"))
-        .unwrap()
-        .trim()
-        .to_string()
-}
-
-fn wrong_key() -> String {
-    std::fs::read_to_string(fixtures().join("updater/TEST_ONLY.wrong.key.pub"))
-        .unwrap()
-        .trim()
-        .to_string()
-}
-
 /// A source whose index is the fixture release `name` (v1, v2, v3).
 fn source(name: &str) -> Source {
     Source {
         id: "official".into(),
         index_url: format!("{OFFICIAL_URL_PREFIX}test-{name}/index.json"),
         url_prefix: OFFICIAL_URL_PREFIX.into(),
-        pubkey: test_key(),
         official: true,
     }
 }
@@ -113,11 +98,10 @@ fn prompts(store: &Store, tool: ToolKind) -> Vec<keysmith_switch_lib::models::Pr
 // ----- trust -----------------------------------------------------------------------
 
 #[test]
-fn a_verified_index_lists_packs_as_official() {
+fn a_fetched_index_lists_packs_as_official() {
     let (_tmp, store) = store();
     let fetch = Fixture::with(&["v1"]);
     let view = refresh(&store, &fetch, &source("v1"), "zh-CN");
-    assert!(view.configured);
     assert_eq!(view.error, None);
     assert_eq!(view.packs.len(), 1);
     let pack = &view.packs[0];
@@ -130,53 +114,27 @@ fn a_verified_index_lists_packs_as_official() {
 }
 
 #[test]
-fn a_source_without_a_key_never_touches_the_network() {
+fn an_index_that_is_not_json_is_refused() {
     let (_tmp, store) = store();
     let fetch = Fixture::with(&["v1"]);
-    let mut unconfigured = source("v1");
-    unconfigured.pubkey = String::new();
-    let view = refresh(&store, &fetch, &unconfigured, "en");
-    assert!(!view.configured);
-    assert!(view.packs.is_empty());
-    assert!(fetch.asked.borrow().is_empty());
-    let result = install(&store, &fetch, &unconfigured, "fixture.pack", "en");
-    assert!(matches!(result, Err(ExtError::NotConfigured)));
-    assert!(fetch.asked.borrow().is_empty());
-}
-
-#[test]
-fn an_index_signed_by_another_key_is_thrown_away() {
-    let (_tmp, store) = store();
-    let fetch = Fixture::with(&["v1"]);
-    let mut other = source("v1");
-    other.pubkey = wrong_key();
-    let view = refresh(&store, &fetch, &other, "en");
-    assert_eq!(view.error.as_deref(), Some("invalid-signature"));
-    assert!(view.packs.is_empty());
-}
-
-#[test]
-fn a_changed_index_fails_its_signature() {
-    let (_tmp, store) = store();
-    let fetch = Fixture::with(&["v1"]);
-    let url = Fixture::url("v1", "index.json");
-    let mut bytes = fetch.files.borrow()[&url].clone();
-    let at = bytes.iter().position(|b| *b == b'0').unwrap();
-    bytes[at] = b'9';
-    fetch.set(&url, bytes);
+    fetch.set(
+        &Fixture::url("v1", "index.json"),
+        b"<html>not an index</html>".to_vec(),
+    );
     let view = refresh(&store, &fetch, &source("v1"), "en");
-    assert_eq!(view.error.as_deref(), Some("invalid-signature"));
+    assert_eq!(view.error.as_deref(), Some("invalid"));
     assert!(view.packs.is_empty());
 }
 
 #[test]
-fn a_signature_from_another_release_does_not_carry_over() {
-    let (_tmp, store) = store();
-    let fetch = Fixture::with(&["v1", "v2"]);
-    let sig = fetch.files.borrow()[&Fixture::url("v2", "index.json.sig")].clone();
-    fetch.set(&Fixture::url("v1", "index.json.sig"), sig);
-    let view = refresh(&store, &fetch, &source("v1"), "en");
-    assert_eq!(view.error.as_deref(), Some("invalid-signature"));
+fn the_official_source_is_a_fixed_https_address_in_the_publishers_repo() {
+    let official = Source::official();
+    assert!(official.official);
+    assert!(official
+        .index_url
+        .starts_with("https://github.com/Jia-Ethan/keysmith-switch-extensions/"));
+    assert_eq!(official.url_prefix, OFFICIAL_URL_PREFIX);
+    assert!(official.url_prefix.starts_with("https://"));
 }
 
 #[test]
@@ -210,9 +168,7 @@ fn a_damaged_cache_is_ignored_not_trusted() {
         .paths()
         .home
         .join("extensions/cache/official.index.json");
-    let mut bytes = std::fs::read(&cache).unwrap();
-    bytes[10] ^= 0x01;
-    std::fs::write(&cache, bytes).unwrap();
+    std::fs::write(&cache, "{ not an index").unwrap();
     assert!(state_view(&store, &source("v1"), "en").packs.is_empty());
 }
 
@@ -684,12 +640,4 @@ fn packs_hosted_outside_the_sources_own_address_are_ignored() {
     let view = refresh(&store, &fetch, &pinned, "en");
     assert_eq!(view.error, None);
     assert!(view.packs.is_empty());
-}
-
-#[test]
-fn the_official_source_never_trusts_the_public_test_key() {
-    // The test key is committed on purpose, so anyone can sign with it. An app that
-    // trusted it would trust everyone.
-    assert_ne!(Source::official().pubkey, test_key());
-    assert!(Source::official().official);
 }

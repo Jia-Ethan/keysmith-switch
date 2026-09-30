@@ -31,7 +31,6 @@ const base: ExtensionPack = {
   updateAvailable: false,
 };
 const view = (packs: ExtensionPack[], over: Partial<ExtensionsView> = {}): ExtensionsView => ({
-  configured: true,
   packs,
   updates: packs.filter((p) => p.updateAvailable).length,
   error: null,
@@ -132,17 +131,11 @@ describe("ExtensionsPage", () => {
 
   it("shows why a look failed, and keeps the packs it already had", async () => {
     extensionsState.mockResolvedValue(view([base]));
-    extensionsRefresh.mockResolvedValue(view([base], { error: "invalid-signature" }));
+    extensionsRefresh.mockResolvedValue(view([base], { error: "too-new" }));
     renderPage(true);
     fireEvent.click(await screen.findByTestId("extensions-refresh"));
-    expect(await screen.findByTestId("extensions-error")).toHaveTextContent("不是官方发布的");
+    expect(await screen.findByTestId("extensions-error")).toHaveTextContent("需要更新 App");
     expect(screen.getByTestId("extension-keysmith.example")).toBeInTheDocument();
-  });
-
-  it("says plainly when the official source is not open yet", async () => {
-    extensionsState.mockResolvedValue(view([], { configured: false }));
-    renderPage(true);
-    expect(await screen.findByTestId("extensions-unconfigured")).toHaveTextContent("还没有开放");
   });
 
   it("shows a friendly error and no change when an install fails", async () => {

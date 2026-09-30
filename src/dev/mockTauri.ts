@@ -86,7 +86,7 @@ const extPacks = [
 ];
 function extView() {
   const packs = extPacks.map((p) => ({ ...p, updateAvailable: p.compatible && p.installedVersion !== null && p.installedVersion !== p.version }));
-  return { configured: true, packs, updates: packs.filter((p) => p.updateAvailable).length, error: null, checkedAt: now() };
+  return { packs, updates: packs.filter((p) => p.updateAvailable).length, error: null, checkedAt: now() };
 }
 
 const delay = <T,>(value: T, ms = 260) => new Promise<T>((resolve) => setTimeout(() => resolve(value), ms));

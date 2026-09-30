@@ -396,8 +396,6 @@ export interface ExtensionPack {
 }
 
 export interface ExtensionsView {
-  /** False until the official source has a signing key; nothing is read then. */
-  configured: boolean;
   packs: ExtensionPack[];
   updates: number;
   /** A code such as "offline" when the last look failed; the packs are then the cached ones. */

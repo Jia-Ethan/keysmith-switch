@@ -29,7 +29,7 @@ const pack = {
   installedVersion: "0.1.0",
   updateAvailable: true,
 };
-const withUpdate: ExtensionsView = { configured: true, packs: [pack], updates: 1, error: null, checkedAt: null };
+const withUpdate: ExtensionsView = { packs: [pack], updates: 1, error: null, checkedAt: null };
 const current: ExtensionsView = { ...withUpdate, packs: [{ ...pack, installedVersion: "0.2.0", updateAvailable: false }], updates: 0 };
 
 function Harness() {

@@ -105,14 +105,7 @@ export function ExtensionsPage({ toast }: { toast: ToastApi }) {
           </div>
         ) : null}
 
-        {ext.enabled && view && !view.configured ? (
-          <div className="surface-card animate-page-in px-6 py-10 text-center" data-testid="extensions-unconfigured">
-            <p className="text-[15px] font-semibold text-foreground">{t("extensions.notConfigured")}</p>
-            <p className="mt-1 text-[13px] text-muted-foreground">{t("extensions.notConfiguredHint")}</p>
-          </div>
-        ) : null}
-
-        {ext.enabled && view?.configured && view.error ? (
+        {ext.enabled && view?.error ? (
           <Callout tone={view.error === "offline" ? "info" : "warn"} icon={<IconAlert size={14} />}>
             <span data-testid="extensions-error">{t(`extensions.err.${view.error}`, { defaultValue: t("extensions.err.default") })}</span>
           </Callout>
@@ -130,7 +123,7 @@ export function ExtensionsPage({ toast }: { toast: ToastApi }) {
           </ul>
         ) : null}
 
-        {ext.enabled && view?.configured && view.packs.length === 0 && !view.error ? (
+        {ext.enabled && view && view.packs.length === 0 && !view.error ? (
           <div className="surface-card px-6 py-10 text-center" data-testid="extensions-empty">
             <p className="text-[15px] font-semibold text-foreground">{t("extensions.empty")}</p>
             <p className="mt-1 text-[13px] text-muted-foreground">{t("extensions.emptyHint")}</p>
