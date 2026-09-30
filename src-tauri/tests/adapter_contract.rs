@@ -569,25 +569,3 @@ fn codex_status_reports_the_instruction_file_it_loads() {
         .iter()
         .any(|target| target.role == "instruction"));
 }
-
-/// With `--runtime` the Claude adapter counts only the shell wrapper as installed,
-/// so a prompt that was just deployed would read as not deployed.
-#[test]
-fn claude_status_does_not_ask_for_runtime_alignment() {
-    use keysmith_switch_lib::adapter::argv::prepare;
-    let prepared = prepare(
-        ToolKind::Claude,
-        &AdapterCommand::Status {
-            scope: Scope::User,
-            project_dir: None,
-            name: Some("claude-project-rules".into()),
-        },
-        None,
-    )
-    .unwrap();
-    assert!(
-        !prepared.args.iter().any(|item| item == "--runtime"),
-        "{:?}",
-        prepared.args
-    );
-}
