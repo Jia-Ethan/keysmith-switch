@@ -325,6 +325,37 @@ export function WorkspacePage({
     }
   };
 
+  /**
+   * Edit what the agent is running. A library prompt opens directly; a prompt the
+   * library does not have is read back from the machine first, and when that is
+   * not possible the composer opens so it can be pasted in.
+   */
+  const editLivePrompt = async () => {
+    if (busy) return;
+    const openEditor = (promptId: string) =>
+      onNavigate?.({ kind: "prompt-edit", tool, promptId, creating: false, scope: "user", projectDir: "" });
+    const libraryId = activeIds?.find((id) => prompts.some((item) => item.id === id));
+    if (libraryId) {
+      openEditor(libraryId);
+      return;
+    }
+    setBusy(true);
+    setPending("adopt");
+    try {
+      const detail = await api.adoptLivePrompt({ tool, title: t("prompts.adoptTitle", { tool: toolName }) });
+      // The library now names what the machine runs; the hero must not wait for a re-read.
+      applyHarnessOutcome(tool, "deploy", { id: detail.id, title: detail.title });
+      openEditor(detail.id);
+    } catch {
+      toast?.err(t("prompts.adoptFailed"));
+      setComposerMessage(null);
+      setComposerOpen(true);
+    } finally {
+      setBusy(false);
+      setPending(null);
+    }
+  };
+
   const openRemovePlan = async () => {
     if (busy) return;
     setBusy(true);
@@ -440,6 +471,8 @@ export function WorkspacePage({
           onRefresh={() => void refresh()}
           onRemove={() => void openRemovePlan()}
           removeDisabled={locked}
+          onEdit={() => void editLivePrompt()}
+          editing={pending === "adopt"}
         />
 
         <ZCodeBanner tool={toolInfo} />
@@ -543,6 +576,8 @@ export function WorkspacePage({
             loading={promptsLoading}
             filtered={filtered}
             unrecordedLive={unrecordedLive}
+            onAdoptLive={() => void editLivePrompt()}
+            adoptingLive={pending === "adopt"}
             onSelect={selectPrompt}
             onDeploy={(id) => void deployFromLibrary(id)}
             deployDisabled={locked}

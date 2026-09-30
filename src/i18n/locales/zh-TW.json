@@ -77,8 +77,8 @@
     "active": "目前部署",
     "inactive": "提示詞庫",
     "noneActive": "目前沒有啟用的提示詞",
-    "liveUnrecorded": "機器上的提示詞（未收錄）",
-    "liveUnrecordedHint": "這條提示詞正在生效，但來源未記錄，也不在提示詞庫裡。",
+    "liveUnrecorded": "現在正在用的提示詞",
+    "liveUnrecordedHint": "這條提示詞已經在生效，但還沒放進你的提示詞庫。收入庫後就能編輯，也能保留歷史版本。",
     "noneInactive": "—",
     "noResults": "沒有符合的提示詞",
     "noResultsHint": "嘗試調整搜尋或篩選條件",
@@ -122,7 +122,11 @@
     "noExcerpt": "暫無摘要",
     "deploy": "部署",
     "deployThis": "部署這條提示詞",
-    "searchPlaceholder": "搜尋標題、內容或標籤…"
+    "searchPlaceholder": "搜尋標題、內容或標籤…",
+    "adoptAndEdit": "收入庫並編輯",
+    "adoptTitle": "{{tool}} 現有提示詞",
+    "adoptFailed": "沒能自動讀取這條提示詞。你可以手動貼上，之後就能編輯了。",
+    "savedRedeploy": "已儲存。重新部署後，修改才會在 {{tool}} 裡生效。"
   },
   "plan": {
     "titleActivate": "啟用預覽",
@@ -394,6 +398,7 @@
     "livePrompt": "正在使用",
     "livePromptUnknown": "機器上現有的提示詞",
     "emptyTitle": "還沒有部署提示詞",
-    "emptyHint": "從下方挑一條，或新建一條，一鍵就能用上。"
+    "emptyHint": "從下方挑一條，或新建一條，一鍵就能用上。",
+    "edit": "編輯"
   }
 }

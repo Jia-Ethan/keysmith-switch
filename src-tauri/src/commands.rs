@@ -610,6 +610,17 @@ pub async fn harness_state(state: State<'_, AppState>, tool: String) -> Result<H
 }
 
 #[tauri::command(rename_all = "camelCase")]
+pub async fn adopt_live_prompt(
+    state: State<'_, AppState>,
+    tool: String,
+    title: String,
+) -> Result<UiPromptDetail> {
+    let tool = parse_tool(&tool)?;
+    let id = harness::adopt_live_prompt(&state.store, tool, &title, &opts()).await?;
+    detail_from_store(&state.store, &id)
+}
+
+#[tauri::command(rename_all = "camelCase")]
 pub async fn remove_harness(state: State<'_, AppState>, tool: String) -> Result<HarnessOutcome> {
     harness::remove_harness(&state.store, parse_tool(&tool)?, &opts()).await
 }

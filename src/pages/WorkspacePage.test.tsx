@@ -16,6 +16,7 @@ const listActivations = vi.fn();
 const listOperations = vi.fn();
 const recoverTool = vi.fn();
 const confirmRecover = vi.fn();
+const adoptLivePrompt = vi.fn();
 
 vi.mock("../components/MarkdownEditor", () => ({
   MarkdownEditor: ({ value, onChange, ariaLabel }: { value: string; onChange: (value: string) => void; ariaLabel?: string }) => (
@@ -37,6 +38,7 @@ vi.mock("../api", () => ({
   listOperations: (...args: unknown[]) => listOperations(...args),
   recoverTool: (...args: unknown[]) => recoverTool(...args),
   confirmRecover: (...args: unknown[]) => confirmRecover(...args),
+  adoptLivePrompt: (...args: unknown[]) => adoptLivePrompt(...args),
 }));
 
 const envelope = {
@@ -455,6 +457,49 @@ describe("Workspace: prompt library", () => {
     const card = await screen.findByTestId("prompt-live-unrecorded");
     expect(card).toHaveTextContent("部署中");
     expect(screen.queryByTestId("prompt-list-empty")).not.toBeInTheDocument();
+  });
+
+  it("takes an unrecorded live prompt into the library and opens it in the editor", async () => {
+    getHarnessState.mockResolvedValue({ tool: "codex", deployed: true, error: null });
+    listPrompts.mockResolvedValue({ prompts: [] });
+    adoptLivePrompt.mockResolvedValue({ id: "adopted-1", title: "Codex 现有提示词" });
+    const onNavigate = vi.fn();
+    await renderPage({ onNavigate });
+    fireEvent.click(await screen.findByTestId("prompt-live-adopt"));
+    await waitFor(() => expect(adoptLivePrompt).toHaveBeenCalledWith({ tool: "codex", title: "Codex 现有提示词" }));
+    await waitFor(() =>
+      expect(onNavigate).toHaveBeenCalledWith({
+        kind: "prompt-edit",
+        tool: "codex",
+        promptId: "adopted-1",
+        creating: false,
+        scope: "user",
+        projectDir: "",
+      }),
+    );
+  });
+
+  it("opens the composer to paste the prompt when it cannot be read back", async () => {
+    getHarnessState.mockResolvedValue({ tool: "codex", deployed: true, error: null });
+    listPrompts.mockResolvedValue({ prompts: [] });
+    adoptLivePrompt.mockRejectedValue(new Error("the live prompt cannot be read back"));
+    const toast = { ok: vi.fn(), err: vi.fn(), info: vi.fn(), toasts: [], dismiss: vi.fn() };
+    const onNavigate = vi.fn();
+    await renderPage({ onNavigate, toast: toast as never });
+    fireEvent.click(await screen.findByTestId("hero-edit"));
+    await waitFor(() => expect(toast.err).toHaveBeenCalledWith(expect.stringContaining("手动粘贴")));
+    expect(await screen.findByTestId("quick-deploy-panel")).toBeInTheDocument();
+    expect(onNavigate).not.toHaveBeenCalled();
+  });
+
+  it("edits a live library prompt straight from the hero", async () => {
+    getHarnessState.mockResolvedValue({ tool: "codex", deployed: true, error: null, promptId: "b", promptTitle: "Spare" });
+    listPrompts.mockResolvedValue({ prompts: [prompt({ id: "b", title: "Spare" })] });
+    const onNavigate = vi.fn();
+    await renderPage({ onNavigate });
+    fireEvent.click(await screen.findByTestId("hero-edit"));
+    expect(adoptLivePrompt).not.toHaveBeenCalled();
+    expect(onNavigate).toHaveBeenCalledWith(expect.objectContaining({ kind: "prompt-edit", promptId: "b", creating: false }));
   });
 
   it("shows no live card when the live prompt is in the library or nothing is deployed", async () => {

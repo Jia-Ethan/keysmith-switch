@@ -363,3 +363,40 @@ async fn zcode_on_windows_fails_without_calling_the_sidecar() {
         .unwrap()
         .is_empty());
 }
+
+#[tokio::test]
+async fn adopting_refuses_text_that_does_not_match_the_live_fingerprint() {
+    // The fixture adapters report canned fingerprints, so no file hashes to them:
+    // nothing may be adopted on a guess.
+    let (_tmp, store, opts) = setup(ToolKind::Claude);
+    let outcome = deploy_harness_with(&store, ToolKind::Claude, &opts, Some("live body\n".into()))
+        .await
+        .unwrap();
+    assert!(outcome.ok, "{outcome:?}");
+    keysmith_switch_lib::ops::delete_prompt(&store, &outcome.prompt_id.unwrap()).unwrap();
+
+    let before = harness_state(&store, ToolKind::Claude, &opts)
+        .await
+        .unwrap();
+    assert!(before.deployed && before.prompt_id.is_none(), "{before:?}");
+
+    let result =
+        keysmith_switch_lib::harness::adopt_live_prompt(&store, ToolKind::Claude, "x", &opts).await;
+    assert!(result.is_err());
+    assert!(store
+        .list_prompts(ToolKind::Claude, None, None, PromptSort::Updated)
+        .unwrap()
+        .is_empty());
+}
+
+#[tokio::test]
+async fn adopting_without_a_deployment_is_refused() {
+    let (_tmp, store, opts) = setup(ToolKind::Claude);
+    let result =
+        keysmith_switch_lib::harness::adopt_live_prompt(&store, ToolKind::Claude, "x", &opts).await;
+    assert!(result.is_err());
+    assert!(store
+        .list_prompts(ToolKind::Claude, None, None, PromptSort::Updated)
+        .unwrap()
+        .is_empty());
+}

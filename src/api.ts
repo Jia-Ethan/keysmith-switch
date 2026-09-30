@@ -184,6 +184,11 @@ export function getHarnessState(tool: ToolId): Promise<HarnessState> {
   return call("harness_state", { tool });
 }
 
+/** Take the prompt live on the machine into the library, so it can be edited. */
+export function adoptLivePrompt(input: { tool: ToolId; title: string }): Promise<PromptDetail> {
+  return call("adopt_live_prompt", input);
+}
+
 export function removeHarness(tool: ToolId): Promise<HarnessOutcome> {
   return call("remove_harness", { tool });
 }

@@ -95,6 +95,20 @@ async function handle(cmd: string, args: Record<string, any> = {}): Promise<unkn
       const live = store.live[args.tool as ToolId];
       return delay({ tool: args.tool, deployed: Boolean(live), error: null, promptId: live?.id ?? null, promptTitle: live?.id ? live.title : null }, 380);
     }
+    case "adopt_live_prompt": {
+      const live = store.live[args.tool as ToolId];
+      if (!live || live.id) throw new Error("the live prompt cannot be read back");
+      const created: PromptDetail = { id: `p${store.prompts.length + 1}`, tool: args.tool, title: args.title, content: live.body, tags: ["imported"], active: false, lastUsedAt: null, updatedAt: now(), createdAt: now(), excerpt: live.body.slice(0, 60) };
+      store.prompts.push(created);
+      live.id = created.id;
+      live.title = created.title;
+      return delay(created, 420);
+    }
+    case "update_prompt": {
+      const prompt = store.prompts.find((p) => p.id === args.id)!;
+      Object.assign(prompt, { title: args.title ?? prompt.title, content: args.content ?? prompt.content, updatedAt: now() });
+      return prompt;
+    }
     case "list_prompts": {
       let list = store.prompts.filter((p) => p.tool === args.tool);
       if (args.query) list = list.filter((p) => (p.title + p.content).includes(args.query));

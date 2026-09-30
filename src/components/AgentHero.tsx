@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { ToolId } from "../types";
-import { IconAlert, IconPower, IconRefresh } from "./icons";
+import { IconAlert, IconPencil, IconPower, IconRefresh } from "./icons";
 import { ToolLogo } from "./ToolLogos";
 import { Button, IconButton, cx } from "./ui";
 
@@ -27,6 +27,8 @@ export function AgentHero({
   onRefresh,
   onRemove,
   removeDisabled,
+  onEdit,
+  editing = false,
 }: {
   tool: ToolId;
   name: string;
@@ -44,6 +46,9 @@ export function AgentHero({
   onRefresh: () => void;
   onRemove: () => void;
   removeDisabled: boolean;
+  /** Open the live prompt in the editor. */
+  onEdit?: () => void;
+  editing?: boolean;
 }) {
   const { t } = useTranslation();
   const deployed = machine === "deployed";
@@ -154,6 +159,19 @@ export function AgentHero({
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
+          {showLive && onEdit ? (
+            <Button
+              size="md"
+              variant="outline"
+              loading={editing}
+              disabled={removeDisabled && !editing}
+              data-testid="hero-edit"
+              onClick={onEdit}
+            >
+              <IconPencil size={14} />
+              {t("hero.edit")}
+            </Button>
+          ) : null}
           {deployed ? (
             <Button
               size="md"

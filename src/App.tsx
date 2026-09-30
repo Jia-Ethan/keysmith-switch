@@ -11,6 +11,7 @@ import { UpdateProvider } from "./components/UpdateProvider";
 import { useSettings } from "./hooks/useSettings";
 import { useTheme } from "./hooks/useTheme";
 import { useToasts } from "./hooks/useToasts";
+import { getHarnessStatus } from "./lib/harnessState";
 import { isTauriRuntime } from "./lib/runtime";
 import { AdvancedPage } from "./pages/AdvancedPage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -164,6 +165,10 @@ export function App() {
             onSaved={(id: string) => {
               setDirty(false);
               setLibraryEpoch((value) => value + 1);
+              // Saving does not touch the machine: say so when the edited prompt is the live one.
+              if (getHarnessStatus(visiblePage.tool)?.promptId === id) {
+                toast.info(t("prompts.savedRedeploy", { tool: t(`nav.${visiblePage.tool}`) }));
+              }
               setPage({
                 kind: "prompt-view",
                 tool: visiblePage.tool,
