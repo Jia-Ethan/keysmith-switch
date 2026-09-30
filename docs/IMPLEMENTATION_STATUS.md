@@ -1,8 +1,8 @@
 # Keysmith Switch 实现状态
 
-更新日期：2026-09-29（Asia/Shanghai）
+更新日期：2026-09-30（Asia/Shanghai）
 
-阶段：公开稳定版为 [`v0.2.1`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.2.1)，含 macOS Apple Silicon 与 Windows x64 安装包。`v0.1.9`（Quick Deploy，[#28](https://github.com/Jia-Ethan/keysmith-switch/pull/28)）已于 2026-09-28 发布；`v0.2.0`（界面改版，[#30](https://github.com/Jia-Ethan/keysmith-switch/pull/30)）于 2026-09-29 发布；`v0.2.1`（反馈改为预填 issue 表单、设置图标换成齿轮，[#34](https://github.com/Jia-Ethan/keysmith-switch/pull/34)）同日发布。此文下方 `v0.1.3`／`v0.1.4` 的验证记录是历史记录。
+阶段：公开稳定版为 [`v0.2.2`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.2.2)，含 macOS Apple Silicon 与 Windows x64 安装包。`v0.1.9`（Quick Deploy，[#28](https://github.com/Jia-Ethan/keysmith-switch/pull/28)）已于 2026-09-28 发布；`v0.2.0`（界面改版，[#30](https://github.com/Jia-Ethan/keysmith-switch/pull/30)）于 2026-09-29 发布；`v0.2.1`（反馈改为预填 issue 表单、设置图标换成齿轮，[#34](https://github.com/Jia-Ethan/keysmith-switch/pull/34)）同日发布；`v0.2.2`（显示当前生效的提示词、去掉范围选择与键盘快捷键、补全操作反馈，[#37](https://github.com/Jia-Ethan/keysmith-switch/pull/37)）于 2026-09-30 发布。此文下方 `v0.1.3`／`v0.1.4` 的验证记录是历史记录。
 
 ## 产品状态
 
