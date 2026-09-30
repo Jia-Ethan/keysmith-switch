@@ -8,7 +8,6 @@ import { PromptDetailPage } from "./components/PromptDetailPage";
 import { PromptEditPage } from "./components/PromptEditPage";
 import { ToastHost } from "./components/ToastHost";
 import { UpdateProvider } from "./components/UpdateProvider";
-import { useHotkeys } from "./hooks/useHotkeys";
 import { useSettings } from "./hooks/useSettings";
 import { useTheme } from "./hooks/useTheme";
 import { useToasts } from "./hooks/useToasts";
@@ -18,7 +17,6 @@ import { SettingsPage } from "./pages/SettingsPage";
 import { WorkspacePage } from "./pages/WorkspacePage";
 import * as api from "./api";
 import type { FirstRunReport, PromptDetail, ToolId } from "./types";
-import { TOOL_IDS } from "./types";
 
 export function App() {
   const { t } = useTranslation();
@@ -93,18 +91,6 @@ export function App() {
     };
   }, [dirty, t]);
 
-  const rememberProject = async (dir: string) => {
-    const dirs = [dir, ...settingsState.settings.recentProjectDirs.filter((item) => item !== dir)].slice(
-      0,
-      12,
-    );
-    try {
-      await settingsState.save({ recentProjectDirs: dirs });
-    } catch {
-      settingsState.setSettings({ ...settingsState.settings, recentProjectDirs: dirs });
-    }
-  };
-
   const navigate = useCallback(
     (next: AppPage) => {
       if (dirty && !window.confirm(t("unsaved.leave"))) return;
@@ -112,15 +98,6 @@ export function App() {
     },
     [dirty, t],
   );
-
-  useHotkeys([
-    ...TOOL_IDS.map((tool, index) => ({
-      key: String(index + 1),
-      mod: true,
-      handler: () => navigate({ kind: "tool", tool }),
-    })),
-    { key: ",", mod: true, handler: () => navigate({ kind: "settings" }) },
-  ]);
 
   return (
     <UpdateProvider
@@ -145,7 +122,6 @@ export function App() {
               settings={settingsState.settings}
               toast={toast}
               onNavigate={navigate}
-              onRememberProject={(dir) => void rememberProject(dir)}
               onDirtyChange={setDirty}
               libraryEpoch={libraryEpoch}
             />

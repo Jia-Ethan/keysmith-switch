@@ -211,19 +211,19 @@ describe("Workspace: Quick Deploy composer", () => {
     expect(screen.getByRole("textbox", { name: "提示词内容" })).toHaveValue("");
   });
 
-  it("previews with the mod+Enter shortcut from inside the composer", async () => {
-    await renderPage();
-    const panel = await openComposer();
-    fillDraft("My rules", "Be concise.");
-    fireEvent.keyDown(within(panel).getByRole("textbox", { name: "提示词内容" }), { key: "Enter", ctrlKey: true });
-    await waitFor(() => expect(planActivate).toHaveBeenCalledTimes(1));
-  });
-
-  it("opens the composer with mod+N", async () => {
+  it("has no keyboard shortcuts for the composer", async () => {
     await renderPage();
     await waitFor(() => expect(screen.getByTestId("quick-deploy-open")).toBeEnabled());
     fireEvent.keyDown(window, { key: "n", ctrlKey: true });
-    expect(await screen.findByTestId("quick-deploy-panel")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "n", metaKey: true });
+    expect(screen.queryByTestId("quick-deploy-panel")).not.toBeInTheDocument();
+
+    const panel = await openComposer();
+    fillDraft("My rules", "Be concise.");
+    fireEvent.keyDown(within(panel).getByRole("textbox", { name: "提示词内容" }), { key: "Enter", ctrlKey: true });
+    fireEvent.keyDown(within(panel).getByRole("textbox", { name: "提示词内容" }), { key: "Enter", metaKey: true });
+    expect(planActivate).not.toHaveBeenCalled();
+    expect(within(panel).getByTestId("quick-deploy-submit")).not.toHaveTextContent("↵");
   });
 
   it("shows remove after a deployed state and uses the standard deactivation plan", async () => {
@@ -309,16 +309,50 @@ describe("Workspace: Quick Deploy composer", () => {
     expect(await screen.findByTestId("quick-deploy-remove")).toBeInTheDocument();
   });
 
-  it("supports project scope with an explicit directory", async () => {
+  it("deploys machine-wide and shows no scope controls, even for Claude", async () => {
     await renderPage({ tool: "claude" });
-    await waitFor(() => expect(screen.getByRole("radiogroup", { name: "当前目标范围" })).toBeInTheDocument());
-    fireEvent.click(screen.getByRole("radio", { name: "项目" }));
-    expect(screen.getByTestId("agent-status")).toHaveTextContent("请选择项目目录");
-    fireEvent.change(screen.getByTestId("scope-project-dir"), { target: { value: "/tmp/example" } });
+    await waitFor(() => expect(screen.getByTestId("agent-status")).toHaveTextContent("当前未部署"));
+    expect(screen.queryByRole("radiogroup", { name: "当前目标范围" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("scope-project-dir")).not.toBeInTheDocument();
+    expect(screen.getByTestId("agent-hero")).not.toHaveTextContent("范围");
     await openComposer();
-    fillDraft("Project rules", "Use tests.");
+    expect(screen.getByTestId("quick-deploy-panel")).not.toHaveTextContent("范围");
+    fillDraft("Global rules", "Use tests.");
     fireEvent.click(screen.getByTestId("quick-deploy-submit"));
-    await waitFor(() => expect(planActivate).toHaveBeenCalledWith({ promptId: "prompt-1", scope: "project", projectDir: "/tmp/example" }));
+    await waitFor(() => expect(planActivate).toHaveBeenCalledWith({ promptId: "prompt-1", scope: "user" }));
+    expect(toolStatus).not.toHaveBeenCalled();
+  });
+
+  it("shows the remove button as working while its plan is prepared", async () => {
+    getHarnessState.mockResolvedValue({ tool: "codex", deployed: true, error: null, promptId: "a", promptTitle: "Live one" });
+    let release!: (value: unknown) => void;
+    planDeactivate.mockReturnValue(new Promise((resolve) => { release = resolve; }));
+    await renderPage();
+    const remove = await screen.findByTestId("quick-deploy-remove");
+    expect(remove).not.toHaveAttribute("aria-busy");
+    fireEvent.click(remove);
+    await waitFor(() => expect(screen.getByTestId("quick-deploy-remove")).toHaveAttribute("aria-busy", "true"));
+    fireEvent.click(screen.getByTestId("quick-deploy-remove"));
+    expect(planDeactivate).toHaveBeenCalledTimes(1);
+    await act(async () => release({ operationId: "op-2", envelope: { ...envelope, command: "plan-deactivate" } }));
+    expect(await screen.findByTestId("quick-deploy-confirm")).toBeInTheDocument();
+    expect(screen.getByTestId("quick-deploy-remove")).not.toHaveAttribute("aria-busy");
+  });
+
+  it("confirms a removal with its own quiet animation and clears the live prompt", async () => {
+    getHarnessState.mockResolvedValue({ tool: "codex", deployed: true, error: null, promptId: "a", promptTitle: "Live one" });
+    listPrompts.mockResolvedValue({ prompts: [prompt({ id: "a", title: "Live one" })] });
+    await renderPage();
+    expect(await screen.findByTestId("agent-deployed-title")).toHaveTextContent("Live one");
+    fireEvent.click(await screen.findByTestId("quick-deploy-remove"));
+    fireEvent.click(await screen.findByTestId("quick-deploy-confirm"));
+    await waitFor(() => expect(deactivate).toHaveBeenCalledWith("op-2"));
+    const done = await screen.findByTestId("deploy-celebration");
+    expect(done).toHaveAttribute("data-variant", "removed");
+    expect(done).toHaveTextContent("已从 Codex 移除");
+    await waitFor(() => expect(screen.getByTestId("workspace-page")).toHaveAttribute("data-machine", "undeployed"));
+    expect(screen.queryByTestId("agent-deployed-title")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("quick-deploy-remove")).not.toBeInTheDocument();
   });
 });
 
@@ -372,7 +406,7 @@ describe("Workspace: prompt library", () => {
     listPrompts.mockResolvedValue({ prompts: [prompt({ id: "b", title: "Spare" })] });
     await renderPage();
     fireEvent.click(await screen.findByTestId("prompt-deploy-b"));
-    await waitFor(() => expect(planActivate).toHaveBeenCalledWith({ promptId: "b", scope: "user", projectDir: undefined }));
+    await waitFor(() => expect(planActivate).toHaveBeenCalledWith({ promptId: "b", scope: "user" }));
     expect(createPastedPrompt).not.toHaveBeenCalled();
     const dialog = await screen.findByRole("dialog", { name: "快速部署预览" });
     expect(dialog).toHaveTextContent("Spare");
@@ -382,16 +416,49 @@ describe("Workspace: prompt library", () => {
     expect(await screen.findByTestId("deploy-celebration")).toHaveTextContent("Spare");
   });
 
-  it("filters by tag chips and focuses search with /", async () => {
+  it("filters by tag chips and has no slash shortcut for search", async () => {
     listPrompts.mockResolvedValue({ prompts: [prompt({ id: "a", tags: ["ops"] })] });
     await renderPage();
     const chip = await screen.findByRole("button", { name: "#ops" });
     fireEvent.click(chip);
     await waitFor(() => expect(listPrompts).toHaveBeenLastCalledWith({ tool: "codex", query: undefined, tag: "ops", sort: "lastUsed" }));
     expect(chip).toHaveAttribute("aria-pressed", "true");
-    act(() => {
-      fireEvent.keyDown(window, { key: "/" });
-    });
-    expect(screen.getByTestId("prompt-search")).toHaveFocus();
+    fireEvent.keyDown(window, { key: "/" });
+    expect(screen.getByTestId("prompt-search")).not.toHaveFocus();
+  });
+
+  it("names the live prompt from the machine read when no activation record exists", async () => {
+    getHarnessState.mockResolvedValue({ tool: "codex", deployed: true, error: null, promptId: "b", promptTitle: "Spare" });
+    listPrompts.mockResolvedValue({ prompts: [prompt({ id: "a", title: "Other" }), prompt({ id: "b", title: "Spare" })] });
+    listActivations.mockResolvedValue({ activations: [] });
+    await renderPage();
+    expect(await screen.findByTestId("agent-deployed-title")).toHaveTextContent("Spare");
+    const liveGroup = (await screen.findByText("当前部署")).closest("section");
+    expect(liveGroup).toContainElement(screen.getByTestId("prompt-item-b"));
+    expect(screen.queryByTestId("prompt-deploy-b")).not.toBeInTheDocument();
+    expect(screen.getByTestId("prompt-deploy-a")).toBeInTheDocument();
+  });
+
+  it("says so when something is deployed but no library prompt can be matched", async () => {
+    getHarnessState.mockResolvedValue({ tool: "codex", deployed: true, error: null });
+    listPrompts.mockResolvedValue({ prompts: [prompt({ id: "a", title: "Other" })] });
+    await renderPage();
+    await waitFor(() => expect(screen.getByTestId("agent-status")).toHaveTextContent("当前已部署"));
+    expect(await screen.findByTestId("agent-deployed-unknown")).toHaveTextContent("来源未记录");
+    expect(screen.queryByTestId("agent-deployed-title")).not.toBeInTheDocument();
+  });
+
+  it("shows the deploy button as working while its plan is prepared", async () => {
+    listPrompts.mockResolvedValue({ prompts: [prompt({ id: "b", title: "Spare" })] });
+    let release!: (value: unknown) => void;
+    planActivate.mockReturnValue(new Promise((resolve) => { release = resolve; }));
+    await renderPage();
+    fireEvent.click(await screen.findByTestId("prompt-deploy-b"));
+    await waitFor(() => expect(screen.getByTestId("prompt-deploy-b")).toHaveAttribute("aria-busy", "true"));
+    fireEvent.click(screen.getByTestId("prompt-deploy-b"));
+    expect(planActivate).toHaveBeenCalledTimes(1);
+    await act(async () => release({ operationId: "op-1", envelope }));
+    expect(await screen.findByTestId("quick-deploy-confirm")).toBeInTheDocument();
+    expect(screen.getByTestId("prompt-deploy-b")).not.toHaveAttribute("aria-busy");
   });
 });

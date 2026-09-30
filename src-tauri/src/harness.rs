@@ -57,6 +57,42 @@ pub struct HarnessState {
     pub tool: ToolKind,
     pub deployed: bool,
     pub error: Option<String>,
+    /// The library prompt the machine is running, when it can be identified.
+    #[serde(default)]
+    pub prompt_id: Option<String>,
+    #[serde(default)]
+    pub prompt_title: Option<String>,
+}
+
+/// Which library prompt is live on the machine for `tool`.
+///
+/// The activation record is authoritative. It can be missing when the machine
+/// was deployed by an older version or the index was rebuilt from the markdown
+/// library, so the adapter's content fingerprint is then matched against the
+/// library instead of leaving a live deployment unnamed.
+fn deployed_prompt(
+    store: &Store,
+    tool: ToolKind,
+    fingerprint: Option<&str>,
+) -> Option<(String, String)> {
+    if let Ok(Some(activation)) = store.find_activation(tool, Scope::User, None) {
+        if activation.status == ToolStatus::Active {
+            let prompt = activation
+                .prompt_id
+                .as_deref()
+                .and_then(|id| store.get_prompt(id).ok());
+            if let Some(prompt) = prompt {
+                return Some((prompt.id, prompt.title));
+            }
+        }
+    }
+    let fingerprint = fingerprint.filter(|value| !value.is_empty())?;
+    store
+        .list_prompts(tool, None, None, PromptSort::Updated)
+        .ok()?
+        .into_iter()
+        .find(|item| item.sha256 == fingerprint)
+        .map(|item| (item.id, item.title))
 }
 
 pub async fn harness_state(
@@ -69,18 +105,36 @@ pub async fn harness_state(
             tool,
             deployed: false,
             error: Some(reason.to_string()),
+            prompt_id: None,
+            prompt_title: None,
         });
     }
     match ops::tool_status(store, tool, Scope::User, None, opts).await {
-        Ok(envelope) => Ok(HarnessState {
-            tool,
-            deployed: envelope.status == ToolStatus::Active,
-            error: None,
-        }),
+        Ok(envelope) => {
+            let deployed = envelope.status == ToolStatus::Active;
+            let prompt = if deployed {
+                deployed_prompt(store, tool, envelope.current_fingerprint.as_deref())
+            } else {
+                None
+            };
+            let (prompt_id, prompt_title) = match prompt {
+                Some((id, title)) => (Some(id), Some(title)),
+                None => (None, None),
+            };
+            Ok(HarnessState {
+                tool,
+                deployed,
+                error: None,
+                prompt_id,
+                prompt_title,
+            })
+        }
         Err(error) => Ok(HarnessState {
             tool,
             deployed: false,
             error: Some(error.to_string()),
+            prompt_id: None,
+            prompt_title: None,
         }),
     }
 }
@@ -314,5 +368,89 @@ fn failed(tool: ToolKind, action: HarnessAction, error: impl Into<String>) -> Ha
         action,
         prompt_id: None,
         error: Some(error.into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::Activation;
+    use crate::paths::AppPaths;
+
+    fn store() -> (tempfile::TempDir, Store) {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = AppPaths::from_home(tmp.path().join("switch"));
+        paths.ensure().unwrap();
+        let store = Store::open(&paths).unwrap();
+        (tmp, store)
+    }
+
+    fn activation(prompt_id: &str, status: ToolStatus) -> Activation {
+        Activation {
+            id: "user-grok".into(),
+            prompt_id: Some(prompt_id.into()),
+            tool: ToolKind::Grok,
+            scope: Scope::User,
+            project_dir: None,
+            status,
+            fingerprint: None,
+            operation_id: None,
+            created_at: "2026-01-01T00:00:00Z".into(),
+            updated_at: "2026-01-01T00:00:00Z".into(),
+        }
+    }
+
+    #[test]
+    fn live_prompt_is_named_by_the_machine_fingerprint_when_no_record_exists() {
+        let (_tmp, store) = store();
+        store
+            .insert_prompt("p1", ToolKind::Grok, "Rules", "body\n", &[], false)
+            .unwrap();
+        let sha = content_sha("body\n");
+
+        assert_eq!(
+            deployed_prompt(&store, ToolKind::Grok, Some(&sha)),
+            Some(("p1".to_string(), "Rules".to_string()))
+        );
+        assert_eq!(
+            deployed_prompt(&store, ToolKind::Grok, Some("deadbeef")),
+            None
+        );
+        assert_eq!(deployed_prompt(&store, ToolKind::Grok, Some("")), None);
+        assert_eq!(deployed_prompt(&store, ToolKind::Grok, None), None);
+        assert_eq!(
+            deployed_prompt(&store, ToolKind::Claude, Some(&sha)),
+            None,
+            "another tool's library is never searched"
+        );
+    }
+
+    #[test]
+    fn an_active_record_wins_and_an_inactive_one_is_ignored() {
+        let (_tmp, store) = store();
+        store
+            .insert_prompt("p1", ToolKind::Grok, "One", "one\n", &[], false)
+            .unwrap();
+        store
+            .insert_prompt("p2", ToolKind::Grok, "Two", "two\n", &[], false)
+            .unwrap();
+        store
+            .upsert_activation(&activation("p1", ToolStatus::Active))
+            .unwrap();
+
+        assert_eq!(
+            deployed_prompt(&store, ToolKind::Grok, Some(&content_sha("two\n"))),
+            Some(("p1".to_string(), "One".to_string())),
+            "the recorded activation is authoritative"
+        );
+
+        store
+            .upsert_activation(&activation("p1", ToolStatus::Inactive))
+            .unwrap();
+        assert_eq!(
+            deployed_prompt(&store, ToolKind::Grok, Some(&content_sha("two\n"))),
+            Some(("p2".to_string(), "Two".to_string())),
+            "without an active record the fingerprint decides"
+        );
     }
 }

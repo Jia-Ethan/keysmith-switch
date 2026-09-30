@@ -1,6 +1,6 @@
 # Keysmith Switch
 
-独立的 Agent 提示词管理与快速部署桌面工具。用户可以粘贴自己的提示词，选择目标 Agent 和范围，先审阅部署计划，再通过对应适配器执行写入。
+独立的 Agent 提示词管理与快速部署桌面工具。用户可以粘贴自己的提示词，选择目标 Agent，先审阅部署计划，再通过对应适配器全局安装。
 
 Switch 不绑定某一组官方提示词正文。提示词可以来自粘贴，或用户明确选择的本地 Markdown 文件；快速部署默认离线工作，不从其他 Keysmith 仓库的远程分支抓取内容。同一 Agent 的相同正文复用既有库条目；如果原条目标题或标签不同，返回并部署原条目，不会暗中改写其元数据。
 
@@ -10,7 +10,7 @@ Switch 不绑定某一组官方提示词正文。提示词可以来自粘贴，�
 
 ## 状态
 
-公开稳定版是 [`v0.2.1`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.2.1)，修复反馈表单并更换设置图标（[#34](https://github.com/Jia-Ethan/keysmith-switch/pull/34)）；[`v0.2.0`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.2.0) 带来了界面改版 [#30](https://github.com/Jia-Ethan/keysmith-switch/pull/30)。上一版 [`v0.1.9`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.1.9) 带来了 Quick Deploy [#28](https://github.com/Jia-Ethan/keysmith-switch/pull/28)。
+公开稳定版是 [`v0.2.1`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.2.1)，修复反馈表单并更换设置图标（[#34](https://github.com/Jia-Ethan/keysmith-switch/pull/34)）；`v0.2.2`（显示当前生效的提示词、去掉范围与快捷键、补全操作反馈，[#37](https://github.com/Jia-Ethan/keysmith-switch/pull/37)）正在准备中，尚未创建 tag 或安装包；[`v0.2.0`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.2.0) 带来了界面改版 [#30](https://github.com/Jia-Ethan/keysmith-switch/pull/30)。上一版 [`v0.1.9`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.1.9) 带来了 Quick Deploy [#28](https://github.com/Jia-Ethan/keysmith-switch/pull/28)。
 
 `v0.1.4` 接替四个独立桌面安装包。之后只维护 Keysmith Switch。已发出的 Claude、Grok、Codex、Zcode 桌面包保持原样，不撤回，也不改成各自仓库的 Latest。
 

@@ -15,6 +15,9 @@ export type HarnessMachine = "deployed" | "undeployed";
 export interface HarnessEntry {
   machine: HarnessMachine;
   error: string | null;
+  /** The library prompt live on the machine; null when unknown or not deployed. */
+  promptId: string | null;
+  promptTitle: string | null;
 }
 
 export type HarnessStatusMap = Partial<Record<ToolId, HarnessEntry>>;
@@ -56,14 +59,19 @@ export function useHarnessStatus(tool: ToolId): HarnessEntry | undefined {
 async function read(tool: ToolId): Promise<HarnessEntry> {
   try {
     const state = await getHarnessState(tool);
+    const deployed = state.deployed;
     return {
-      machine: state.deployed ? "deployed" : "undeployed",
+      machine: deployed ? "deployed" : "undeployed",
       error: state.error,
+      promptId: deployed ? state.promptId ?? null : null,
+      promptTitle: deployed ? state.promptTitle ?? null : null,
     };
   } catch (error) {
     return {
       machine: "undeployed",
       error: error instanceof Error ? error.message : null,
+      promptId: null,
+      promptTitle: null,
     };
   }
 }
@@ -88,14 +96,21 @@ export function loadHarnessStatus(tool: ToolId, force = false): Promise<HarnessE
   return request;
 }
 
-/** Deploy and uninstall write the result straight into the store. */
+/**
+ * Deploy and uninstall write the result straight into the store. A deploy
+ * passes the prompt it just wrote so the hero can name it without another read.
+ */
 export function applyHarnessOutcome(
   tool: ToolId,
   action: "deploy" | "remove",
+  prompt?: { id?: string | null; title?: string | null },
 ): HarnessEntry {
+  const deployed = action === "deploy";
   const entry: HarnessEntry = {
-    machine: action === "deploy" ? "deployed" : "undeployed",
+    machine: deployed ? "deployed" : "undeployed",
     error: null,
+    promptId: deployed ? prompt?.id ?? null : null,
+    promptTitle: deployed ? prompt?.title ?? null : null,
   };
   setStatus(tool, entry);
   return entry;

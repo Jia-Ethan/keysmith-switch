@@ -42,13 +42,25 @@ describe("App smoke", () => {
     expect(document.documentElement.dataset.agent).toBe("claude");
   });
 
-  it("switches agents with mod+number and retints the accent", async () => {
+  it("switches agents from the navigation and retints the accent", async () => {
+    const { App } = await import("./App");
+    render(<App />);
+    await screen.findByTestId("workspace-page");
+    fireEvent.click(screen.getByTestId("nav-grok"));
+    expect(await screen.findByRole("heading", { name: "Grok Build" })).toBeInTheDocument();
+    expect(screen.getByTestId("nav-grok")).toHaveAttribute("aria-current", "page");
+    expect(document.documentElement.dataset.agent).toBe("grok");
+  });
+
+  it("has no global keyboard shortcuts", async () => {
     const { App } = await import("./App");
     render(<App />);
     await screen.findByTestId("workspace-page");
     fireEvent.keyDown(window, { key: "3", ctrlKey: true });
-    expect(await screen.findByRole("heading", { name: "Grok Build" })).toBeInTheDocument();
-    expect(screen.getByTestId("nav-grok")).toHaveAttribute("aria-current", "page");
-    expect(document.documentElement.dataset.agent).toBe("grok");
+    fireEvent.keyDown(window, { key: "3", metaKey: true });
+    fireEvent.keyDown(window, { key: ",", ctrlKey: true });
+    fireEvent.keyDown(window, { key: "n", ctrlKey: true });
+    expect(screen.getByTestId("nav-claude")).toHaveAttribute("aria-current", "page");
+    expect(screen.queryByTestId("quick-deploy-title")).not.toBeInTheDocument();
   });
 });

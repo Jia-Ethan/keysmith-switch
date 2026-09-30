@@ -271,6 +271,12 @@ async fn deploy_then_remove_uses_user_scope_and_keeps_the_library() {
         "deploy must be visible on the next read: {deployed:?}"
     );
     assert!(deployed.error.is_none());
+    assert_eq!(
+        deployed.prompt_id.as_deref(),
+        Some(prompt_id.as_str()),
+        "the live prompt must be named so the UI can show it: {deployed:?}"
+    );
+    assert_eq!(deployed.prompt_title.as_deref(), Some("Claude prompt"));
 
     let prompts = store
         .list_prompts(ToolKind::Claude, None, None, PromptSort::Updated)
@@ -300,6 +306,7 @@ async fn deploy_then_remove_uses_user_scope_and_keeps_the_library() {
         "remove must leave the machine undeployed: {cleared:?}"
     );
     assert!(cleared.error.is_none());
+    assert!(cleared.prompt_id.is_none() && cleared.prompt_title.is_none());
 }
 
 #[tokio::test]

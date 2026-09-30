@@ -24,6 +24,8 @@ export interface PromptListProps {
   /** One-click deploy from a card. Omitted: cards only open the detail page. */
   onDeploy?: (id: string) => void;
   deployDisabled?: boolean;
+  /** The card whose deploy plan is being prepared; its button shows progress. */
+  deployingId?: string | null;
 }
 
 export function PromptList({
@@ -36,6 +38,7 @@ export function PromptList({
   emptyAction,
   onDeploy,
   deployDisabled = false,
+  deployingId = null,
 }: PromptListProps) {
   const { t } = useTranslation();
 
@@ -110,6 +113,7 @@ export function PromptList({
         onSelect={onSelect}
         onDeploy={onDeploy}
         deployDisabled={deployDisabled}
+        deployingId={deployingId}
       />
     </div>
   );
@@ -123,6 +127,7 @@ function Group({
   activeGroup = false,
   onDeploy,
   deployDisabled = false,
+  deployingId = null,
 }: {
   title: string;
   items: PromptSummary[];
@@ -131,6 +136,7 @@ function Group({
   activeGroup?: boolean;
   onDeploy?: (id: string) => void;
   deployDisabled?: boolean;
+  deployingId?: string | null;
 }) {
   const { t, i18n } = useTranslation();
   return (
@@ -220,11 +226,17 @@ function Group({
                   <Button
                     size="xs"
                     variant="subtle"
-                    disabled={deployDisabled}
+                    loading={deployingId === item.id}
+                    disabled={deployDisabled && deployingId !== item.id}
                     data-testid={`prompt-deploy-${item.id}`}
                     title={t("prompts.deployThis")}
                     onClick={() => onDeploy(item.id)}
-                    className="absolute bottom-3.5 right-3.5 opacity-100 transition-opacity sm:opacity-0 sm:focus-visible:opacity-100 sm:group-hover:opacity-100"
+                    className={cx(
+                      "absolute bottom-3.5 right-3.5 transition-opacity",
+                      deployingId === item.id
+                        ? "opacity-100"
+                        : "opacity-100 sm:opacity-0 sm:focus-visible:opacity-100 sm:group-hover:opacity-100",
+                    )}
                   >
                     <IconRocket size={13} />
                     {t("prompts.deploy")}

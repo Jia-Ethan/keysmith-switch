@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import type { ScopeId, ToolId } from "../types";
+import type { ToolId } from "../types";
 import { IconAlert, IconPower, IconRefresh } from "./icons";
 import { ToolLogo } from "./ToolLogos";
 import { Button, IconButton, cx } from "./ui";
@@ -9,8 +9,9 @@ export type AgentMachine = "deployed" | "undeployed" | "unknown";
 
 /**
  * The top of an agent's workspace: who the agent is, whether a prompt is live
- * and where, and the two machine-level actions (re-read, remove). Everything the
- * person needs to know before touching the library sits here.
+ * and which one, and the two machine-level actions (re-read, remove). Everything
+ * the person needs to know before touching the library sits here. Deployments
+ * are always machine-wide, so there is no scope to show.
  */
 export function AgentHero({
   tool,
@@ -18,32 +19,31 @@ export function AgentHero({
   machine,
   reading,
   statusError,
-  scope,
   deployedTitle,
   unavailable,
   hint,
   busy,
+  removing = false,
   onRefresh,
   onRemove,
   removeDisabled,
-  children,
 }: {
   tool: ToolId;
   name: string;
   machine: AgentMachine;
   reading: boolean;
   statusError: string | null | undefined;
-  scope: ScopeId;
+  /** Title of the library prompt that is live, or null when it is not known. */
   deployedTitle: string | null;
   unavailable: boolean;
-  /** Replaces the machine state when it cannot be read yet, e.g. no project picked. */
+  /** Replaces the machine state when it cannot be read yet. */
   hint?: string | null;
   busy: boolean;
+  /** The remove plan is being prepared: the button shows progress instead of a dead click. */
+  removing?: boolean;
   onRefresh: () => void;
   onRemove: () => void;
   removeDisabled: boolean;
-  /** Scope controls, rendered under a hairline. */
-  children?: ReactNode;
 }) {
   const { t } = useTranslation();
   const deployed = machine === "deployed";
@@ -95,31 +95,40 @@ export function AgentHero({
 
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-[21px] font-semibold tracking-[-0.02em] text-foreground">{name}</h1>
-          <div
-            className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px]"
-            data-testid="agent-status"
-            data-reading={reading || undefined}
-          >
-            <StatusPill tone={tone}>
-              {statusError
-                ? t("hero.statusError")
-                : unavailable
-                  ? t("status.unavailable")
-                  : hint
-                    ? hint
-                    : tone === "reading"
-                    ? t("quickDeploy.reading")
-                    : deployed
-                      ? t("quickDeploy.deployedState")
-                      : t("quickDeploy.undeployedState")}
-            </StatusPill>
-            {!statusError && !unavailable && !hint && tone !== "reading" ? (
-              <span className="text-muted-foreground">{t("hero.inScope", { scope: t(`scope.${scope}`) })}</span>
-            ) : null}
-            {deployed && deployedTitle ? (
-              <span className="min-w-0 truncate text-muted-foreground" data-testid="agent-deployed-title">
-                · <span className="font-medium text-foreground">{deployedTitle}</span>
-              </span>
+          {/* Re-keyed on every change of state so a deploy or removal visibly lands. */}
+          <div key={`${tone}:${deployedTitle ?? ""}`} className="animate-page-in">
+            <div
+              className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px]"
+              data-testid="agent-status"
+              data-reading={reading || undefined}
+            >
+              <StatusPill tone={tone}>
+                {statusError
+                  ? t("hero.statusError")
+                  : unavailable
+                    ? t("status.unavailable")
+                    : hint
+                      ? hint
+                      : tone === "reading"
+                        ? t("quickDeploy.reading")
+                        : deployed
+                          ? t("quickDeploy.deployedState")
+                          : t("quickDeploy.undeployedState")}
+              </StatusPill>
+            </div>
+            {deployed && !statusError && !unavailable && !hint && tone !== "reading" ? (
+              <p className="mt-2 flex min-w-0 items-baseline gap-1.5 text-[13px]" data-testid="agent-live-prompt">
+                <span className="shrink-0 text-muted-foreground">{t("hero.livePrompt")}</span>
+                {deployedTitle ? (
+                  <span className="min-w-0 truncate font-medium text-foreground" data-testid="agent-deployed-title">
+                    {deployedTitle}
+                  </span>
+                ) : (
+                  <span className="min-w-0 truncate text-muted-foreground" data-testid="agent-deployed-unknown">
+                    · {t("hero.livePromptUnknown")}
+                  </span>
+                )}
+              </p>
             ) : null}
           </div>
           {statusError ? (
@@ -135,7 +144,8 @@ export function AgentHero({
             <Button
               size="sm"
               variant="danger"
-              disabled={removeDisabled}
+              loading={removing}
+              disabled={removeDisabled && !removing}
               data-testid="quick-deploy-remove"
               onClick={onRemove}
             >
@@ -155,8 +165,6 @@ export function AgentHero({
           </IconButton>
         </div>
       </div>
-
-      {children ? <div className="relative border-t border-border/70 px-5 py-3">{children}</div> : null}
     </section>
   );
 }

@@ -25,7 +25,11 @@ export function useToasts() {
       const message = toastSafeMessage(input);
       if (!message) return;
       const id = `t${nextId++}`;
-      setToasts((current) => [...current.slice(-4), { id, kind, message }]);
+      // The same message twice in a row replaces the first instead of stacking.
+      setToasts((current) => [
+        ...current.filter((item) => item.kind !== kind || item.message !== message).slice(-4),
+        { id, kind, message },
+      ]);
       window.setTimeout(() => dismiss(id), TOAST_DURATION_MS);
     },
     [dismiss],
