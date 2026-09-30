@@ -99,7 +99,8 @@ Bug、需求与破限建议统一提交至 [GitHub Discussions](https://github.c
 拓展包是官方发布的提示词包，可以单独更新，不影响 App 本身的更新。源仓库是 [`keysmith-switch-extensions`](https://github.com/Jia-Ethan/keysmith-switch-extensions)，格式见其中的 `SPEC.md`。
 
 - 默认关闭。在左侧栏的“拓展”页打开后，App 才会联网读取官方拓展源；关闭时不会读取网络。
-- 拓展包只含数据，没有可执行代码。清单由拓展包专用的密钥签名，App 用内置公钥验证；界面上的“官方”只取决于验签结果。
-- 安装只会把提示词加入提示词库，不会自动部署。你改过的提示词更新时不会被覆盖，新的内容另存一份。
+- 拓展包只含数据，没有可执行代码。官方源是写死在 App 里的 HTTPS 地址，压缩包的下载地址必须在它之下；清单里有每个包的大小和哈希，App 下载后逐项按格式规则重新检查。界面上的“官方”只表示来自这个地址。
+- 没有签名：如果发布账号被入侵，对方可以发布提示词。所以安装只会把提示词加入提示词库，不会自动部署，部署前仍要你确认。
+- 你改过的提示词更新时不会被覆盖，新的内容另存一份。
 - 有新版本时，“拓展”按钮上会出现红点。
-- 官方公钥放在 `src-tauri/extensions/OFFICIAL_PUBKEY.txt`；为空时官方源视为未开放，不联网。测试用的钥匙是 `src-tauri/fixtures/extensions/TEST_ONLY.key`（有意公开，只用于测试），可用 `scripts/make-extension-fixtures.py` 重新生成夹具。
+- 测试夹具在 `src-tauri/fixtures/extensions`，可用 `scripts/make-extension-fixtures.py` 重新生成。

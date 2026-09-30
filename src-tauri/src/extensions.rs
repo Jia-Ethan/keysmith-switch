@@ -1,10 +1,12 @@
-//! Extension packs: signed, data-only bundles of prompts that update on their own,
-//! separately from the app.
+//! Extension packs: data-only bundles of prompts that update on their own, separately
+//! from the app.
 //!
-//! Trust runs one way: a public key compiled into the app verifies `index.json`, the
-//! index carries the size and SHA-256 of every archive, and each archive is unpacked by
-//! this module and re-checked rule by rule. "Official" is decided here, by which key
-//! verified the index; nothing a pack or an index says about itself counts.
+//! Trust is the address: the official source is a fixed HTTPS address compiled into the
+//! app, archive URLs must sit under it, the index carries the size and SHA-256 of every
+//! archive, and each archive is unpacked by this module and re-checked rule by rule.
+//! "Official" means "came from that address"; nothing a pack or an index says about
+//! itself counts. There are no signatures: a compromised publisher account could publish
+//! prompts, which is why packs only ever reach the library and never deploy by themselves.
 //!
 //! Packs only ever write to the prompt library. They never deploy anything, and a prompt
 //! the person has edited is never overwritten.
@@ -25,17 +27,14 @@ use crate::error::{Error, Result};
 use crate::lock::HomeLock;
 use crate::models::{now_rfc3339, PromptSort, ToolKind, ToolStatus, APP_VERSION};
 use crate::paths::atomic_write;
-use crate::updater::verify_minisign;
 
 pub const OFFICIAL_INDEX_URL: &str =
     "https://github.com/Jia-Ethan/keysmith-switch-extensions/releases/latest/download/index.json";
 pub const OFFICIAL_URL_PREFIX: &str =
     "https://github.com/Jia-Ethan/keysmith-switch-extensions/releases/download/";
-const OFFICIAL_PUBKEY: &str = include_str!("../extensions/OFFICIAL_PUBKEY.txt");
 
 const SCHEMA: i64 = 1;
 const MAX_INDEX_BYTES: u64 = 512 * 1024;
-const MAX_SIG_BYTES: u64 = 4 * 1024;
 const MAX_ARCHIVE_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_FILE_BYTES: u64 = 256 * 1024;
 const MAX_PACK_BYTES: u64 = 4 * 1024 * 1024;
@@ -47,14 +46,13 @@ const TOOLS: [&str; 4] = ["claude", "codex", "grok", "zcode"];
 /// Every prompt a pack adds carries this tag, so they can be found in the library.
 pub const PACK_TAG: &str = "extension";
 
-/// Where packs come from and which key vouches for them.
+/// Where packs come from.
 #[derive(Debug, Clone)]
 pub struct Source {
     pub id: String,
     pub index_url: String,
     /// Archive URLs must start with this, whatever the (signed) index says.
     pub url_prefix: String,
-    pub pubkey: String,
     /// Only the source compiled into the app is official.
     pub official: bool,
 }
@@ -65,13 +63,8 @@ impl Source {
             id: "official".into(),
             index_url: OFFICIAL_INDEX_URL.into(),
             url_prefix: OFFICIAL_URL_PREFIX.into(),
-            pubkey: OFFICIAL_PUBKEY.trim().to_string(),
             official: true,
         }
-    }
-
-    pub fn configured(&self) -> bool {
-        !self.pubkey.trim().is_empty()
     }
 }
 
@@ -122,16 +115,12 @@ impl Fetch for CurlFetch {
 pub enum ExtError {
     /// The network did not answer.
     Offline(String),
-    /// The index is not signed by this source's key.
-    Signature,
     /// The index is from a newer format than this app understands.
     TooNew,
     /// Something signed but malformed, or an archive that breaks the rules.
     Invalid(String),
     /// The pack needs a newer app.
     Incompatible(String),
-    /// The source has no key yet.
-    NotConfigured,
     /// The pack is not in the index.
     Unknown,
     Store(Error),
@@ -141,11 +130,9 @@ impl ExtError {
     pub fn code(&self) -> &'static str {
         match self {
             Self::Offline(_) => "offline",
-            Self::Signature => "invalid-signature",
             Self::TooNew => "too-new",
             Self::Invalid(_) => "invalid",
             Self::Incompatible(_) => "incompatible",
-            Self::NotConfigured => "not-configured",
             Self::Unknown => "unknown-pack",
             Self::Store(_) => "store",
         }
@@ -273,31 +260,19 @@ fn parse_index_pack(value: &Value, source: &Source) -> Option<IndexPack> {
     })
 }
 
-/// Fetch and verify the index. Nothing in it is used before the signature checks out.
+/// Fetch the index and read it.
 pub fn fetch_index(
     fetch: &dyn Fetch,
     source: &Source,
-) -> std::result::Result<(VerifiedIndex, Vec<u8>, String), ExtError> {
-    if !source.configured() {
-        return Err(ExtError::NotConfigured);
-    }
+) -> std::result::Result<(VerifiedIndex, Vec<u8>), ExtError> {
     let bytes = fetch
         .get(&source.index_url, MAX_INDEX_BYTES)
         .map_err(ExtError::Offline)?;
-    let signature = fetch
-        .get(&format!("{}.sig", source.index_url), MAX_SIG_BYTES)
-        .map_err(ExtError::Offline)?;
-    let signature = String::from_utf8(signature).map_err(|_| ExtError::Signature)?;
-    let index = verify_index(&bytes, &signature, source)?;
-    Ok((index, bytes, signature))
+    let index = parse_index(&bytes, source)?;
+    Ok((index, bytes))
 }
 
-pub fn verify_index(
-    bytes: &[u8],
-    signature: &str,
-    source: &Source,
-) -> std::result::Result<VerifiedIndex, ExtError> {
-    verify_minisign(&source.pubkey, bytes, signature).map_err(|_| ExtError::Signature)?;
+pub fn parse_index(bytes: &[u8], source: &Source) -> std::result::Result<VerifiedIndex, ExtError> {
     let value: Value = serde_json::from_slice(bytes)
         .map_err(|error| ExtError::Invalid(format!("index.json: {error}")))?;
     match value.get("schema").and_then(Value::as_i64) {
@@ -564,12 +539,10 @@ fn state_path(store: &Store) -> PathBuf {
     extensions_dir(store).join("installed.json")
 }
 
-fn cache_paths(store: &Store, source: &Source) -> (PathBuf, PathBuf) {
-    let dir = extensions_dir(store).join("cache");
-    (
-        dir.join(format!("{}.index.json", source.id)),
-        dir.join(format!("{}.index.json.sig", source.id)),
-    )
+fn cache_path(store: &Store, source: &Source) -> PathBuf {
+    extensions_dir(store)
+        .join("cache")
+        .join(format!("{}.index.json", source.id))
 }
 
 /// A missing or damaged record means "nothing installed", never an error: it only ever
@@ -622,7 +595,6 @@ pub struct PackView {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExtensionsView {
-    pub configured: bool,
     pub packs: Vec<PackView>,
     pub updates: u32,
     /// Set when the last look at the network failed; `packs` then come from the cache.
@@ -681,7 +653,6 @@ fn build_view(
     }
     let updates = packs.iter().filter(|pack| pack.update_available).count() as u32;
     ExtensionsView {
-        configured: source.configured(),
         packs,
         updates,
         error,
@@ -690,27 +661,25 @@ fn build_view(
 }
 
 fn load_cached(store: &Store, source: &Source) -> Option<(VerifiedIndex, String)> {
-    let (index_path, sig_path) = cache_paths(store, source);
-    let bytes = std::fs::read(&index_path).ok()?;
-    let signature = std::fs::read_to_string(&sig_path).ok()?;
-    let index = verify_index(&bytes, &signature, source).ok()?;
-    let stamp = std::fs::metadata(&index_path)
+    let path = cache_path(store, source);
+    let bytes = std::fs::read(&path).ok()?;
+    let index = parse_index(&bytes, source).ok()?;
+    let stamp = std::fs::metadata(&path)
         .and_then(|meta| meta.modified())
         .ok()
         .map(|time| chrono::DateTime::<chrono::Utc>::from(time).to_rfc3339());
     Some((index, stamp.unwrap_or_default()))
 }
 
-fn write_cache(store: &Store, source: &Source, bytes: &[u8], signature: &str) {
-    let (index_path, sig_path) = cache_paths(store, source);
-    if let Some(parent) = index_path.parent() {
+fn write_cache(store: &Store, source: &Source, bytes: &[u8]) {
+    let path = cache_path(store, source);
+    if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let _ = std::fs::write(&index_path, bytes);
-    let _ = std::fs::write(&sig_path, signature);
+    let _ = std::fs::write(&path, bytes);
 }
 
-/// The last verified answer, without touching the network.
+/// The last answer, without touching the network.
 pub fn state_view(store: &Store, source: &Source, language: &str) -> ExtensionsView {
     match load_cached(store, source) {
         Some((index, stamp)) => {
@@ -728,12 +697,9 @@ pub fn refresh(
     source: &Source,
     language: &str,
 ) -> ExtensionsView {
-    if !source.configured() {
-        return build_view(store, source, None, language, None, None);
-    }
     match fetch_index(fetch, source) {
-        Ok((index, bytes, signature)) => {
-            write_cache(store, source, &bytes, &signature);
+        Ok((index, bytes)) => {
+            write_cache(store, source, &bytes);
             build_view(
                 store,
                 source,
@@ -785,7 +751,7 @@ pub fn install(
     pack_id: &str,
     language: &str,
 ) -> std::result::Result<(ExtensionsView, Report), ExtError> {
-    let (index, bytes, signature) = fetch_index(fetch, source)?;
+    let (index, bytes) = fetch_index(fetch, source)?;
     let entry = index
         .packs
         .iter()
@@ -798,7 +764,7 @@ pub fn install(
         .get(&entry.url, MAX_ARCHIVE_BYTES)
         .map_err(ExtError::Offline)?;
     let loaded = check_archive(&archive, entry)?;
-    write_cache(store, source, &bytes, &signature);
+    write_cache(store, source, &bytes);
 
     let _lock = HomeLock::acquire(store.paths())?;
     let mut state = load_state(store);

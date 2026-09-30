@@ -9,7 +9,7 @@ const checkAppUpdate = vi.fn();
 const extensionsState = vi.fn();
 vi.mock("../api", () => ({
   extensionsState: (...args: unknown[]) => extensionsState(...args),
-  extensionsRefresh: vi.fn().mockResolvedValue({ configured: true, packs: [], updates: 0, error: null, checkedAt: null }),
+  extensionsRefresh: vi.fn().mockResolvedValue({ packs: [], updates: 0, error: null, checkedAt: null }),
   checkAppUpdate: (...args: unknown[]) => checkAppUpdate(...args),
   getHarnessState: vi.fn().mockResolvedValue({ tool: "claude", deployed: false, error: null }),
 }));
@@ -123,7 +123,7 @@ describe("AppShell tool navigation", () => {
     renderShell({ kind: "tool", tool: "claude" });
     expect(screen.queryByTestId("nav-extensions")).not.toBeInTheDocument();
 
-    extensionsState.mockResolvedValue({ configured: true, packs: [], updates: 2, error: null, checkedAt: null });
+    extensionsState.mockResolvedValue({ packs: [], updates: 2, error: null, checkedAt: null });
     const onNavigate = vi.fn();
     render(
       <ExtensionsProvider enabled onEnabledChange={vi.fn()}>
