@@ -50,7 +50,8 @@
     "conflict": "衝突",
     "recovery-required": "需要還原",
     "unavailable": "不可用",
-    "deployed": "已部署"
+    "deployed": "已部署",
+    "live": "部署中"
   },
   "scope": {
     "needsProjectDir": "project / local 需要絕對專案目錄。"
@@ -76,6 +77,8 @@
     "active": "目前部署",
     "inactive": "提示詞庫",
     "noneActive": "目前沒有啟用的提示詞",
+    "liveUnrecorded": "機器上的提示詞（未收錄）",
+    "liveUnrecordedHint": "這條提示詞正在生效，但來源未記錄，也不在提示詞庫裡。",
     "noneInactive": "—",
     "noResults": "沒有符合的提示詞",
     "noResultsHint": "嘗試調整搜尋或篩選條件",

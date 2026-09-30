@@ -1,21 +1,17 @@
-# Keysmith Switch v0.2.2
+# Keysmith Switch v0.2.3
 
-当前生效的提示词现在看得见了；界面更干净，点击也都有反馈。
+部署状态不再和提示词列表对不上；授权改为 PolyForm Noncommercial 1.0.0。
 
 ## 这一版有什么
 
-- 顶部会显示当前部署的是哪条提示词；如果本机已部署但应用里没有记录，会按内容在提示词库中匹配，仍无法识别时标注“来源未记录”。对应的卡片会出现在“当前部署”分组。
-- 所有部署都是全局安装，界面不再显示“用户范围”，也不再提供范围选择。
-- 移除了键盘快捷键，设置页不再有快捷键列表。
-- 「检查更新」「移除当前部署」「部署」点击后都会显示进度；检查更新至少显示一小段时间，结果不再一闪而过。移除部署成功后有简短的完成动画。
-- 「设置已保存」改为标题旁的小提示，不再弹出遮住控件的大卡片；其它提示改为底部居中的紧凑样式，重复消息不再叠加。
-- 修复语言下拉菜单被卡片裁掉、看不全的问题。
+- 机器上已经部署了提示词、但提示词库里没有对应条目时，“当前部署”分组会出现一张标着“部署中”的卡片，不再显示“还没有提示词”。库里能匹配到的提示词同样标为“部署中”。
+- ZCode 的图标换回官方应用图标。
+- 授权由 MIT 改为 [PolyForm Noncommercial 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0/)：源码公开，个人使用、学习和研究可以自由使用，商业使用需另行取得授权。`v0.2.2` 及更早版本已按 MIT 发布，不受影响。改编自 CC Switch 的三个文件仍保留其 MIT 声明，见 `THIRD_PARTY_NOTICES.md`。
 
 ## 安装
 
-- 已安装 `v0.1.3` 及以上：可以在应用内检查更新到 `v0.2.2`；安装仍需用户确认。
-- 仍在 `v0.1.1`：内置的是测试 updater 公钥，必须手动安装本版本。
-- macOS Apple Silicon：`Keysmith.Switch_0.2.2_aarch64.dmg`
-- Windows x64：`Keysmith.Switch_0.2.2_x64-setup.exe`
+- 已安装的版本可以在应用内点「检查更新」升级到 `v0.2.3`；安装仍需用户确认。
+- macOS Apple Silicon：`Keysmith.Switch_0.2.3_aarch64.dmg`
+- Windows x64：`Keysmith.Switch_0.2.3_x64-setup.exe`
 
 安装包不使用 Apple Developer ID、公证或 Windows Authenticode。更新包使用独立的生产 minisign 密钥签名；这不是平台代码签名。

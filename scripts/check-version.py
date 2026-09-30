@@ -23,6 +23,19 @@ def match_version(path: str, pattern: str) -> str:
     return match.group(1)
 
 
+# The first public build is long out of use. Release text never mentions it.
+LEGACY_NOTE_PATTERN = re.compile(r"(?<![\d.])v?0\.1\.1(?![\d.])")
+NOTE_FILES = ("scripts/release-notes.md", "scripts/updater-notes.md", "README.md")
+
+
+def legacy_note_mentions() -> list[str]:
+    return [
+        path
+        for path in NOTE_FILES
+        if LEGACY_NOTE_PATTERN.search((ROOT / path).read_text(encoding="utf-8"))
+    ]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--expected", required=True)
@@ -50,6 +63,9 @@ def main() -> None:
     if mismatches:
         details = ", ".join(f"{path}={version}" for path, version in mismatches.items())
         raise SystemExit(f"expected version {args.expected}; mismatches: {details}")
+    legacy = legacy_note_mentions()
+    if legacy:
+        raise SystemExit(f"release text must not mention v0.1.1: {', '.join(legacy)}")
     print(f"version {args.expected} is consistent across {len(versions)} declarations")
 
 

@@ -77,7 +77,8 @@ identifier：`com.jia-ethan.keysmith-switch`
 4. 独立下载并验证 source candidate artifact、provenance、payload、签名和 SHA-256。
 5. 另行确认后手动触发公开仓库 workflow。批准受保护的 `production` environment 后，才发布不可变 Release 并更新 stable feed。
 6. 发布说明使用 `scripts/release-notes.md`；`scripts/updater-notes.md` 写入本版 `latest.json`，不得沿用 `v0.1.4` 文字。
-7. `latest.json` 仍要求 `minimum_updater_version: "0.1.3"` 和每个平台的正整数 `size`。已安装 `v0.1.3` 及以上的客户端可在本版发布后检查更新；`v0.1.1` 仍须手动安装。
-8. 真实应用内下载、安装与重启，以及 Windows x64 实体机的手动安装、启动和卸载，仍须独立验收，不由源码准备或旧版构建记录代替。
+7. `latest.json` 仍要求 `minimum_updater_version: "0.1.3"` 和每个平台的正整数 `size`。
+8. 发布说明与 updater 说明（`scripts/release-notes.md`、`scripts/updater-notes.md`、README 的下载与更新段）不再提 `v0.1.1` 或它的手动安装要求：该版本已无人使用。updater 下限与 `manualBootstrapRequired` 应用内提示属于安全逻辑，保持不变。`scripts/check-version.py` 会拒绝含 `v0.1.1` 的说明文件。
+9. 真实应用内下载、安装与重启，以及 Windows x64 实体机的手动安装、启动和卸载，仍须独立验收，不由源码准备或旧版构建记录代替。
 
 创建 tag、触发 workflow、批准 production 或创建公开 Release 均属于外部发布动作，需要各阶段明确确认。本次准备不执行这些动作。

@@ -448,6 +448,31 @@ describe("Workspace: prompt library", () => {
     expect(screen.queryByTestId("agent-deployed-title")).not.toBeInTheDocument();
   });
 
+  it("shows a live card when the machine is deployed but the library is empty", async () => {
+    getHarnessState.mockResolvedValue({ tool: "codex", deployed: true, error: null });
+    listPrompts.mockResolvedValue({ prompts: [] });
+    await renderPage();
+    const card = await screen.findByTestId("prompt-live-unrecorded");
+    expect(card).toHaveTextContent("部署中");
+    expect(screen.queryByTestId("prompt-list-empty")).not.toBeInTheDocument();
+  });
+
+  it("shows no live card when the live prompt is in the library or nothing is deployed", async () => {
+    getHarnessState.mockResolvedValue({ tool: "codex", deployed: true, error: null, promptId: "b", promptTitle: "Spare" });
+    listPrompts.mockResolvedValue({ prompts: [prompt({ id: "b", title: "Spare" })] });
+    const view = await renderPage();
+    expect(await screen.findByTestId("agent-deployed-title")).toHaveTextContent("Spare");
+    expect(screen.queryByTestId("prompt-live-unrecorded")).not.toBeInTheDocument();
+    view.unmount();
+
+    resetHarnessStatuses();
+    getHarnessState.mockResolvedValue({ tool: "codex", deployed: false, error: null });
+    listPrompts.mockResolvedValue({ prompts: [] });
+    await renderPage();
+    expect(await screen.findByTestId("prompt-list-empty")).toBeInTheDocument();
+    expect(screen.queryByTestId("prompt-live-unrecorded")).not.toBeInTheDocument();
+  });
+
   it("shows the deploy button as working while its plan is prepared", async () => {
     listPrompts.mockResolvedValue({ prompts: [prompt({ id: "b", title: "Spare" })] });
     let release!: (value: unknown) => void;

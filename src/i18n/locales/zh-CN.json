@@ -50,7 +50,8 @@
     "conflict": "冲突",
     "recovery-required": "需要恢复",
     "unavailable": "不可用",
-    "deployed": "已部署"
+    "deployed": "已部署",
+    "live": "部署中"
   },
   "scope": {
     "needsProjectDir": "project / local 需要绝对项目目录。"
@@ -76,6 +77,8 @@
     "active": "当前部署",
     "inactive": "提示词库",
     "noneActive": "当前没有激活的提示词",
+    "liveUnrecorded": "机器上的提示词（未收录）",
+    "liveUnrecordedHint": "这条提示词正在生效，但来源未记录，也不在提示词库里。",
     "noneInactive": "—",
     "noResults": "没有匹配的提示词",
     "noResultsHint": "尝试调整搜索或筛选条件",

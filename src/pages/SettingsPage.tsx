@@ -308,7 +308,7 @@ export function SettingsPage({
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => void openExternal(LICENSE_URL)}>
                     <IconExternal />
-                    MIT License
+                    PolyForm Noncommercial
                   </Button>
                 </div>
               </div>
