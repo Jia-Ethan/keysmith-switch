@@ -1,1 +1,1 @@
-Keysmith Switch v0.2.8：修复点击部署按钮时卡片闪烁；新增“清理”，可把 Agent 清回空白，并保存版本以便回滚。
+Keysmith Switch v0.2.9：检查更新时不再闪烁；Codex 的“清理”现在能清空 AGENTS.md，也可以勾选清理记忆文件夹。
