@@ -748,17 +748,14 @@ async fn run_cleanup(
                 "plan already used: things changed since the preview",
             ));
         }
-        if now.is_some() {
+        if let Some(info) = &now {
             if agent_running(tool, opts) {
                 return Err(Error::command_failed(
                     "close the agent first: it is using its memories folder",
                 ));
             }
             std::fs::create_dir_all(snapshots_dir(store))?;
-            if !same_volume(
-                Path::new(&now.as_ref().unwrap().path),
-                &snapshots_dir(store),
-            ) {
+            if !same_volume(Path::new(&info.path), &snapshots_dir(store)) {
                 return Err(Error::command_failed(
                     "the memories folder is on another disk than the snapshots, so it cannot be moved safely",
                 ));
