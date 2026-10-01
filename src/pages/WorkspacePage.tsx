@@ -673,6 +673,7 @@ export function WorkspacePage({
             onDeploy={(id) => void deployFromLibrary(id)}
             deployDisabled={locked}
             deployingId={pending?.startsWith("deploy:") ? pending.slice("deploy:".length) : null}
+            engagedId={plan?.kind === "activate" ? plan.promptId : null}
             emptyAction={
               <Button variant="primary" onClick={openComposer} data-testid="prompt-empty-compose">
                 <IconPlus size={15} />

@@ -34,6 +34,11 @@ export interface PromptListProps {
   deployDisabled?: boolean;
   /** The card whose deploy plan is being prepared; its button shows progress. */
   deployingId?: string | null;
+  /**
+   * The card whose deploy sheet is open. It keeps the look it had under the pointer, so the
+   * sheet opening over it (and the pointer leaving) does not make it jump back.
+   */
+  engagedId?: string | null;
 }
 
 export function PromptList({
@@ -50,6 +55,7 @@ export function PromptList({
   onDeploy,
   deployDisabled = false,
   deployingId = null,
+  engagedId = null,
 }: PromptListProps) {
   const { t } = useTranslation();
 
@@ -148,6 +154,7 @@ export function PromptList({
         onDeploy={onDeploy}
         deployDisabled={deployDisabled}
         deployingId={deployingId}
+        engagedId={engagedId}
       />
     </div>
   );
@@ -165,6 +172,7 @@ function Group({
   onDeploy,
   deployDisabled = false,
   deployingId = null,
+  engagedId = null,
 }: {
   title: string;
   items: PromptSummary[];
@@ -177,6 +185,7 @@ function Group({
   onDeploy?: (id: string) => void;
   deployDisabled?: boolean;
   deployingId?: string | null;
+  engagedId?: string | null;
 }) {
   const { t, i18n } = useTranslation();
   return (
@@ -202,6 +211,7 @@ function Group({
                 key={item.id}
                 className="animate-rise group relative"
                 style={{ animationDelay: `${Math.min(index, 8) * 35}ms` }}
+                data-engaged={engagedId === item.id || deployingId === item.id ? "" : undefined}
                 onPointerMove={trackPointer}
               >
                 <button
@@ -216,8 +226,11 @@ function Group({
                     activeGroup
                       ? "border-primary/40 bg-[linear-gradient(135deg,rgb(var(--primary)/0.10),rgb(var(--primary)/0.02)_55%,transparent)] bg-card shadow-glow"
                       : cx(
-                          "surface-card hover:-translate-y-0.5 hover:border-primary/30",
-                          "hover:shadow-[0_1px_2px_hsl(var(--shadow)/0.05),0_16px_32px_-16px_rgb(var(--primary)/0.35)]",
+                          // The lift follows the whole row (the card and its deploy button), not the card
+                          // alone: the button is a sibling, so with `hover:` the card dropped back the moment
+                          // the pointer reached the button, which moved it out from under the pointer again.
+                          "surface-card group-hover:-translate-y-0.5 group-hover:border-primary/30 group-data-[engaged]:-translate-y-0.5 group-data-[engaged]:border-primary/30",
+                          "group-hover:shadow-[0_1px_2px_hsl(var(--shadow)/0.05),0_16px_32px_-16px_rgb(var(--primary)/0.35)] group-data-[engaged]:shadow-[0_1px_2px_hsl(var(--shadow)/0.05),0_16px_32px_-16px_rgb(var(--primary)/0.35)]",
                         ),
                     selected && "ring-2 ring-primary/40",
                   )}
@@ -275,8 +288,8 @@ function Group({
                     title={t("prompts.deployThis")}
                     onClick={() => onDeploy(item.id)}
                     className={cx(
-                      "absolute bottom-3.5 right-3.5 transition-opacity",
-                      deployingId === item.id
+                      "absolute bottom-3.5 right-3.5 z-10 transition-opacity",
+                      deployingId === item.id || engagedId === item.id
                         ? "opacity-100"
                         : "opacity-100 sm:opacity-0 sm:focus-visible:opacity-100 sm:group-hover:opacity-100",
                     )}

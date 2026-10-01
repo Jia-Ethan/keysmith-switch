@@ -118,3 +118,34 @@ describe("PromptList unrecorded live prompt", () => {
     expect(screen.queryByTestId("prompt-live-unrecorded")).not.toBeInTheDocument();
   });
 });
+
+describe("PromptList card and deploy button", () => {
+  const items = [prompt({ id: "a", title: "Alpha" }), prompt({ id: "b", title: "Beta" })];
+  const renderList = (extra: Record<string, unknown> = {}) =>
+    render(<PromptList prompts={items} selectedId={null} activeIds={[]} onSelect={() => undefined} onDeploy={() => undefined} {...extra} />);
+
+  it("stacks the deploy button above the card's own content", () => {
+    // The card's children sit at z-index 1 (for the spotlight); a button below that would be
+    // covered, and clicks would land on the card instead.
+    renderList();
+    expect(screen.getByTestId("prompt-deploy-a").className).toContain("z-10");
+  });
+
+  it("lifts the card with the whole row, never with the card alone", () => {
+    // `hover:` on the card made it jump away from a pointer resting on the button (a sibling),
+    // which dropped the hover and brought it back, every frame.
+    renderList();
+    const card = screen.getByTestId("prompt-item-a").className;
+    expect(card).toContain("group-hover:-translate-y-0.5");
+    expect(card.split(/\s+/)).not.toContain("hover:-translate-y-0.5");
+  });
+
+  it("keeps the card whose deploy sheet is open in its engaged look", () => {
+    renderList({ engagedId: "a" });
+    expect(screen.getByTestId("prompt-item-a").closest("li")).toHaveAttribute("data-engaged");
+    expect(screen.getByTestId("prompt-item-b").closest("li")).not.toHaveAttribute("data-engaged");
+    expect(screen.getByTestId("prompt-deploy-a").className.split(/\s+/)).toContain("opacity-100");
+    expect(screen.getByTestId("prompt-deploy-a").className).not.toContain("sm:opacity-0");
+    expect(screen.getByTestId("prompt-deploy-b").className).toContain("sm:opacity-0");
+  });
+});
