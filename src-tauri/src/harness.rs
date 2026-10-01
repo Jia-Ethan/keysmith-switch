@@ -167,8 +167,14 @@ pub async fn adopt_live_prompt(
     if envelope.status != ToolStatus::Active {
         return Err(Error::invalid("no prompt is deployed for this tool"));
     }
-    let fingerprint = live_fingerprint(tool, &envelope)
+    let body = proven_live_body(tool, &envelope)
         .ok_or_else(|| Error::command_failed("the live prompt cannot be read back"))?;
+    store_prompt_body(store, tool, title, &body, vec!["imported".to_string()])
+}
+
+/// The text of the live prompt, only when it is provably that text (see `adopt_live_prompt`).
+pub fn proven_live_body(tool: ToolKind, envelope: &crate::adapter::Envelope) -> Option<String> {
+    let fingerprint = live_fingerprint(tool, envelope)?;
     for target in &envelope.target_paths {
         if !target.exists || !LIVE_PROMPT_ROLES.contains(&target.role.as_str()) {
             continue;
@@ -177,10 +183,20 @@ pub async fn adopt_live_prompt(
             continue;
         };
         if content_sha(&body) == fingerprint {
-            return store_prompt_body(store, tool, title, &body, vec!["imported".to_string()]);
+            return Some(body);
         }
     }
-    Err(Error::command_failed("the live prompt cannot be read back"))
+    None
+}
+
+/// Put prompt text from a snapshot back into the library (reusing an entry with the same text).
+pub fn store_restored_prompt(
+    store: &Store,
+    tool: ToolKind,
+    title: &str,
+    body: &str,
+) -> Result<String> {
+    store_prompt_body(store, tool, title, body, vec!["restored".to_string()])
 }
 
 /// The content fingerprint of the live prompt. Adapters report it; Codex does not,

@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import * as api from "../api";
 import { AgentHero } from "../components/AgentHero";
 import type { AppPage } from "../components/AppShell";
+import { CleanupDialog } from "../components/CleanupDialog";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { DeployCelebration } from "../components/DeployCelebration";
 import { Dropdown } from "../components/Dropdown";
@@ -116,6 +117,7 @@ export function WorkspacePage({
   /** Which action the person just started, so its own button shows progress. */
   const [pending, setPending] = useState<string | null>(null);
   const [celebration, setCelebration] = useState<{ kind: "deployed" | "removed"; subtitle: string } | null>(null);
+  const [cleanupOpen, setCleanupOpen] = useState(false);
   const promptSeq = useRef(0);
 
   const unavailable = isZcodeUnavailable(toolInfo) || !toolInfo.available;
@@ -564,6 +566,7 @@ export function WorkspacePage({
           removeDisabled={locked}
           onEdit={() => void editLivePrompt()}
           editing={pending === "adopt"}
+          onCleanup={() => setCleanupOpen(true)}
         />
 
         <ZCodeBanner tool={toolInfo} />
@@ -728,6 +731,24 @@ export function WorkspacePage({
         onSaveOnly={() => void saveDraftOnly()}
         onClose={() => {
           if (!busy) setComposerOpen(false);
+        }}
+      />
+
+      <CleanupDialog
+        tool={tool}
+        toolName={toolName}
+        open={cleanupOpen}
+        onClose={() => setCleanupOpen(false)}
+        onDone={(result) => {
+          // The agent runs nothing of Keysmith's now: the hero, the rail and the list must say so.
+          if (result.deactivated) applyHarnessOutcome(tool, "remove");
+          void loadHarnessStatus(tool, true);
+          setLocalEpoch((value) => value + 1);
+          toast?.ok(result.snapshotId ? t("cleanup.done") : t("cleanup.doneNothing"));
+        }}
+        onOpenVersions={() => {
+          setCleanupOpen(false);
+          onNavigate?.({ kind: "settings", tab: "versions" });
         }}
       />
 

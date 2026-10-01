@@ -1,4 +1,5 @@
 pub mod adapter;
+pub mod cleanup;
 pub mod commands;
 pub mod data;
 pub mod db;
@@ -68,6 +69,12 @@ pub fn run() {
             commands::plan_deactivate,
             commands::deactivate,
             commands::harness_state,
+            commands::plan_cleanup,
+            commands::confirm_cleanup,
+            commands::list_snapshots,
+            commands::plan_rollback,
+            commands::confirm_rollback,
+            commands::delete_snapshot,
             commands::plan_reconcile,
             commands::confirm_reconcile,
             commands::extensions_state,

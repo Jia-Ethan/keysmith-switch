@@ -704,7 +704,7 @@ pub async fn doctor_tool(tool: ToolKind, opts: &AdapterOptions) -> Result<Envelo
     run_adapter_with(tool, AdapterCommand::Doctor, opts).await
 }
 
-fn require_preview(
+pub(crate) fn require_preview(
     store: &Store,
     operation_id: &str,
     expected: OperationKind,
@@ -729,7 +729,7 @@ fn require_preview(
     Ok(operation)
 }
 
-fn store_preview(
+pub(crate) fn store_preview(
     store: &Store,
     tool: ToolKind,
     kind: OperationKind,
