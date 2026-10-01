@@ -15,9 +15,11 @@ type Updater = NonNullable<ReturnType<typeof useUpdateOptional>>;
 
 /**
  * The About page's update row. One orb changes with the state (its icons cross
- * fade, the check draws itself, a ring turns while looking), the text under it
- * rises in, and anything that needs room opens by growing rather than appearing,
- * so the card never jumps.
+ * fade, the check draws itself), the text beside it rises in, and anything that
+ * needs room opens by growing rather than appearing, so the card never jumps.
+ * Looking again changes none of that: the orb keeps its icon and only a ring
+ * fades in around it, and the text swaps in place, so a check that answers
+ * "still current" does not make the row flash.
  */
 export function UpdateSection({
   updater,
@@ -33,21 +35,20 @@ export function UpdateSection({
   const update = updater?.update ?? null;
   const manual = update?.installMode === "manual";
   const error = updater?.error && !manual ? updater.error : null;
-  const kind: Kind = checking
-    ? "checking"
-    : error
-      ? "error"
-      : update?.available
-        ? "available"
-        : update
-          ? "upToDate"
-          : "idle";
+  const settled: Exclude<Kind, "checking"> = error
+    ? "error"
+    : update?.available
+      ? "available"
+      : update
+        ? "upToDate"
+        : "idle";
+  const kind: Kind = checking ? "checking" : settled;
 
   // While a new look is under way the last answer stays on screen, dimmed,
   // instead of collapsing and reopening a moment later.
-  const held = useRef<{ kind: Kind; update: typeof update; error: string | null }>({ kind, update, error });
-  if (!checking) held.current = { kind, update, error };
-  const shown = checking ? held.current : { kind, update, error };
+  const held = useRef<{ kind: typeof settled; update: typeof update; error: string | null }>({ kind: settled, update, error });
+  if (!checking) held.current = { kind: settled, update, error };
+  const shown = checking ? held.current : { kind: settled, update, error };
 
   const current = update?.currentVersion ?? fallbackVersion ?? "—";
   const latest = update?.latestVersion ?? "—";
@@ -74,9 +75,9 @@ export function UpdateSection({
     <section className="border-b border-border p-4 sm:p-5" data-testid="update-section" data-state={kind}>
       <SectionLabel>{t("about.appUpdate")}</SectionLabel>
       <div className="mt-3 flex items-center gap-4">
-        <UpdateOrb kind={kind} />
+        <UpdateOrb kind={shown.kind} busy={checking} />
         <div className="min-h-[44px] min-w-0 flex-1">
-          <div key={kind} className="update-text-in">
+          <div key={shown.kind} className="update-text-in">
             <p
               className={kind === "available" ? "truncate text-[14.5px] font-semibold text-primary" : "truncate text-[14.5px] font-semibold text-foreground"}
               data-testid={text.testId}
@@ -99,10 +100,6 @@ export function UpdateSection({
           <IconRefresh />
           {checking ? t("about.checking") : t("about.checkUpdate")}
         </Button>
-      </div>
-
-      <div className="update-bar mt-3" data-active={checking || undefined} aria-hidden="true">
-        <span />
       </div>
 
       <Reveal open={extras}>
@@ -181,16 +178,19 @@ export function UpdateSection({
   );
 }
 
-/** Five icons on one orb; only the current one is visible, the others wait scaled down. */
-function UpdateOrb({ kind }: { kind: Kind }) {
+/** Four icons on one orb; only the current one is visible, the others wait scaled down. */
+function UpdateOrb({ kind, busy }: { kind: Exclude<Kind, "checking">; busy: boolean }) {
   return (
-    <span className="update-orb relative flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl" data-state={kind} aria-hidden="true">
+    <span
+      className="update-orb relative flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl"
+      data-state={kind}
+      data-busy={busy || undefined}
+      aria-hidden="true"
+    >
       <span className="update-orb-ring" />
+      <span className="update-orb-busy" />
       <span className="update-orb-icon" data-for="idle">
         <IconRefresh size={18} />
-      </span>
-      <span className="update-orb-icon" data-for="checking">
-        <IconRefresh size={18} className="update-orb-spin" />
       </span>
       <span className="update-orb-icon" data-for="upToDate">
         <IconCheck size={20} className="update-orb-check" />

@@ -515,6 +515,21 @@ describe("SettingsPage data safety", () => {
     expect(screen.getByTestId("update-section")).toHaveAttribute("data-state", "upToDate");
   });
 
+  it("keeps the orb on its icon while a new check runs, so a quick answer does not flash", () => {
+    updaterState.update = { ...availableInfo, available: false, latestVersion: null };
+    const ui = () => <SettingsPage settings={DEFAULT_SETTINGS} onSave={vi.fn()} toast={toast} initialTab="about" />;
+    const view = render(ui());
+    const orb = () => screen.getByTestId("update-section").querySelector(".update-orb")!;
+    expect(orb()).toHaveAttribute("data-state", "upToDate");
+    expect(orb()).not.toHaveAttribute("data-busy");
+
+    updaterState.update = null;
+    updaterState.checking = true;
+    view.rerender(ui());
+    expect(orb()).toHaveAttribute("data-state", "upToDate");
+    expect(orb()).toHaveAttribute("data-busy");
+  });
+
   it("keeps the last answer on screen, dimmed, while a new check runs", () => {
     updaterState.update = availableInfo;
     const ui = () => <SettingsPage settings={DEFAULT_SETTINGS} onSave={vi.fn()} toast={toast} initialTab="about" />;
