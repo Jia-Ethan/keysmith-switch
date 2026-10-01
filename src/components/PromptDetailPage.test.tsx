@@ -198,11 +198,11 @@ describe("PromptDetailPage activation gate", () => {
     expect(activate).not.toHaveBeenCalled();
   });
 
-  it("keeps the plan open and retryable after execution fails", async () => {
+  it("spends the plan when execution fails and offers a new one instead of a second click", async () => {
     planActivate.mockResolvedValue({ operationId: "op-failed", envelope });
     activate.mockResolvedValue({
       operationId: "op-failed",
-      envelope: { ...envelope, preview: false, ok: false, exitCode: 1, error: "write failed" },
+      envelope: { ...envelope, preview: false, ok: false, exitCode: 1, error: "write failed", redactedStderr: "Traceback: boom" },
     });
 
     render(
@@ -222,7 +222,36 @@ describe("PromptDetailPage activation gate", () => {
     fireEvent.click(await screen.findByTestId("plan-confirm"));
 
     expect(await screen.findByText("write failed")).toBeInTheDocument();
-    expect(screen.getByTestId("plan-confirm")).not.toBeDisabled();
-    expect(screen.getByTestId("plan-preview")).toBeInTheDocument();
+    // The plan was used up: confirming it again would only say so.
+    expect(screen.getByTestId("plan-confirm")).toBeDisabled();
+    expect(screen.getByTestId("plan-failure")).toHaveTextContent("Traceback: boom");
+
+    fireEvent.click(screen.getByTestId("plan-replan"));
+    await waitFor(() => expect(planActivate).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByTestId("plan-confirm")).not.toBeDisabled());
+    expect(screen.queryByTestId("plan-failure")).not.toBeInTheDocument();
+  });
+
+  it("says a used plan is used, not the raw backend JSON", async () => {
+    planActivate.mockResolvedValue({ operationId: "op-used", envelope });
+    activate.mockRejectedValue(new Error('{"kind":"user-cancel","message":"plan already used","ok":false}'));
+
+    render(
+      <PromptDetailPage
+        promptId="prompt-1"
+        tool="claude"
+        scope="user"
+        projectDir=""
+        toast={toast}
+        onClose={vi.fn()}
+        onEdit={vi.fn()}
+        onChanged={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(await screen.findByTestId("prompt-activate"));
+    fireEvent.click(await screen.findByTestId("plan-confirm"));
+    expect(await screen.findByTestId("plan-failure")).toHaveTextContent("已经用过了");
+    expect(screen.getByTestId("plan-failure")).not.toHaveTextContent("user-cancel");
   });
 });

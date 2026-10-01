@@ -213,3 +213,123 @@ async fn real_adapters_let_a_forgotten_live_prompt_be_adopted() {
         assert_eq!(after.prompt_id.as_deref(), Some(id.as_str()), "{tool:?}");
     }
 }
+
+/// The real Grok adapter, in a temporary home: when the managed lines of the config are
+/// moved out of their markers (what happened on a real machine), a new deploy is refused
+/// as drift, and the adapter's own reconcile, previewed and confirmed, makes it work again.
+#[tokio::test]
+async fn real_grok_drift_is_repaired_by_reconcile_then_a_deploy_goes_through() {
+    if !python3_available() {
+        return;
+    }
+    let Some(cli) = vendor("grok/grok-keysmith.py") else {
+        return;
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let user_home = tmp.path().join("home");
+    std::fs::create_dir_all(&user_home).unwrap();
+    let paths = AppPaths::from_home(tmp.path().join("switch"));
+    paths.ensure().unwrap();
+    let store = Store::open(&paths).unwrap();
+    let opts = AdapterOptions {
+        home: Some(user_home.clone()),
+        cli_override: Some(cli),
+        ..AdapterOptions::default()
+    };
+
+    let first = keysmith_switch_lib::harness::deploy_harness_with(
+        &store,
+        ToolKind::Grok,
+        &opts,
+        Some("# First prompt\nBe careful.\n".into()),
+    )
+    .await
+    .unwrap();
+    assert!(first.ok, "{first:?}");
+
+    // Take the markers away but leave the managed lines where they are.
+    let config = user_home.join(".grok/config.toml");
+    let text = std::fs::read_to_string(&config).unwrap();
+    let unmarked: String = text
+        .lines()
+        .filter(|line| !line.contains("grok-keysmith compat isolation"))
+        .map(|line| format!("{line}\n"))
+        .collect();
+    assert_ne!(unmarked, text, "the deploy wrote a marked block");
+    std::fs::write(&config, &unmarked).unwrap();
+
+    let second = create_prompt(
+        &store,
+        CreatePromptInput {
+            tool: ToolKind::Grok,
+            title: "second".into(),
+            content: "# Second prompt\nAsk first.\n".into(),
+            tags: vec![],
+        },
+    )
+    .unwrap();
+    let activate = |prompt_id: String| PlanActivateInput {
+        prompt_id,
+        scope: Scope::User,
+        project_dir: None,
+        runtime: false,
+        append_file: None,
+        max_tokens: None,
+    };
+
+    let blocked = plan_activate(&store, activate(second.id.clone()), &opts)
+        .await
+        .unwrap();
+    assert!(!blocked.envelope.ok, "drift must block a deploy");
+    assert!(
+        blocked
+            .envelope
+            .blockers
+            .iter()
+            .any(|item| item.contains("does not match managed after-state")),
+        "{:?}",
+        blocked.envelope.blockers
+    );
+
+    let preview = keysmith_switch_lib::ops::plan_reconcile(&store, ToolKind::Grok, &opts)
+        .await
+        .unwrap();
+    assert!(
+        preview.envelope.ok && preview.envelope.blockers.is_empty(),
+        "{:?}",
+        preview.envelope
+    );
+    assert!(preview.envelope.confirmation_token.is_some());
+    assert_eq!(
+        std::fs::read_to_string(&config).unwrap(),
+        unmarked,
+        "a preview writes nothing"
+    );
+
+    let done = keysmith_switch_lib::ops::confirm_reconcile(&store, &preview.operation_id, &opts)
+        .await
+        .unwrap();
+    assert!(done.envelope.ok, "{:?}", done.envelope);
+    let repaired = std::fs::read_to_string(&config).unwrap();
+    assert!(repaired.contains("grok-keysmith compat isolation begin"));
+
+    // The plan is spent: confirming it again is refused, not repeated.
+    assert!(
+        keysmith_switch_lib::ops::confirm_reconcile(&store, &preview.operation_id, &opts)
+            .await
+            .is_err()
+    );
+
+    let ready = plan_activate(&store, activate(second.id), &opts)
+        .await
+        .unwrap();
+    assert!(
+        ready.envelope.ok && ready.envelope.blockers.is_empty(),
+        "{:?}",
+        ready.envelope
+    );
+    let deployed = confirm_activate(&store, &ready.operation_id, &opts)
+        .await
+        .unwrap();
+    assert!(deployed.envelope.ok, "{:?}", deployed.envelope);
+}

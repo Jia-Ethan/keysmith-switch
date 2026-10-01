@@ -161,7 +161,17 @@
     "flowNext": "After",
     "flowAfter": "After",
     "flowNothing": "Nothing yet",
-    "titleDeploy": "Deploy to {{tool}}"
+    "titleDeploy": "Deploy to {{tool}}",
+    "replan": "Plan again",
+    "adapterFailed": "That did not finish.",
+    "titleReconcile": "Tidy {{tool}}'s config",
+    "confirmReconcile": "Tidy config",
+    "reconcileButton": "Tidy config",
+    "friendlyReconcile": "Keysmith's managed lines in {{tool}}'s config were moved or rewritten. Tidying backs the file up first, puts those lines back, and leaves your own settings as they are.",
+    "blockerConfigDrift": "{{tool}}'s config was changed after the last deploy.",
+    "hintReconcile": "Use \"Tidy config\" at the bottom left first, then deploy.",
+    "reconciled": "Config tidied. You can deploy now.",
+    "theAgent": "This agent"
   },
   "history": {
     "title": "Version history",
@@ -362,7 +372,8 @@
     "activateFailed": "Activate failed",
     "deactivateFailed": "Deactivate failed",
     "recoverFailed": "Recover failed",
-    "validation": "Fill in the required fields first"
+    "validation": "Fill in the required fields first",
+    "planUsed": "This plan was already used. Make a new one."
   },
   "quickDeploy": {
     "title": "Quick Deploy",

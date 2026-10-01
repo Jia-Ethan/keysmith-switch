@@ -161,7 +161,17 @@
     "flowNext": "部署后",
     "flowAfter": "停用后",
     "flowNothing": "还没有",
-    "titleDeploy": "部署到 {{tool}}"
+    "titleDeploy": "部署到 {{tool}}",
+    "replan": "重新生成计划",
+    "adapterFailed": "这次操作没有完成。",
+    "titleReconcile": "整理 {{tool}} 的配置",
+    "confirmReconcile": "整理配置",
+    "reconcileButton": "整理配置",
+    "friendlyReconcile": "{{tool}} 的配置文件里，Keysmith 管理的那几行被挪动或改写过。整理会先备份配置文件，再把这几行放回原位，你自己的设置原样保留。",
+    "blockerConfigDrift": "{{tool}} 的配置文件在上次部署之后被改过。",
+    "hintReconcile": "可以先点左下角的“整理配置”，整理好之后再继续部署。",
+    "reconciled": "配置已整理好，可以继续部署了。",
+    "theAgent": "这个 Agent"
   },
   "history": {
     "title": "版本历史",
@@ -362,7 +372,8 @@
     "activateFailed": "激活失败",
     "deactivateFailed": "停用失败",
     "recoverFailed": "恢复失败",
-    "validation": "请先补全必填项"
+    "validation": "请先补全必填项",
+    "planUsed": "这份部署计划已经用过了，请重新生成。"
   },
   "quickDeploy": {
     "title": "快速部署",

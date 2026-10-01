@@ -1,9 +1,11 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { gatePlan } from "../lib/planGate";
+import { CONFIG_DRIFT, isNoise, needsReconcile } from "../lib/planFailure";
+import type { PlanFailure } from "../lib/planFailure";
 import { shortPath } from "../lib/format";
 import type { Envelope } from "../types";
-import { Disclosure, Mono, cx } from "./ui";
+import { Button, Disclosure, Mono, cx } from "./ui";
 import { IconAlert, IconArrowRight, IconCheck, IconFile, IconInfo, IconShield } from "./icons";
 import { ToolLogo } from "./ToolLogos";
 import type { ToolId } from "../types";
@@ -58,7 +60,7 @@ export interface PlanPreviewProps {
   envelope: Envelope;
   /** With the agent and the titles involved, the preview reads as a sentence instead of a report. */
   tool?: ToolId;
-  kind?: "activate" | "deactivate" | "recover";
+  kind?: "activate" | "deactivate" | "recover" | "reconcile";
   /** What the agent runs now, when known. */
   fromTitle?: string | null;
   /** What it will run after the plan. */
@@ -79,24 +81,33 @@ export function PlanPreview({ envelope, tool, kind = "activate", fromTitle, toTi
     envelope.recoveryRequired;
   const toolName = tool ? t(`nav.${tool}`) : "";
   const ready = gate.ok && !drifted;
+  // What a person can act on: the bookkeeping reasons go, and the adapter's drift wording
+  // becomes a sentence. The raw reasons stay in "details".
+  const meaningful = gate.reasons.filter((reason) => !isNoise(reason));
+  const reasons = (meaningful.length > 0 ? meaningful : gate.reasons).map((reason) =>
+    reason.includes(CONFIG_DRIFT) ? t("plan.blockerConfigDrift", { tool: toolName || t("plan.theAgent") }) : reason,
+  );
+  const warnings = envelope.warnings.filter((item) => !envelope.blockers.includes(item));
 
   return (
     <div className="space-y-4" data-testid="plan-preview">
-      {tool && kind !== "recover" ? (
+      {tool && (kind === "activate" || kind === "deactivate") ? (
         <PlanFlow tool={tool} kind={kind} fromTitle={fromTitle} toTitle={toTitle} ready={ready} />
       ) : null}
 
       {ready ? (
         <ul className="space-y-1.5 text-[13.5px] text-foreground" data-testid="plan-friendly">
           <FriendlyLine>
-            {kind === "deactivate"
-              ? t("plan.friendlyOff", { tool: toolName })
-              : fromTitle
-                ? t("plan.friendlyReplace", { tool: toolName })
-                : t("plan.friendlyFresh", { tool: toolName })}
+            {kind === "reconcile"
+              ? t("plan.friendlyReconcile", { tool: toolName })
+              : kind === "deactivate"
+                ? t("plan.friendlyOff", { tool: toolName })
+                : fromTitle
+                  ? t("plan.friendlyReplace", { tool: toolName })
+                  : t("plan.friendlyFresh", { tool: toolName })}
           </FriendlyLine>
-          {envelope.backups.length > 0 ? <FriendlyLine>{t("plan.friendlySafe")}</FriendlyLine> : null}
-          {envelope.reloadRequired && kind !== "deactivate" ? (
+          {envelope.backups.length > 0 && kind !== "reconcile" ? <FriendlyLine>{t("plan.friendlySafe")}</FriendlyLine> : null}
+          {envelope.reloadRequired && kind !== "deactivate" && kind !== "reconcile" ? (
             <FriendlyLine>{t("plan.friendlyReload", { tool: toolName })}</FriendlyLine>
           ) : null}
         </ul>
@@ -112,10 +123,11 @@ export function PlanPreview({ envelope, tool, kind = "activate", fromTitle, toTi
         <Callout tone="danger" icon={<IconAlert size={14} />}>
           <p className="font-medium">{t("plan.blocked")}</p>
           <ul className="mt-1 list-inside list-disc space-y-0.5">
-            {gate.reasons.map((reason, index) => (
+            {reasons.map((reason, index) => (
               <li key={index}>{reason}</li>
             ))}
           </ul>
+          {tool && needsReconcile(tool, envelope) ? <p className="mt-1.5 font-medium">{t("plan.hintReconcile")}</p> : null}
         </Callout>
       ) : null}
 
@@ -136,10 +148,10 @@ export function PlanPreview({ envelope, tool, kind = "activate", fromTitle, toTi
         </Callout>
       ) : null}
 
-      {envelope.warnings.length > 0 ? (
+      {warnings.length > 0 ? (
         <Callout tone="warn" icon={<IconAlert size={14} />}>
           <ul className="list-inside list-disc space-y-0.5">
-            {envelope.warnings.map((item, index) => (
+            {warnings.map((item, index) => (
               <li key={index}>{item}</li>
             ))}
           </ul>
@@ -361,6 +373,41 @@ export function Callout({
     <div className={cx("flex items-start gap-2 rounded-xl border px-3 py-2 text-[12.5px] leading-relaxed", CALLOUT_TONE[tone])}>
       {icon ? <span className="mt-[3px] shrink-0">{icon}</span> : null}
       <div className="min-w-0 flex-1">{children}</div>
+    </div>
+  );
+}
+
+/**
+ * A confirmed plan that did not go through. The plan is spent either way, so the way
+ * forward is a new plan, not another click on the same one.
+ */
+export function PlanFailureNotice({
+  failure,
+  onReplan,
+  busy,
+}: {
+  failure: PlanFailure;
+  onReplan: () => void;
+  busy: boolean;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className="mt-3 space-y-2" data-testid="plan-failure">
+      <Callout tone="danger" icon={<IconAlert size={14} />}>
+        <p className="font-medium">{t("plan.failed")}</p>
+        <p className="mt-0.5">{failure.message}</p>
+        {failure.detail ? (
+          <details className="mt-1.5">
+            <summary className="cursor-pointer text-[12px] opacity-80">{t("plan.details")}</summary>
+            <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-background/60 px-2.5 py-1.5 font-mono text-[11.5px] leading-snug">
+              {failure.detail}
+            </pre>
+          </details>
+        ) : null}
+      </Callout>
+      <Button size="sm" variant="outline" disabled={busy} data-testid="plan-replan" onClick={onReplan}>
+        {t("plan.replan")}
+      </Button>
     </div>
   );
 }

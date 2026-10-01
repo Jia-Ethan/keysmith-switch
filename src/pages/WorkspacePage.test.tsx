@@ -17,6 +17,8 @@ const listOperations = vi.fn();
 const recoverTool = vi.fn();
 const confirmRecover = vi.fn();
 const adoptLivePrompt = vi.fn();
+const planReconcile = vi.fn();
+const confirmReconcile = vi.fn();
 
 vi.mock("../components/MarkdownEditor", () => ({
   MarkdownEditor: ({ value, onChange, ariaLabel }: { value: string; onChange: (value: string) => void; ariaLabel?: string }) => (
@@ -39,6 +41,8 @@ vi.mock("../api", () => ({
   recoverTool: (...args: unknown[]) => recoverTool(...args),
   confirmRecover: (...args: unknown[]) => confirmRecover(...args),
   adoptLivePrompt: (...args: unknown[]) => adoptLivePrompt(...args),
+  planReconcile: (...args: unknown[]) => planReconcile(...args),
+  confirmReconcile: (...args: unknown[]) => confirmReconcile(...args),
 }));
 
 const envelope = {
@@ -530,5 +534,64 @@ describe("Workspace: prompt library", () => {
     await act(async () => release({ operationId: "op-1", envelope }));
     expect(await screen.findByTestId("quick-deploy-confirm")).toBeInTheDocument();
     expect(screen.getByTestId("prompt-deploy-b")).not.toHaveAttribute("aria-busy");
+  });
+
+  it("explains Grok's config drift in words and repairs it, then plans the deploy again", async () => {
+    const drift = "config content does not match managed after-state";
+    listTools.mockResolvedValue({
+      tools: [{ id: "grok", name: "Grok Build", adapterVersion: "0.6.1", available: true, unavailableReason: null, supportedScopes: ["user"], cliPath: null }],
+    });
+    getHarnessState.mockResolvedValue({ tool: "grok", deployed: false, error: null });
+    listPrompts.mockResolvedValue({ prompts: [prompt({ id: "g1", tool: "grok", title: "Spare" })] });
+    planActivate
+      .mockResolvedValueOnce({
+        operationId: "blocked",
+        envelope: { ...envelope, tool: "grok", ok: false, exitCode: 1, blockers: [drift], warnings: [drift] },
+      })
+      .mockResolvedValueOnce({ operationId: "fresh", envelope: { ...envelope, tool: "grok" } });
+    planReconcile.mockResolvedValue({ operationId: "tidy", envelope: { ...envelope, tool: "grok", command: "reconcile" } });
+    confirmReconcile.mockResolvedValue({ envelope: { ...envelope, tool: "grok", ok: true, preview: false } });
+
+    await renderPage({ tool: "grok" } as never);
+    fireEvent.click(await screen.findByTestId("prompt-deploy-g1"));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("在上次部署之后被改过");
+    expect(dialog).not.toHaveTextContent("ok=false");
+    expect(dialog).not.toHaveTextContent("exit 1");
+    // The adapter's wording appears once, not as both a reason and a warning, and not raw.
+    expect(dialog).not.toHaveTextContent(drift);
+    expect(screen.getByTestId("quick-deploy-confirm")).toBeDisabled();
+
+    fireEvent.click(screen.getByTestId("plan-reconcile"));
+    await waitFor(() => expect(planReconcile).toHaveBeenCalledWith("grok"));
+    expect(await screen.findByRole("dialog", { name: "整理 Grok Build 的配置" })).toHaveTextContent("你自己的设置原样保留");
+
+    fireEvent.click(screen.getByTestId("quick-deploy-confirm"));
+    await waitFor(() => expect(confirmReconcile).toHaveBeenCalledWith("tidy"));
+    // Straight back to the deploy that was blocked, planned afresh and ready to confirm.
+    await waitFor(() => expect(planActivate).toHaveBeenCalledTimes(2));
+    expect(await screen.findByRole("dialog", { name: "部署到 Grok Build" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId("quick-deploy-confirm")).toBeEnabled());
+  });
+
+  it("shows the real reason after a failed deploy and asks for a new plan, never a second confirm", async () => {
+    listPrompts.mockResolvedValue({ prompts: [prompt({ id: "b", title: "Spare" })] });
+    activate.mockResolvedValue({
+      envelope: { ...envelope, ok: false, exitCode: 1, preview: false, error: null, redactedStderr: "FileNotFoundError: zcode-keysmith.py" },
+    });
+    await renderPage();
+    fireEvent.click(await screen.findByTestId("prompt-deploy-b"));
+    fireEvent.click(await screen.findByTestId("quick-deploy-confirm"));
+
+    const failure = await screen.findByTestId("plan-failure");
+    expect(failure).toHaveTextContent("这次操作没有完成");
+    expect(failure).toHaveTextContent("FileNotFoundError");
+    expect(screen.getByTestId("quick-deploy-confirm")).toBeDisabled();
+
+    fireEvent.click(screen.getByTestId("plan-replan"));
+    await waitFor(() => expect(planActivate).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByTestId("quick-deploy-confirm")).toBeEnabled());
+    expect(screen.queryByTestId("plan-failure")).not.toBeInTheDocument();
   });
 });
