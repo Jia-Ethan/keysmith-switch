@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import * as api from "../api";
 import type { ToastApi } from "../hooks/useToasts";
-import { formatBytes } from "../lib/format";
+import { baseName, formatBytes } from "../lib/format";
 import { loadHarnessStatus } from "../lib/harnessState";
 import { readableError } from "../lib/planFailure";
 import type { PlanFailure } from "../lib/planFailure";
@@ -84,7 +84,10 @@ export function VersionsTab({ toast, onChanged }: { toast: ToastApi; onChanged?:
                 <p className="mt-0.5 truncate text-[12.5px] text-muted-foreground">
                   {describe(snapshot, t)}
                   {snapshot.memory && snapshot.memory.bytes > 0
-                    ? ` · ${t("versions.memory", { size: formatBytes(snapshot.memory.bytes) })}`
+                    ? ` · ${t("versions.memory", { file: baseName(snapshot.memory.path), size: formatBytes(snapshot.memory.bytes) })}`
+                    : ""}
+                  {snapshot.memories && snapshot.memories.files > 0
+                    ? ` · ${t("versions.memories", { files: snapshot.memories.files, size: formatBytes(snapshot.memories.bytes) })}`
                     : ""}
                 </p>
               </div>
@@ -186,7 +189,11 @@ function RollbackDialog({
     }
   };
 
-  const restoresSomething = Boolean(plan && (plan.snapshot.deployment.restorable || (plan.memory && plan.memory.restoreBytes > 0)));
+  const restoresMemories = Boolean(plan?.memories && plan.memories.restoreFiles > 0);
+  const restoresSomething = Boolean(
+    plan && (plan.snapshot.deployment.restorable || (plan.memory && plan.memory.restoreBytes > 0) || restoresMemories),
+  );
+  const memoryFile = plan?.snapshot.memory ? baseName(plan.snapshot.memory.path) : "";
   const title = plan?.snapshot.deployment.title ? `「${plan.snapshot.deployment.title}」` : "";
   const currentTitle = plan?.currentTitle ? `「${plan.currentTitle}」` : "";
 
@@ -201,7 +208,9 @@ function RollbackDialog({
       cancelLabel={t("common.cancel")}
       closeLabel={t("common.close")}
       busy={working}
-      confirmDisabled={loading || !plan || plan.blockers.length > 0 || !restoresSomething || Boolean(failure)}
+      confirmDisabled={
+        loading || !plan || plan.blockers.length > 0 || !restoresSomething || Boolean(failure) || (restoresMemories && plan?.agentRunning === true)
+      }
       confirmTestId="rollback-confirm"
       onClose={() => {
         if (!working) onClose();
@@ -230,10 +239,28 @@ function RollbackDialog({
                 <li className="flex items-start gap-2" data-testid="rollback-memory">
                   <Tick />
                   <span>
-                    {t("versions.willRestoreMemory", { size: formatBytes(plan.memory.restoreBytes) })}
+                    {t("versions.willRestoreMemory", { file: memoryFile, size: formatBytes(plan.memory.restoreBytes) })}
                     {plan.memory.currentDiffers && plan.memory.currentBytes > 0 ? (
                       <span className="mt-0.5 block text-[12.5px] text-warning">
-                        {t("versions.currentMemory", { size: formatBytes(plan.memory.currentBytes) })}
+                        {t("versions.currentMemory", { file: memoryFile, size: formatBytes(plan.memory.currentBytes) })}
+                      </span>
+                    ) : null}
+                  </span>
+                </li>
+              ) : null}
+              {plan.memories && restoresMemories ? (
+                <li className="flex items-start gap-2" data-testid="rollback-memories">
+                  <Tick />
+                  <span>
+                    {t("versions.willRestoreMemories", { files: plan.memories.restoreFiles, size: formatBytes(plan.memories.restoreBytes) })}
+                    {plan.memories.currentFiles > 0 ? (
+                      <span className="mt-0.5 block text-[12.5px] text-warning">
+                        {t("versions.currentMemories", { files: plan.memories.currentFiles })}
+                      </span>
+                    ) : null}
+                    {plan.agentRunning ? (
+                      <span className="mt-0.5 block text-[12.5px] text-warning" data-testid="rollback-memories-running">
+                        {t("versions.memoriesRunning")}
                       </span>
                     ) : null}
                   </span>

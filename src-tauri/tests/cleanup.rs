@@ -5,7 +5,8 @@ use std::path::PathBuf;
 
 use keysmith_switch_lib::adapter::AdapterOptions;
 use keysmith_switch_lib::cleanup::{
-    confirm_cleanup, confirm_rollback, delete_snapshot, list_snapshots, plan_cleanup, plan_rollback,
+    confirm_cleanup, confirm_rollback, delete_snapshot, list_snapshots, plan_cleanup,
+    plan_rollback, CODEX_RUNNING_KEY,
 };
 use keysmith_switch_lib::db::Store;
 use keysmith_switch_lib::harness::{deploy_harness_with, harness_state};
@@ -114,7 +115,7 @@ async fn cleaning_claude_removes_the_deployment_and_empties_memory_after_saving_
         "a preview saves nothing"
     );
 
-    let done = confirm_cleanup(&world.store, &plan.operation_id, &world.opts)
+    let done = confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
         .await
         .unwrap();
     assert!(done.deactivated && done.memory_cleared);
@@ -167,7 +168,7 @@ async fn rolling_back_restores_the_memory_file_byte_for_byte_and_the_deployment(
     let plan = plan_cleanup(&world.store, ToolKind::Claude, &world.opts)
         .await
         .unwrap();
-    let snapshot_id = confirm_cleanup(&world.store, &plan.operation_id, &world.opts)
+    let snapshot_id = confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
         .await
         .unwrap()
         .snapshot_id
@@ -222,7 +223,7 @@ async fn a_rollback_saves_what_it_overwrites_so_it_can_be_undone() {
     let plan = plan_cleanup(&world.store, ToolKind::Claude, &world.opts)
         .await
         .unwrap();
-    let first = confirm_cleanup(&world.store, &plan.operation_id, &world.opts)
+    let first = confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
         .await
         .unwrap()
         .snapshot_id
@@ -281,7 +282,7 @@ async fn only_the_user_level_memory_file_is_ever_touched() {
     let plan = plan_cleanup(&world.store, ToolKind::Claude, &world.opts)
         .await
         .unwrap();
-    confirm_cleanup(&world.store, &plan.operation_id, &world.opts)
+    confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
         .await
         .unwrap();
 
@@ -324,7 +325,7 @@ async fn a_plan_is_used_once_and_only_while_nothing_has_changed() {
     let mut edited = std::fs::read_to_string(memory_path(&world)).unwrap();
     edited.push_str("\nchanged after the preview\n");
     std::fs::write(memory_path(&world), &edited).unwrap();
-    let refused = confirm_cleanup(&world.store, &plan.operation_id, &world.opts)
+    let refused = confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
         .await
         .unwrap_err();
     assert!(
@@ -345,10 +346,10 @@ async fn a_plan_is_used_once_and_only_while_nothing_has_changed() {
     let fresh = plan_cleanup(&world.store, ToolKind::Claude, &world.opts)
         .await
         .unwrap();
-    confirm_cleanup(&world.store, &fresh.operation_id, &world.opts)
+    confirm_cleanup(&world.store, &fresh.operation_id, false, &world.opts)
         .await
         .unwrap();
-    let again = confirm_cleanup(&world.store, &fresh.operation_id, &world.opts)
+    let again = confirm_cleanup(&world.store, &fresh.operation_id, false, &world.opts)
         .await
         .unwrap_err();
     assert!(again.to_string().contains("plan already used"), "{again}");
@@ -364,7 +365,7 @@ async fn cleaning_an_agent_with_nothing_to_clean_says_so_and_saves_nothing() {
         .await
         .unwrap();
     assert!(plan.nothing_to_do && plan.memory.is_none() && !plan.deployment.present);
-    let done = confirm_cleanup(&world.store, &plan.operation_id, &world.opts)
+    let done = confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
         .await
         .unwrap();
     assert!(!done.deactivated && !done.memory_cleared && done.snapshot_id.is_none());
@@ -394,7 +395,7 @@ async fn cleaning_grok_removes_the_deployment_and_rolling_back_restores_it() {
         plan.deployment.present && plan.memory.is_none(),
         "grok has no memory file Keysmith touches"
     );
-    let done = confirm_cleanup(&world.store, &plan.operation_id, &world.opts)
+    let done = confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
         .await
         .unwrap();
     assert!(done.deactivated && !done.memory_cleared);
@@ -431,7 +432,7 @@ async fn snapshot_ids_cannot_name_other_paths_and_snapshots_can_be_deleted() {
     let plan = plan_cleanup(&world.store, ToolKind::Claude, &world.opts)
         .await
         .unwrap();
-    let id = confirm_cleanup(&world.store, &plan.operation_id, &world.opts)
+    let id = confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
         .await
         .unwrap()
         .snapshot_id
@@ -450,7 +451,7 @@ async fn an_unfinished_snapshot_is_not_listed_and_a_damaged_one_is_refused() {
     let plan = plan_cleanup(&world.store, ToolKind::Claude, &world.opts)
         .await
         .unwrap();
-    let id = confirm_cleanup(&world.store, &plan.operation_id, &world.opts)
+    let id = confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
         .await
         .unwrap()
         .snapshot_id
@@ -472,4 +473,195 @@ async fn an_unfinished_snapshot_is_not_listed_and_a_damaged_one_is_refused() {
     let refused = plan_rollback(&world.store, &id, &world.opts).await;
     assert!(refused.is_err(), "{refused:?}");
     assert_eq!(std::fs::read(memory_path(&world)).unwrap(), b"");
+}
+
+// ---- Codex: AGENTS.md and the memories folder -------------------------------------------
+
+fn codex_world(running: bool) -> World {
+    let mut world = world("codex/codex-instruct.py");
+    world.opts.extra_env.insert(
+        CODEX_RUNNING_KEY.into(),
+        if running { "1" } else { "0" }.into(),
+    );
+    world
+}
+
+/// Codex with a deployed prompt, notes in AGENTS.md, and a memories folder next to a database.
+async fn codex_with_memories(running: bool) -> World {
+    let world = codex_world(running);
+    let root = world.home.join(".codex");
+    std::fs::create_dir_all(root.join("memories").join("notes")).unwrap();
+    std::fs::write(root.join("config.toml"), "").unwrap();
+    let outcome = deploy_harness_with(
+        &world.store,
+        ToolKind::Codex,
+        &world.opts,
+        Some("# Codex rules\nBe careful.\n".into()),
+    )
+    .await
+    .unwrap();
+    assert!(outcome.ok, "{outcome:?}");
+    std::fs::write(root.join("AGENTS.md"), "# Mine\nAnswer in Chinese.\n").unwrap();
+    std::fs::write(root.join("memories").join("MEMORY.md"), "remember this\n").unwrap();
+    std::fs::write(root.join("memories").join("notes").join("a.md"), "more\n").unwrap();
+    std::fs::write(root.join("memories_1.sqlite"), b"database").unwrap();
+    world
+}
+
+fn memories_text(world: &World) -> (String, String) {
+    let dir = world.home.join(".codex").join("memories");
+    (
+        std::fs::read_to_string(dir.join("MEMORY.md")).unwrap(),
+        std::fs::read_to_string(dir.join("notes").join("a.md")).unwrap(),
+    )
+}
+
+#[tokio::test]
+async fn cleaning_codex_empties_agents_md_but_leaves_the_memories_folder_unless_asked() {
+    if !python3_available() {
+        return;
+    }
+    let world = codex_with_memories(false).await;
+    let root = world.home.join(".codex");
+
+    let plan = plan_cleanup(&world.store, ToolKind::Codex, &world.opts)
+        .await
+        .unwrap();
+    assert!(plan.deployment.present, "{plan:?}");
+    assert_eq!(
+        plan.memory.as_ref().map(|m| m.path.ends_with("AGENTS.md")),
+        Some(true)
+    );
+    let memories = plan.memories.clone().expect("the folder has files in it");
+    assert_eq!(memories.files, 2);
+    assert!(!plan.agent_running);
+
+    let done = confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
+        .await
+        .unwrap();
+    assert!(done.deactivated && done.memory_cleared && !done.memories_cleared);
+    assert_eq!(std::fs::read(root.join("AGENTS.md")).unwrap(), b"");
+    assert_eq!(
+        memories_text(&world),
+        ("remember this\n".into(), "more\n".into()),
+        "without the tick the folder is not touched"
+    );
+    let snapshots = list_snapshots(&world.store);
+    assert!(snapshots[0].memories.is_none());
+}
+
+#[tokio::test]
+async fn clearing_the_codex_memories_folder_moves_it_into_the_snapshot_and_rollback_brings_it_back()
+{
+    if !python3_available() {
+        return;
+    }
+    let world = codex_with_memories(false).await;
+    let root = world.home.join(".codex");
+    let agents = std::fs::read(root.join("AGENTS.md")).unwrap();
+
+    let plan = plan_cleanup(&world.store, ToolKind::Codex, &world.opts)
+        .await
+        .unwrap();
+    let done = confirm_cleanup(&world.store, &plan.operation_id, true, &world.opts)
+        .await
+        .unwrap();
+    assert!(done.memories_cleared && done.memory_cleared);
+    let id = done.snapshot_id.unwrap();
+
+    let folder = root.join("memories");
+    assert!(folder.is_dir(), "the folder is put back, empty");
+    assert_eq!(std::fs::read_dir(&folder).unwrap().count(), 0);
+    assert_eq!(
+        std::fs::read(root.join("memories_1.sqlite")).unwrap(),
+        b"database"
+    );
+    let saved = list_snapshots(&world.store)
+        .into_iter()
+        .find(|snapshot| snapshot.id == id)
+        .unwrap();
+    assert_eq!(saved.memories.as_ref().map(|m| m.files), Some(2));
+
+    // The person starts writing again before they change their mind.
+    std::fs::write(folder.join("MEMORY.md"), "new beginnings\n").unwrap();
+    let back = plan_rollback(&world.store, &id, &world.opts).await.unwrap();
+    let counts = back.memories.clone().unwrap();
+    assert_eq!((counts.restore_files, counts.current_files), (2, 1));
+    assert!(back.saves_current);
+    let restored = confirm_rollback(&world.store, &back.operation_id, &world.opts)
+        .await
+        .unwrap();
+    assert!(restored.memories_restored && restored.memory_restored && restored.redeployed);
+    assert_eq!(
+        memories_text(&world),
+        ("remember this\n".into(), "more\n".into())
+    );
+    assert_eq!(std::fs::read(root.join("AGENTS.md")).unwrap(), agents);
+
+    // What was overwritten is in a snapshot of its own, and the first snapshot is still whole.
+    let all = list_snapshots(&world.store);
+    let undo = all
+        .iter()
+        .find(|snapshot| Some(&snapshot.id) == restored.saved_snapshot_id.as_ref())
+        .expect("the rollback saved what it replaced");
+    assert_eq!(undo.memories.as_ref().map(|m| m.files), Some(1));
+    assert!(all
+        .iter()
+        .any(|snapshot| snapshot.id == id && snapshot.memories.is_some()));
+}
+
+#[tokio::test]
+async fn the_codex_memories_folder_is_not_touched_while_codex_runs_or_when_it_changed() {
+    if !python3_available() {
+        return;
+    }
+    let world = codex_with_memories(true).await;
+    let plan = plan_cleanup(&world.store, ToolKind::Codex, &world.opts)
+        .await
+        .unwrap();
+    assert!(plan.agent_running);
+    let refused = confirm_cleanup(&world.store, &plan.operation_id, true, &world.opts).await;
+    assert!(refused.is_err(), "{refused:?}");
+    assert_eq!(
+        memories_text(&world),
+        ("remember this\n".into(), "more\n".into())
+    );
+    assert!(
+        deployed(&world, ToolKind::Codex).await,
+        "nothing was removed either"
+    );
+    assert!(list_snapshots(&world.store).is_empty());
+
+    // Closed now, but a file arrives between the preview and the tick.
+    let mut world = world;
+    world
+        .opts
+        .extra_env
+        .insert(CODEX_RUNNING_KEY.into(), "0".into());
+    let plan = plan_cleanup(&world.store, ToolKind::Codex, &world.opts)
+        .await
+        .unwrap();
+    std::fs::write(world.home.join(".codex/memories/late.md"), "late").unwrap();
+    let stale = confirm_cleanup(&world.store, &plan.operation_id, true, &world.opts).await;
+    assert!(stale.is_err(), "{stale:?}");
+    assert!(world.home.join(".codex/memories/late.md").exists());
+    assert!(list_snapshots(&world.store).is_empty());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_codex_memories_folder_that_is_a_link_is_refused() {
+    if !python3_available() {
+        return;
+    }
+    let world = codex_with_memories(false).await;
+    let elsewhere = world.home.join("elsewhere");
+    std::fs::rename(world.home.join(".codex/memories"), &elsewhere).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, world.home.join(".codex/memories")).unwrap();
+    let plan = plan_cleanup(&world.store, ToolKind::Codex, &world.opts).await;
+    assert!(plan.is_err(), "{plan:?}");
+    assert_eq!(
+        std::fs::read_to_string(elsewhere.join("MEMORY.md")).unwrap(),
+        "remember this\n"
+    );
 }

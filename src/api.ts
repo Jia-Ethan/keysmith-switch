@@ -375,8 +375,8 @@ export function planCleanup(tool: ToolId): Promise<CleanupPlan> {
 }
 
 /** Save a snapshot, then remove the deployment (and Claude Code's user-level memory file). */
-export function confirmCleanup(operationId: string): Promise<CleanupResult> {
-  return call("confirm_cleanup", { operationId });
+export function confirmCleanup(operationId: string, clearMemories = false): Promise<CleanupResult> {
+  return call("confirm_cleanup", { operationId, clearMemories });
 }
 
 export function listSnapshots(): Promise<SnapshotMeta[]> {

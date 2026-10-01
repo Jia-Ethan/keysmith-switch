@@ -508,10 +508,12 @@ describe("Workspace: prompt library", () => {
       tool: "codex",
       deployment: { present: true, title: "Spare", restorable: true },
       memory: null,
+      memories: null,
+      agentRunning: false,
       nothingToDo: false,
       blockers: [],
     });
-    confirmCleanup.mockResolvedValue({ snapshotId: "s1", deactivated: true, memoryCleared: false });
+    confirmCleanup.mockResolvedValue({ snapshotId: "s1", deactivated: true, memoryCleared: false, memoriesCleared: false });
     const toast = { ok: vi.fn(), err: vi.fn(), info: vi.fn(), toasts: [], dismiss: vi.fn() };
     const onNavigate = vi.fn();
     await renderPage({ onNavigate, toast: toast as never });
@@ -520,17 +522,24 @@ describe("Workspace: prompt library", () => {
     expect(planCleanup).toHaveBeenCalledWith("codex");
     fireEvent.click(screen.getByTestId("cleanup-confirm"));
     await screen.findByTestId("cleanup-done");
-    expect(confirmCleanup).toHaveBeenCalledWith("op-c");
+    expect(confirmCleanup).toHaveBeenCalledWith("op-c", false);
     expect(toast.ok).toHaveBeenCalled();
     fireEvent.click(screen.getByTestId("cleanup-open-versions"));
     expect(onNavigate).toHaveBeenCalledWith({ kind: "settings", tab: "versions" });
   });
 
-  it("offers no cleanup for an agent with nothing deployed and no memory file", async () => {
+  it("offers no cleanup for an agent with nothing deployed and no memory file Keysmith knows", async () => {
+    getHarnessState.mockResolvedValue({ tool: "grok", deployed: false, error: null });
+    await renderPage({ tool: "grok" });
+    await screen.findByRole("heading", { name: "Grok Build" });
+    expect(screen.queryByTestId("hero-cleanup")).not.toBeInTheDocument();
+  });
+
+  it("offers cleanup for Codex even with nothing deployed, because AGENTS.md and its memories can still be cleared", async () => {
     getHarnessState.mockResolvedValue({ tool: "codex", deployed: false, error: null });
     await renderPage();
     await screen.findByRole("heading", { name: "Codex" });
-    expect(screen.queryByTestId("hero-cleanup")).not.toBeInTheDocument();
+    expect(await screen.findByTestId("hero-cleanup")).toBeInTheDocument();
   });
 
   it("edits a live library prompt straight from the hero", async () => {

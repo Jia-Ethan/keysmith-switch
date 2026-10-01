@@ -38,6 +38,8 @@ function rollbackPlan(overrides: Partial<RollbackPlan> = {}): RollbackPlan {
     currentTitle: null,
     replacesDeployment: false,
     memory: { restoreBytes: 1300, currentBytes: 0, currentDiffers: true },
+    memories: null,
+    agentRunning: false,
     savesCurrent: false,
     blockers: [],
     ...overrides,
@@ -118,5 +120,50 @@ describe("VersionsTab", () => {
     expect(deleteSnapshot).not.toHaveBeenCalled();
     fireEvent.click(await screen.findByTestId("version-confirm-delete"));
     await waitFor(() => expect(deleteSnapshot).toHaveBeenCalledWith(snapshot.id));
+  });
+
+  describe("a version that holds an agent's memory folder", () => {
+    const withFolder: SnapshotMeta = {
+      ...snapshot,
+      tool: "codex",
+      memory: { path: "/home/u/.codex/AGENTS.md", bytes: 900, lines: 12, sha256: "def", mode: 420 },
+      memories: { path: "/home/u/.codex/memories", files: 2778, bytes: 41943040 },
+    };
+    const folderPlan = (overrides: Partial<RollbackPlan> = {}) =>
+      rollbackPlan({
+        snapshot: withFolder,
+        memory: { restoreBytes: 900, currentBytes: 0, currentDiffers: true },
+        memories: { restoreFiles: 2778, restoreBytes: 41943040, currentFiles: 3, currentBytes: 100 },
+        savesCurrent: true,
+        ...overrides,
+      });
+
+    it("lists the folder and the agent's own file name", async () => {
+      listSnapshots.mockResolvedValue([withFolder]);
+      render(<VersionsTab toast={toast} />);
+      const row = await screen.findByTestId(`version-${withFolder.id}`);
+      expect(row).toHaveTextContent("AGENTS.md");
+      expect(row).toHaveTextContent("2778");
+    });
+
+    it("previews the folder coming back and what it replaces", async () => {
+      listSnapshots.mockResolvedValue([withFolder]);
+      planRollback.mockResolvedValue(folderPlan());
+      render(<VersionsTab toast={toast} />);
+      fireEvent.click(await screen.findByTestId(`version-rollback-${withFolder.id}`));
+      const item = await screen.findByTestId("rollback-memories");
+      expect(item).toHaveTextContent("2778");
+      expect(item).toHaveTextContent("3");
+      expect(screen.getByTestId("rollback-confirm")).toBeEnabled();
+    });
+
+    it("cannot roll the folder back while the agent runs", async () => {
+      listSnapshots.mockResolvedValue([withFolder]);
+      planRollback.mockResolvedValue(folderPlan({ agentRunning: true }));
+      render(<VersionsTab toast={toast} />);
+      fireEvent.click(await screen.findByTestId(`version-rollback-${withFolder.id}`));
+      await screen.findByTestId("rollback-memories-running");
+      expect(screen.getByTestId("rollback-confirm")).toBeDisabled();
+    });
   });
 });

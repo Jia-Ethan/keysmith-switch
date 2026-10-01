@@ -91,7 +91,8 @@ function extView() {
 }
 
 let claudeMemoryBytes = 1342;
-const snapshots: Array<{ id: string; createdAt: string; tool: ToolId; kind: string; deployment: { present: boolean; title: string | null; restorable: boolean }; memory: { path: string; bytes: number; lines: number; sha256: string; mode: number } | null }> = [];
+let codexMemoriesGone = false;
+const snapshots: Array<{ id: string; createdAt: string; tool: ToolId; kind: string; deployment: { present: boolean; title: string | null; restorable: boolean }; memory: { path: string; bytes: number; lines: number; sha256: string; mode: number } | null; memories?: { path: string; files: number; bytes: number } | null }> = [];
 let grokDrift = new URLSearchParams(window.location.search).get("grok") === "drift";
 
 const delay = <T,>(value: T, ms = 260) => new Promise<T>((resolve) => setTimeout(() => resolve(value), ms));
@@ -182,7 +183,10 @@ async function handle(cmd: string, args: Record<string, any> = {}): Promise<unkn
       const tool = args.tool as ToolId;
       const live = store.live[tool];
       const memory = tool === "claude" && claudeMemoryBytes > 0 ? { path: "/Users/you/.claude/CLAUDE.md", bytes: claudeMemoryBytes, lines: 31, sha256: "m1", mode: 420 } : null;
-      return delay({ operationId: `cleanup-${tool}`, tool, deployment: { present: Boolean(live), title: live?.title || null, restorable: Boolean(live) }, memory, nothingToDo: !live && !memory, blockers: [] }, 450);
+      // ?codexrunning=1 pretends Codex is open, which keeps its memories folder out of reach.
+      const memories = tool === "codex" && !codexMemoriesGone ? { path: "/Users/you/.codex/memories", files: 2778, bytes: 41_943_040 } : null;
+      const agentRunning = tool === "codex" && new URLSearchParams(window.location.search).has("codexrunning");
+      return delay({ operationId: `cleanup-${tool}`, tool, deployment: { present: Boolean(live), title: live?.title || null, restorable: Boolean(live) }, memory, memories, agentRunning, nothingToDo: !live && !memory && !memories, blockers: [] }, 450);
     }
     case "confirm_cleanup": {
       const tool = String(args.operationId).replace("cleanup-", "") as ToolId;
@@ -191,20 +195,26 @@ async function handle(cmd: string, args: Record<string, any> = {}): Promise<unkn
       snapshots.unshift({ id, createdAt: now(), tool, kind: "cleanup", deployment: { present: Boolean(live), title: live?.title || null, restorable: Boolean(live) }, memory: tool === "claude" && claudeMemoryBytes > 0 ? { path: "/Users/you/.claude/CLAUDE.md", bytes: claudeMemoryBytes, lines: 31, sha256: "m1", mode: 420 } : null });
       delete store.live[tool];
       if (tool === "claude") claudeMemoryBytes = 0;
-      return delay({ snapshotId: id, deactivated: Boolean(live), memoryCleared: tool === "claude" }, 1100);
+      const memoriesCleared = tool === "codex" && args.clearMemories === true && !codexMemoriesGone;
+      if (memoriesCleared) {
+        codexMemoriesGone = true;
+        snapshots[0].memories = { path: "/Users/you/.codex/memories", files: 2778, bytes: 41_943_040 };
+      }
+      return delay({ snapshotId: id, deactivated: Boolean(live), memoryCleared: tool === "claude", memoriesCleared }, 1100);
     }
     case "list_snapshots":
       return snapshots;
     case "plan_rollback": {
       const snap = snapshots.find((s) => s.id === args.snapshotId)!;
       const live = store.live[snap.tool];
-      return delay({ operationId: `rollback-${snap.id}`, snapshot: snap, currentTitle: live?.title || null, replacesDeployment: Boolean(live), memory: snap.memory ? { restoreBytes: snap.memory.bytes, currentBytes: claudeMemoryBytes, currentDiffers: claudeMemoryBytes !== snap.memory.bytes } : null, savesCurrent: Boolean(live) || claudeMemoryBytes > 0, blockers: [] }, 400);
+      return delay({ operationId: `rollback-${snap.id}`, snapshot: snap, currentTitle: live?.title || null, replacesDeployment: Boolean(live), memory: snap.memory ? { restoreBytes: snap.memory.bytes, currentBytes: claudeMemoryBytes, currentDiffers: claudeMemoryBytes !== snap.memory.bytes } : null, memories: snap.memories ? { restoreFiles: snap.memories.files, restoreBytes: snap.memories.bytes, currentFiles: codexMemoriesGone ? 0 : snap.memories.files, currentBytes: 0 } : null, agentRunning: false, savesCurrent: Boolean(live) || claudeMemoryBytes > 0, blockers: [] }, 400);
     }
     case "confirm_rollback": {
       const snap = snapshots.find((s) => `rollback-${s.id}` === args.operationId)!;
       if (snap.deployment.present) store.live[snap.tool] = { id: null, title: snap.deployment.title || "", body: "restored" };
       if (snap.memory) claudeMemoryBytes = snap.memory.bytes;
-      return delay({ savedSnapshotId: null, redeployed: snap.deployment.present, memoryRestored: Boolean(snap.memory) }, 1000);
+      if (snap.memories) codexMemoriesGone = false;
+      return delay({ savedSnapshotId: null, redeployed: snap.deployment.present, memoryRestored: Boolean(snap.memory), memoriesRestored: Boolean(snap.memories) }, 1000);
     }
     case "delete_snapshot": {
       const index = snapshots.findIndex((s) => s.id === args.snapshotId);

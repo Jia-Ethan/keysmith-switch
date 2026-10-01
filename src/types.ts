@@ -434,6 +434,13 @@ export interface MemoryMeta {
 }
 
 /** A saved state of one agent: made before a cleanup, or before a rollback overwrote something. */
+/** An agent's own memory folder (Codex: ~/.codex/memories), counted, never read. */
+export interface MemoriesMeta {
+  path: string;
+  files: number;
+  bytes: number;
+}
+
 export interface SnapshotMeta {
   id: string;
   createdAt: string;
@@ -441,6 +448,7 @@ export interface SnapshotMeta {
   kind: "cleanup" | "before-rollback";
   deployment: DeploymentMeta;
   memory: MemoryMeta | null;
+  memories?: MemoriesMeta | null;
 }
 
 export interface CleanupPlan {
@@ -448,6 +456,10 @@ export interface CleanupPlan {
   tool: ToolId;
   deployment: DeploymentMeta;
   memory: MemoryMeta | null;
+  /** The agent's memory folder, if it has files in it. Only cleared when asked for. */
+  memories: MemoriesMeta | null;
+  /** The agent is running, so its memory folder cannot be cleared or restored now. */
+  agentRunning: boolean;
   nothingToDo: boolean;
   blockers: string[];
 }
@@ -456,6 +468,7 @@ export interface CleanupResult {
   snapshotId: string | null;
   deactivated: boolean;
   memoryCleared: boolean;
+  memoriesCleared: boolean;
 }
 
 export interface RollbackPlan {
@@ -464,6 +477,8 @@ export interface RollbackPlan {
   currentTitle: string | null;
   replacesDeployment: boolean;
   memory: { restoreBytes: number; currentBytes: number; currentDiffers: boolean } | null;
+  memories: { restoreFiles: number; restoreBytes: number; currentFiles: number; currentBytes: number } | null;
+  agentRunning: boolean;
   /** What is there now is saved as a snapshot first. */
   savesCurrent: boolean;
   blockers: string[];
@@ -473,4 +488,5 @@ export interface RollbackResult {
   savedSnapshotId: string | null;
   redeployed: boolean;
   memoryRestored: boolean;
+  memoriesRestored: boolean;
 }

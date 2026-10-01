@@ -2,11 +2,16 @@
 //!
 //! Cleaning an agent means: take away what Keysmith deployed (the system prompt and the
 //! managed block in the agent's config, through the adapter's own uninstall) and, for
-//! Claude Code, empty the user-level memory file `~/.claude/CLAUDE.md`, including what
-//! the person wrote in it. That last part is the only place Keysmith writes an agent's
-//! file itself instead of asking an adapter, so it is held to a narrow rule: user scope
-//! only, exactly that one file, never a link, and never before a complete copy has been
-//! saved and checked.
+//! Claude Code and Codex, empty the user-level memory file (`~/.claude/CLAUDE.md`,
+//! `~/.codex/AGENTS.md`), including what the person wrote in it. That is one of two places
+//! Keysmith writes an agent's files itself instead of asking an adapter, so it is held to
+//! a narrow rule: user scope only, exactly that one file, never a link, and never before a
+//! complete copy has been saved and checked.
+//!
+//! The other is Codex's own memory folder `~/.codex/memories`. It is large and Codex
+//! writes to it, so it is only touched when the person asks for it by name, only while
+//! Codex is not running, and it is moved (not copied or deleted) into the snapshot. Rolling
+//! back copies it out again and leaves the snapshot whole.
 //!
 //! Before anything is changed a snapshot is written to `~/.keysmith-switch/snapshots/`:
 //! the text of the live prompt (when it can be proven to be the live text) and a byte
@@ -14,8 +19,8 @@
 //! plan and puts the memory file's bytes back. Rolling back first saves the current state
 //! as a snapshot of its own, so a rollback can be undone too.
 //!
-//! Project files, project and local scope deployments, an agent's own memory folders and
-//! the prompt library are never touched.
+//! Project files, project and local scope deployments, any other agent folder (Codex's
+//! database, sessions and so on) and the prompt library are never touched.
 
 use std::path::{Path, PathBuf};
 
@@ -35,6 +40,8 @@ use crate::models::{
 use crate::ops;
 
 const MAX_MEMORY_BYTES: u64 = 8 * 1024 * 1024;
+/// Tests and unusual setups say whether Codex is running instead of asking the system: "1" or "0".
+pub const CODEX_RUNNING_KEY: &str = "KEYSMITH_SWITCH_CODEX_RUNNING";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -55,6 +62,15 @@ pub struct MemoryMeta {
     pub mode: Option<u32>,
 }
 
+/// An agent's own memory folder (Codex: `~/.codex/memories`), counted but never read.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct MemoriesMeta {
+    pub path: String,
+    pub files: u64,
+    pub bytes: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct SnapshotMeta {
@@ -65,6 +81,9 @@ pub struct SnapshotMeta {
     pub kind: String,
     pub deployment: DeploymentMeta,
     pub memory: Option<MemoryMeta>,
+    /// The agent's memory folder, kept inside the snapshot's own `memories` folder.
+    #[serde(default)]
+    pub memories: Option<MemoriesMeta>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -74,6 +93,10 @@ pub struct CleanupPlan {
     pub tool: ToolKind,
     pub deployment: DeploymentMeta,
     pub memory: Option<MemoryMeta>,
+    /// The agent's memory folder, if it has one with something in it. Only cleared when asked.
+    pub memories: Option<MemoriesMeta>,
+    /// The agent is running now, so its memory folder cannot be cleared or restored.
+    pub agent_running: bool,
     pub nothing_to_do: bool,
     pub blockers: Vec<String>,
 }
@@ -84,6 +107,7 @@ pub struct CleanupResult {
     pub snapshot_id: Option<String>,
     pub deactivated: bool,
     pub memory_cleared: bool,
+    pub memories_cleared: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -96,12 +120,23 @@ pub struct RollbackMemory {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct RollbackMemories {
+    pub restore_files: u64,
+    pub restore_bytes: u64,
+    pub current_files: u64,
+    pub current_bytes: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RollbackPlan {
     pub operation_id: String,
     pub snapshot: SnapshotMeta,
     pub current_title: Option<String>,
     pub replaces_deployment: bool,
     pub memory: Option<RollbackMemory>,
+    pub memories: Option<RollbackMemories>,
+    pub agent_running: bool,
     /// What is there now is saved as a snapshot first.
     pub saves_current: bool,
     pub blockers: Vec<String>,
@@ -113,6 +148,7 @@ pub struct RollbackResult {
     pub saved_snapshot_id: Option<String>,
     pub redeployed: bool,
     pub memory_restored: bool,
+    pub memories_restored: bool,
 }
 
 fn sha_hex(bytes: &[u8]) -> String {
@@ -191,16 +227,58 @@ fn snapshot_memory(store: &Store, meta: &SnapshotMeta) -> Result<Option<Vec<u8>>
     Ok(Some(bytes))
 }
 
-/// The user-level memory file, for the agents that have one Keysmith knows about (Claude Code).
-/// The path comes from the adapter, and is accepted only when it is exactly the file in the
-/// user's own home and an ordinary file.
+/// The memory folder kept in a snapshot, checked against what the snapshot says it holds.
+fn snapshot_memories(store: &Store, meta: &SnapshotMeta) -> Result<Option<PathBuf>> {
+    let Some(saved) = &meta.memories else {
+        return Ok(None);
+    };
+    let dir = memories_in_snapshot(store, &meta.id)?;
+    let info = memories_info(&dir)
+        .map_err(|_| Error::invalid("snapshot is damaged: its memories folder is missing"))?;
+    if info.files != saved.files || info.bytes != saved.bytes {
+        return Err(Error::invalid(
+            "snapshot is damaged: its memories folder does not match",
+        ));
+    }
+    Ok(Some(dir))
+}
+
+fn home_dir(opts: &AdapterOptions) -> Result<PathBuf> {
+    opts.home
+        .clone()
+        .or_else(dirs::home_dir)
+        .ok_or_else(|| Error::invalid("the home folder is unknown"))
+}
+
+/// Where an agent's user-level memory file is, for the agents that have one.
+fn memory_expected(tool: ToolKind, opts: &AdapterOptions) -> Result<Option<PathBuf>> {
+    let home = home_dir(opts)?;
+    Ok(match tool {
+        ToolKind::Claude => Some(home.join(".claude").join("CLAUDE.md")),
+        ToolKind::Codex => Some(home.join(".codex").join("AGENTS.md")),
+        _ => None,
+    })
+}
+
+/// The user-level memory file, for the agents that have one Keysmith knows about (Claude Code's
+/// CLAUDE.md, Codex's AGENTS.md). It is accepted only when it is exactly the file in the user's
+/// own home and an ordinary file. Claude's path comes from the adapter and is checked against
+/// that place; Codex's adapter does not report it, so the place itself is used.
 fn memory_file(
     tool: ToolKind,
     envelope: &Envelope,
     opts: &AdapterOptions,
 ) -> Result<Option<PathBuf>> {
-    if tool != ToolKind::Claude {
+    let Some(expected) = memory_expected(tool, opts)? else {
         return Ok(None);
+    };
+    if tool == ToolKind::Codex {
+        return match std::fs::symlink_metadata(&expected) {
+            Ok(meta) if meta.is_file() => Ok(Some(expected)),
+            Ok(_) => Err(Error::invalid("the memory file is not an ordinary file")),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error.into()),
+        };
     }
     let Some(target) = envelope
         .target_paths
@@ -209,12 +287,6 @@ fn memory_file(
     else {
         return Ok(None);
     };
-    let home = opts
-        .home
-        .clone()
-        .or_else(dirs::home_dir)
-        .ok_or_else(|| Error::invalid("the home folder is unknown"))?;
-    let expected = home.join(".claude").join("CLAUDE.md");
     let path = PathBuf::from(&target.path);
     let meta =
         std::fs::symlink_metadata(&path).map_err(|_| Error::invalid("the memory file is gone"))?;
@@ -234,6 +306,129 @@ fn memory_file(
         ));
     }
     Ok(Some(path))
+}
+
+/// Codex's own memory folder, when it has one. A link, or anything that is not a folder, is
+/// refused: the folder is moved as a whole, and only the real one in the user's home.
+fn memories_dir(tool: ToolKind, opts: &AdapterOptions) -> Result<Option<PathBuf>> {
+    if tool != ToolKind::Codex {
+        return Ok(None);
+    }
+    let path = home_dir(opts)?.join(".codex").join("memories");
+    match std::fs::symlink_metadata(&path) {
+        Ok(meta) if meta.is_dir() => Ok(Some(path)),
+        Ok(_) => Err(Error::invalid(
+            "the memories folder is a link or not a folder; nothing was changed",
+        )),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
+/// How many files and bytes a folder holds. Links are counted, never followed, and nothing is read.
+fn dir_stats(root: &Path) -> Result<(u64, u64)> {
+    let (mut files, mut bytes) = (0u64, 0u64);
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(dir) = pending.pop() {
+        for entry in std::fs::read_dir(&dir)? {
+            let entry = entry?;
+            let meta = std::fs::symlink_metadata(entry.path())?;
+            if meta.is_dir() {
+                pending.push(entry.path());
+            } else {
+                files += 1;
+                bytes += meta.len();
+            }
+        }
+    }
+    Ok((files, bytes))
+}
+
+fn memories_info(path: &Path) -> Result<MemoriesMeta> {
+    let (files, bytes) = dir_stats(path)?;
+    Ok(MemoriesMeta {
+        path: path.to_string_lossy().into_owned(),
+        files,
+        bytes,
+    })
+}
+
+/// The folder as it is now, or `None` when it has nothing in it.
+fn current_memories(tool: ToolKind, opts: &AdapterOptions) -> Result<Option<MemoriesMeta>> {
+    Ok(match memories_dir(tool, opts)? {
+        Some(path) => Some(memories_info(&path)?).filter(|info| info.files > 0),
+        None => None,
+    })
+}
+
+/// Whether Codex is running, which keeps its memory folder in use. A process list that cannot
+/// be read counts as not running; the person is also told to close Codex first.
+fn agent_running(tool: ToolKind, opts: &AdapterOptions) -> bool {
+    if tool != ToolKind::Codex {
+        return false;
+    }
+    if let Some(forced) = opts.extra_env.get(CODEX_RUNNING_KEY) {
+        return forced == "1";
+    }
+    #[cfg(unix)]
+    let listing = std::process::Command::new("ps")
+        .args(["-axo", "comm="])
+        .output();
+    #[cfg(windows)]
+    let listing = std::process::Command::new("tasklist")
+        .args(["/FO", "CSV", "/NH"])
+        .output();
+    #[cfg(not(any(unix, windows)))]
+    return false;
+    #[cfg(any(unix, windows))]
+    listing.ok().is_some_and(|out| {
+        String::from_utf8_lossy(&out.stdout).lines().any(|line| {
+            let name = line.trim().trim_start_matches('"');
+            let name = name.split('"').next().unwrap_or(name);
+            let base = name.rsplit(['/', '\\']).next().unwrap_or(name);
+            let base = base.to_ascii_lowercase();
+            base == "codex" || base == "codex.exe"
+        })
+    })
+}
+
+fn memories_in_snapshot(store: &Store, id: &str) -> Result<PathBuf> {
+    Ok(snapshot_path(store, id)?.join("memories"))
+}
+
+/// A copy of a folder, keeping links as links. The destination must not exist yet.
+fn copy_dir(from: &Path, to: &Path) -> Result<()> {
+    std::fs::create_dir(to)?;
+    for entry in std::fs::read_dir(from)? {
+        let entry = entry?;
+        let source = entry.path();
+        let target = to.join(entry.file_name());
+        let meta = std::fs::symlink_metadata(&source)?;
+        if meta.is_dir() {
+            copy_dir(&source, &target)?;
+        } else if meta.file_type().is_symlink() {
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(std::fs::read_link(&source)?, &target)?;
+        } else {
+            std::fs::copy(&source, &target)?;
+        }
+    }
+    Ok(())
+}
+
+/// Both paths must be on one volume for a move to be a rename that cannot lose anything.
+#[cfg(unix)]
+fn same_volume(left: &Path, right: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    match (std::fs::metadata(left), std::fs::metadata(right)) {
+        (Ok(a), Ok(b)) => a.dev() == b.dev(),
+        _ => false,
+    }
+}
+
+#[cfg(not(unix))]
+fn same_volume(_left: &Path, _right: &Path) -> bool {
+    true
 }
 
 fn memory_info(path: &Path) -> Result<(MemoryMeta, Vec<u8>)> {
@@ -270,6 +465,7 @@ fn create_snapshot(
     deployment: DeploymentMeta,
     prompt: Option<&str>,
     memory: Option<(MemoryMeta, &[u8])>,
+    memories: Option<MemoriesMeta>,
 ) -> Result<SnapshotMeta> {
     let _lock = HomeLock::acquire(store.paths())?;
     let id = format!(
@@ -285,6 +481,7 @@ fn create_snapshot(
         kind: kind.to_string(),
         deployment,
         memory: memory.as_ref().map(|(info, _)| info.clone()),
+        memories,
     };
     let root = snapshots_dir(store);
     let staging = root.join(format!(".{id}.writing"));
@@ -321,6 +518,24 @@ fn truncate_file(path: &Path) -> Result<()> {
         .write(true)
         .truncate(true)
         .open(path)?;
+    Ok(())
+}
+
+/// Move the agent's memory folder into the snapshot that was made for it. Nothing is copied or
+/// deleted: the folder is renamed, so it is either where it was or all inside the snapshot. When
+/// it cannot be moved the snapshot is rewritten to say it holds no folder.
+fn move_memories_into(store: &Store, snapshot: &SnapshotMeta, from: &Path) -> Result<()> {
+    let to = memories_in_snapshot(store, &snapshot.id)?;
+    if let Err(error) = std::fs::rename(from, &to) {
+        let mut meta = snapshot.clone();
+        meta.memories = None;
+        if let Ok(bytes) = serde_json::to_vec_pretty(&meta) {
+            let _ = std::fs::write(snapshot_path(store, &snapshot.id)?.join("meta.json"), bytes);
+        }
+        return Err(Error::command_failed(format!(
+            "the memories folder could not be moved into the snapshot: {error}"
+        )));
+    }
     Ok(())
 }
 
@@ -430,7 +645,10 @@ pub async fn plan_cleanup(
         );
     }
     let memory_meta = memory.as_ref().map(|(info, _)| info.clone());
-    let nothing_to_do = !deployment.present && memory_meta.as_ref().is_none_or(|m| m.bytes == 0);
+    let memories = current_memories(tool, opts)?;
+    let nothing_to_do = !deployment.present
+        && memory_meta.as_ref().is_none_or(|m| m.bytes == 0)
+        && memories.is_none();
     let operation = ops::store_preview(
         store,
         tool,
@@ -442,6 +660,7 @@ pub async fn plan_cleanup(
             "tool": tool,
             "deployed": deployment.present,
             "memorySha": memory_meta.as_ref().map(|m| m.sha256.clone()),
+            "memories": memories.as_ref().map(|m| json!({ "files": m.files, "bytes": m.bytes })),
         }),
         &preview_envelope(&envelope, "plan-cleanup"),
     )?;
@@ -450,6 +669,8 @@ pub async fn plan_cleanup(
         tool,
         deployment,
         memory: memory_meta,
+        memories,
+        agent_running: agent_running(tool, opts),
         nothing_to_do,
         blockers,
     })
@@ -464,14 +685,17 @@ fn fail_plan(store: &Store, operation_id: &str, error: &Error) {
     );
 }
 
+/// `clear_memories` is the person's own tick for the agent's memory folder: without it that
+/// folder is left exactly as it is, however much is in it.
 pub async fn confirm_cleanup(
     store: &Store,
     operation_id: &str,
+    clear_memories: bool,
     opts: &AdapterOptions,
 ) -> Result<CleanupResult> {
     let plan = ops::require_preview(store, operation_id, OperationKind::Cleanup)?;
     let request: serde_json::Value = serde_json::from_str(&plan.request_json)?;
-    let result = run_cleanup(store, plan.tool, &request, opts).await;
+    let result = run_cleanup(store, plan.tool, &request, clear_memories, opts).await;
     match &result {
         Ok(_) => {
             store.update_operation(operation_id, OperationStatus::Succeeded, None, None)?;
@@ -485,6 +709,7 @@ async fn run_cleanup(
     store: &Store,
     tool: ToolKind,
     request: &serde_json::Value,
+    clear_memories: bool,
     opts: &AdapterOptions,
 ) -> Result<CleanupResult> {
     let envelope = ops::tool_status(store, tool, Scope::User, None, opts).await?;
@@ -505,7 +730,48 @@ async fn run_cleanup(
         ));
     }
 
-    let snapshot = if deployment.present || memory.as_ref().is_some_and(|(info, _)| info.bytes > 0)
+    // The folder is checked before anything is changed: it is the step that can least be undone
+    // by hand, so it must be the one that cannot be refused halfway.
+    let memories = if clear_memories {
+        let now = current_memories(tool, opts)?;
+        let planned = request.get("memories").filter(|value| !value.is_null());
+        let planned_same = match (&now, planned) {
+            (None, None) => true,
+            (Some(info), Some(value)) => {
+                value.get("files").and_then(|v| v.as_u64()) == Some(info.files)
+                    && value.get("bytes").and_then(|v| v.as_u64()) == Some(info.bytes)
+            }
+            _ => false,
+        };
+        if !planned_same {
+            return Err(Error::user_cancel(
+                "plan already used: things changed since the preview",
+            ));
+        }
+        if now.is_some() {
+            if agent_running(tool, opts) {
+                return Err(Error::command_failed(
+                    "close the agent first: it is using its memories folder",
+                ));
+            }
+            std::fs::create_dir_all(snapshots_dir(store))?;
+            if !same_volume(
+                Path::new(&now.as_ref().unwrap().path),
+                &snapshots_dir(store),
+            ) {
+                return Err(Error::command_failed(
+                    "the memories folder is on another disk than the snapshots, so it cannot be moved safely",
+                ));
+            }
+        }
+        now
+    } else {
+        None
+    };
+
+    let snapshot = if deployment.present
+        || memory.as_ref().is_some_and(|(info, _)| info.bytes > 0)
+        || memories.is_some()
     {
         Some(create_snapshot(
             store,
@@ -516,6 +782,7 @@ async fn run_cleanup(
             memory
                 .as_ref()
                 .map(|(info, bytes)| (info.clone(), bytes.as_slice())),
+            memories.clone(),
         )?)
     } else {
         None
@@ -571,10 +838,21 @@ async fn run_cleanup(
             memory_cleared = true;
         }
     }
+
+    // Last, and the folder is put back empty so the agent finds what it expects.
+    let mut memories_cleared = false;
+    if let (Some(info), Some(snapshot)) = (&memories, &snapshot) {
+        let _lock = HomeLock::acquire(store.paths())?;
+        let from = Path::new(&info.path);
+        move_memories_into(store, snapshot, from)?;
+        std::fs::create_dir(from)?;
+        memories_cleared = true;
+    }
     Ok(CleanupResult {
         snapshot_id: snapshot.map(|meta| meta.id),
         deactivated,
         memory_cleared,
+        memories_cleared,
     })
 }
 
@@ -585,6 +863,7 @@ pub async fn plan_rollback(
 ) -> Result<RollbackPlan> {
     let snapshot = read_snapshot(store, snapshot_id)?;
     snapshot_memory(store, &snapshot)?;
+    snapshot_memories(store, &snapshot)?;
     let tool = snapshot.tool;
     let envelope = ops::tool_status(store, tool, Scope::User, None, opts).await?;
     let (deployment, _body, memory) = current_state(store, tool, &envelope, opts)?;
@@ -607,6 +886,16 @@ pub async fn plan_rollback(
     let overwrites_memory = memory_plan
         .as_ref()
         .is_some_and(|m| m.current_differs && m.current_bytes > 0);
+    let current_memories = match &snapshot.memories {
+        Some(_) => current_memories(tool, opts)?,
+        None => None,
+    };
+    let memories_plan = snapshot.memories.as_ref().map(|saved| RollbackMemories {
+        restore_files: saved.files,
+        restore_bytes: saved.bytes,
+        current_files: current_memories.as_ref().map_or(0, |m| m.files),
+        current_bytes: current_memories.as_ref().map_or(0, |m| m.bytes),
+    });
     let operation = ops::store_preview(
         store,
         tool,
@@ -621,8 +910,10 @@ pub async fn plan_rollback(
         operation_id: operation.id,
         current_title: deployment.title.clone(),
         replaces_deployment: deployment.present && snapshot.deployment.restorable,
-        saves_current: deployment.present || overwrites_memory,
+        saves_current: deployment.present || overwrites_memory || current_memories.is_some(),
         memory: memory_plan,
+        memories: memories_plan,
+        agent_running: snapshot.memories.is_some() && agent_running(tool, opts),
         snapshot,
         blockers,
     })
@@ -655,6 +946,12 @@ async fn run_rollback(store: &Store, id: &str, opts: &AdapterOptions) -> Result<
     let tool = snapshot.tool;
     let saved_prompt = snapshot_prompt(store, &snapshot)?;
     let saved_memory = snapshot_memory(store, &snapshot)?;
+    let saved_memories = snapshot_memories(store, &snapshot)?;
+    if saved_memories.is_some() && agent_running(tool, opts) {
+        return Err(Error::command_failed(
+            "close the agent first: it is using its memories folder",
+        ));
+    }
 
     let envelope = ops::tool_status(store, tool, Scope::User, None, opts).await?;
     if envelope.status == ToolStatus::Drift || envelope.recovery_required {
@@ -705,23 +1002,34 @@ async fn run_rollback(store: &Store, id: &str, opts: &AdapterOptions) -> Result<
         (Some(saved), Some((info, _))) => info.sha256 != saved.sha256 && info.bytes > 0,
         _ => false,
     };
-    let saved_snapshot_id = if deployment.present || current_differs {
-        Some(
-            create_snapshot(
-                store,
-                tool,
-                "before-rollback",
-                deployment.clone(),
-                body.as_deref(),
-                memory
-                    .as_ref()
-                    .map(|(info, bytes)| (info.clone(), bytes.as_slice())),
-            )?
-            .id,
-        )
+    let current_folder = match &saved_memories {
+        Some(_) => current_memories(tool, opts)?,
+        None => None,
+    };
+    if let Some(info) = &current_folder {
+        std::fs::create_dir_all(snapshots_dir(store))?;
+        if !same_volume(Path::new(&info.path), &snapshots_dir(store)) {
+            return Err(Error::command_failed(
+                "the memories folder is on another disk than the snapshots, so it cannot be moved safely",
+            ));
+        }
+    }
+    let saved_snapshot = if deployment.present || current_differs || current_folder.is_some() {
+        Some(create_snapshot(
+            store,
+            tool,
+            "before-rollback",
+            deployment.clone(),
+            body.as_deref(),
+            memory
+                .as_ref()
+                .map(|(info, bytes)| (info.clone(), bytes.as_slice())),
+            current_folder.clone(),
+        )?)
     } else {
         None
     };
+    let saved_snapshot_id = saved_snapshot.as_ref().map(|meta| meta.id.clone());
 
     let mut redeployed = false;
     if let Some(plan) = planned {
@@ -743,20 +1051,87 @@ async fn run_rollback(store: &Store, id: &str, opts: &AdapterOptions) -> Result<
         let after = ops::tool_status(store, tool, Scope::User, None, opts).await?;
         let path = memory_file(tool, &after, opts)?
             .or_else(|| {
-                let home = opts.home.clone().or_else(dirs::home_dir)?;
-                let expected = home.join(".claude").join("CLAUDE.md");
-                (tool == ToolKind::Claude && expected.to_string_lossy() == saved.path)
-                    .then_some(expected)
+                let expected = memory_expected(tool, opts).ok()??;
+                (expected.to_string_lossy() == saved.path).then_some(expected)
             })
             .ok_or_else(|| Error::invalid("the memory file could not be found"))?;
         let _lock = HomeLock::acquire(store.paths())?;
         restore_file(&path, bytes, saved.mode)?;
         memory_restored = true;
     }
+
+    let mut memories_restored = false;
+    if let (Some(saved), Some(source)) = (&snapshot.memories, &saved_memories) {
+        let _lock = HomeLock::acquire(store.paths())?;
+        let target = PathBuf::from(&saved.path);
+        let expected = home_dir(opts)?.join(".codex").join("memories");
+        if tool != ToolKind::Codex || target != expected {
+            return Err(Error::invalid(
+                "the memories folder is not the one in the user's home; nothing was changed",
+            ));
+        }
+        let parent = expected
+            .parent()
+            .ok_or_else(|| Error::invalid("the memories folder has no parent"))?;
+        std::fs::create_dir_all(parent)?;
+        // The copy is made and checked beside the target first; only then is the current
+        // folder moved out and the copy renamed in.
+        let staging = parent.join(format!(
+            ".memories.keysmith-restore-{}",
+            uuid::Uuid::new_v4().simple()
+        ));
+        let copied = copy_dir(source, &staging).and_then(|()| {
+            let info = memories_info(&staging)?;
+            if info.files != saved.files || info.bytes != saved.bytes {
+                return Err(Error::command_failed(
+                    "the copy of the memories folder could not be verified",
+                ));
+            }
+            Ok(())
+        });
+        if let Err(error) = copied {
+            let _ = std::fs::remove_dir_all(&staging);
+            return Err(error);
+        }
+        // Whatever the folder holds now goes into the snapshot made above.
+        let moved_away = match (&current_memories(tool, opts)?, &saved_snapshot) {
+            (Some(_), Some(snapshot)) => {
+                if let Err(error) = move_memories_into(store, snapshot, &expected) {
+                    let _ = std::fs::remove_dir_all(&staging);
+                    return Err(error);
+                }
+                true
+            }
+            (Some(_), None) => {
+                let _ = std::fs::remove_dir_all(&staging);
+                return Err(Error::command_failed(
+                    "the memories folder changed while rolling back; nothing was replaced",
+                ));
+            }
+            (None, _) => {
+                // Only empty folders are in the way: they hold nothing to keep.
+                if expected.exists() {
+                    std::fs::remove_dir_all(&expected)?;
+                }
+                false
+            }
+        };
+        if let Err(error) = std::fs::rename(&staging, &expected) {
+            let _ = std::fs::remove_dir_all(&staging);
+            if moved_away {
+                if let Some(snapshot) = &saved_snapshot {
+                    let _ = std::fs::rename(memories_in_snapshot(store, &snapshot.id)?, &expected);
+                }
+            }
+            return Err(error.into());
+        }
+        memories_restored = true;
+    }
     Ok(RollbackResult {
         saved_snapshot_id,
         redeployed,
         memory_restored,
+        memories_restored,
     })
 }
 
