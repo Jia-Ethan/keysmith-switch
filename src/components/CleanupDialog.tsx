@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import * as api from "../api";
 import { readableError } from "../lib/planFailure";
 import type { PlanFailure } from "../lib/planFailure";
-import { formatBytes } from "../lib/format";
+import { baseName, formatBytes } from "../lib/format";
 import type { CleanupPlan, CleanupResult, ToolId } from "../types";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { Callout, PlanFailureNotice } from "./PlanPreview";
@@ -13,8 +13,9 @@ import { Button, Checkbox } from "./ui";
 
 /**
  * Clean an agent back to nothing: say plainly what goes, what stays, and that a version is
- * saved first. The one thing that cannot be undone by Keysmith alone, emptying what the
- * person wrote in CLAUDE.md, needs a tick before the button works.
+ * saved first. Emptying what the person wrote in CLAUDE.md or AGENTS.md needs a tick before
+ * the button works, and an agent's own memory folder (Codex) is only cleared when it is ticked
+ * on its own: that box starts empty and is not offered while the agent is running.
  */
 export function CleanupDialog({
   tool,
@@ -36,6 +37,7 @@ export function CleanupDialog({
   const [loading, setLoading] = useState(false);
   const [working, setWorking] = useState(false);
   const [ack, setAck] = useState(false);
+  const [clearMemories, setClearMemories] = useState(false);
   const [failure, setFailure] = useState<PlanFailure | null>(null);
   const [result, setResult] = useState<CleanupResult | null>(null);
 
@@ -44,6 +46,7 @@ export function CleanupDialog({
     setFailure(null);
     setPlan(null);
     setAck(false);
+    setClearMemories(false);
     try {
       setPlan(await api.planCleanup(tool));
     } catch (reason) {
@@ -61,13 +64,16 @@ export function CleanupDialog({
 
   const memory = plan?.memory && plan.memory.bytes > 0 ? plan.memory : null;
   const needsAck = Boolean(memory);
+  const memories = plan?.memories && plan.memories.files > 0 ? plan.memories : null;
+  const memoriesChosen = Boolean(memories && clearMemories && !plan?.agentRunning);
+  const somethingChosen = Boolean(plan?.deployment.present || memory || memoriesChosen);
   const blocked = Boolean(plan && plan.blockers.length > 0);
   const confirm = async () => {
     if (!plan || working) return;
     setWorking(true);
     setFailure(null);
     try {
-      const done = await api.confirmCleanup(plan.operationId);
+      const done = await api.confirmCleanup(plan.operationId, memoriesChosen);
       setResult(done);
       onDone(done);
     } catch (reason) {
@@ -94,7 +100,7 @@ export function CleanupDialog({
       confirmDisabled={
         result
           ? false
-          : loading || !plan || plan.nothingToDo || blocked || Boolean(failure) || (needsAck && !ack)
+          : loading || !plan || plan.nothingToDo || !somethingChosen || blocked || Boolean(failure) || (needsAck && !ack)
       }
       confirmTestId="cleanup-confirm"
       onClose={onClose}
@@ -127,7 +133,7 @@ export function CleanupDialog({
                     <IconAlert size={11} />
                   </span>
                   <span className="min-w-0 font-medium">
-                    {t("cleanup.willEmptyMemory", { lines: memory.lines, size: formatBytes(memory.bytes) })}
+                    {t("cleanup.willEmptyMemory", { file: baseName(memory.path), lines: memory.lines, size: formatBytes(memory.bytes) })}
                   </span>
                 </li>
               ) : null}
@@ -155,8 +161,25 @@ export function CleanupDialog({
                   data-testid="cleanup-ack"
                   checked={ack}
                   onChange={(event) => setAck(event.target.checked)}
-                  label={t("cleanup.ack")}
+                  label={t("cleanup.ack", { file: memory ? baseName(memory.path) : "" })}
                 />
+              ) : null}
+              {memories ? (
+                <div className="space-y-1.5 rounded-xl border border-border px-3 py-2.5" data-testid="cleanup-memories">
+                  <Checkbox
+                    data-testid="cleanup-memories-tick"
+                    checked={memoriesChosen}
+                    disabled={plan.agentRunning}
+                    onChange={(event) => setClearMemories(event.target.checked)}
+                    label={t("cleanup.memoriesOption", { files: memories.files, size: formatBytes(memories.bytes) })}
+                  />
+                  <p className="pl-6 text-[12.5px] leading-relaxed text-muted-foreground">{t("cleanup.memoriesHint")}</p>
+                  {plan.agentRunning ? (
+                    <p className="pl-6 text-[12.5px] text-warning" data-testid="cleanup-memories-running">
+                      {t("cleanup.memoriesRunning")}
+                    </p>
+                  ) : null}
+                </div>
               ) : null}
             </>
           ) : null}

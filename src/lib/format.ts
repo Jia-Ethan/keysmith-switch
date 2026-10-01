@@ -46,3 +46,8 @@ export function formatCount(value: number, language: string): string {
     return String(value);
   }
 }
+
+/** The last part of a path, whichever way its separators lean. */
+export function baseName(path: string): string {
+  return path.split(/[\\/]/).pop() || path;
+}
