@@ -83,16 +83,43 @@ SPECS = [
     {
         "name": "keysmith-zcode",
         "script": VENDOR / "zcode" / "zcode-keysmith.py",
-        "datas": [VENDOR / "zcode" / "examples" / "system-role.md"],
+        "datas": [
+            VENDOR / "zcode" / "examples" / "system-role.md",
+            # The adapter copies its own source file while installing (`Path(__file__)
+            # .read_text()`); a frozen build has no such file unless it is bundled.
+            (VENDOR / "zcode" / "zcode-keysmith.py", "."),
+        ],
+        "must_contain": ["zcode-keysmith.py"],
         "hidden": [],
     },
 ]
 
 
-def add_data_arg(src: Path) -> str:
-    dest = "examples"
+def add_data_arg(src: Path, dest: str = "examples") -> str:
     sep = ";" if sys.platform == "win32" else ":"
     return f"{src}{sep}{dest}"
+
+
+def assert_bundled(python: Path, binary: Path, required: list) -> None:
+    """Fail the build when a file the adapter reads at run time is not inside the binary."""
+    if not required:
+        return
+    listing = subprocess.run(
+        [
+            str(python),
+            "-c",
+            "import sys; from PyInstaller.utils.cliutils.archive_viewer import run; "
+            "sys.argv = ['x', '-l', '-b', sys.argv[1]]; run()",
+            str(binary),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    entries = {line.strip() for line in listing}
+    missing = [name for name in required if name not in entries]
+    if missing:
+        raise SystemExit(f"{binary.name} does not bundle {missing}; the adapter reads these when it runs")
 
 
 def build_one(python: Path, spec: dict, triple: str) -> Path:
@@ -122,8 +149,9 @@ def build_one(python: Path, spec: dict, triple: str) -> Path:
         str(workpath),
     ]
     for data in spec.get("datas") or []:
-        if Path(data).is_file():
-            cmd.extend(["--add-data", add_data_arg(Path(data))])
+        src, dest = data if isinstance(data, tuple) else (data, "examples")
+        if Path(src).is_file():
+            cmd.extend(["--add-data", add_data_arg(Path(src), dest)])
     for hidden in spec.get("hidden") or []:
         cmd.extend(["--hidden-import", hidden])
     for extra in spec.get("paths") or []:
@@ -133,6 +161,7 @@ def build_one(python: Path, spec: dict, triple: str) -> Path:
     produced = dist / (name + (".exe" if sys.platform == "win32" else ""))
     if not produced.is_file():
         raise SystemExit(f"PyInstaller did not produce {produced}")
+    assert_bundled(python, produced, spec.get("must_contain") or [])
     OUT.mkdir(parents=True, exist_ok=True)
     suffix = ".exe" if sys.platform == "win32" else ""
     dest = OUT / f"{name}-{triple}{suffix}"

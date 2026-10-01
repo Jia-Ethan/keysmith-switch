@@ -454,3 +454,35 @@ async fn codex_prompt_outside_the_codex_directory_is_never_read() {
         .unwrap()
         .is_empty());
 }
+
+#[tokio::test]
+async fn a_spent_plan_says_so_instead_of_claiming_nothing_was_planned() {
+    let (_tmp, store, opts) = setup(ToolKind::Claude);
+    let id = store_pasted_prompt(&store, ToolKind::Claude, "Once", "only once\n").unwrap();
+    let plan = plan_activate(
+        &store,
+        PlanActivateInput {
+            prompt_id: id,
+            scope: Scope::User,
+            project_dir: None,
+            runtime: false,
+            append_file: None,
+            max_tokens: None,
+        },
+        &opts,
+    )
+    .await
+    .unwrap();
+    confirm_activate(&store, &plan.operation_id, &opts)
+        .await
+        .unwrap();
+
+    let again = confirm_activate(&store, &plan.operation_id, &opts)
+        .await
+        .unwrap_err();
+    assert!(again.to_string().contains("plan already used"), "{again}");
+    let unknown = confirm_activate(&store, "no-such-plan", &opts)
+        .await
+        .unwrap_err();
+    assert!(unknown.to_string().contains("plan not found"), "{unknown}");
+}

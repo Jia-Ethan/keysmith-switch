@@ -68,6 +68,8 @@ pub fn run() {
             commands::plan_deactivate,
             commands::deactivate,
             commands::harness_state,
+            commands::plan_reconcile,
+            commands::confirm_reconcile,
             commands::extensions_state,
             commands::extensions_refresh,
             commands::extension_install,

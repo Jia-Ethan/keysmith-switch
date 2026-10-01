@@ -2,8 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import * as api from "../api";
 import type { ToastApi } from "../hooks/useToasts";
+import { failureFromEnvelope, needsReconcile, readableError } from "../lib/planFailure";
+import type { PlanFailure } from "../lib/planFailure";
 import { canConfirmPlan } from "../lib/planGate";
-import { toastSafeMessage } from "../lib/redact";
 import { activeIdsFor, isRecoveryState, scopeNeedsProjectDir } from "../lib/tools";
 import type {
   Activation,
@@ -15,7 +16,7 @@ import type {
 } from "../types";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { ErrorBanner } from "./ErrorBanner";
-import { PlanPreview } from "./PlanPreview";
+import { PlanFailureNotice, PlanPreview } from "./PlanPreview";
 import { PromptViewPage } from "./PromptViewPage";
 import { Button } from "./ui";
 
@@ -45,8 +46,9 @@ export function PromptDetailPage({
   const [contextError, setContextError] = useState(false);
   const [busy, setBusy] = useState(false);
   const [refreshEpoch, setRefreshEpoch] = useState(0);
-  const [plan, setPlan] = useState<{ kind: "activate" | "deactivate"; result: PlanResult } | null>(null);
-  const [planError, setPlanError] = useState<string | null>(null);
+  const [plan, setPlan] = useState<{ kind: "activate" | "deactivate" | "reconcile"; result: PlanResult; then?: "activate" } | null>(null);
+  /** Set once a confirmed plan failed: that plan is spent, so only a new one can go ahead. */
+  const [planFailure, setPlanFailure] = useState<PlanFailure | null>(null);
   const currentDetailRef = useRef<PromptDetail | null>(null);
   const contextSeq = useRef(0);
   const requireProject = scopeNeedsProjectDir(scope);
@@ -107,7 +109,7 @@ export function PromptDetailPage({
       return;
     }
     setBusy(true);
-    setPlanError(null);
+    setPlanFailure(null);
     try {
       const result =
         kind === "activate"
@@ -131,19 +133,46 @@ export function PromptDetailPage({
     }
   };
 
-  const confirmPlan = async () => {
-    if (!plan || !canConfirmPlan(plan.result.envelope) || isRecoveryState(plan.result.envelope)) return;
+  /** Grok's config was changed behind Keysmith's back: tidy it (previewed first), then plan the deploy again. */
+  const openReconcile = async () => {
+    if (busy || !plan) return;
     setBusy(true);
-    setPlanError(null);
+    try {
+      const result = await api.planReconcile(tool);
+      setPlanFailure(null);
+      setPlan({ kind: "reconcile", result, then: plan.kind === "activate" ? "activate" : plan.then });
+    } catch (err) {
+      toast.err(readableError(err, t));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmPlan = async () => {
+    if (!plan || planFailure) return;
+    if (!canConfirmPlan(plan.result.envelope)) return;
+    if (plan.kind !== "reconcile" && isRecoveryState(plan.result.envelope)) return;
+    setBusy(true);
+    setPlanFailure(null);
     try {
       const result =
         plan.kind === "activate"
           ? await api.activate(plan.result.operationId)
-          : await api.deactivate(plan.result.operationId);
+          : plan.kind === "reconcile"
+            ? await api.confirmReconcile(plan.result.operationId)
+            : await api.deactivate(plan.result.operationId);
       if (!result.envelope.ok || result.envelope.exitCode !== 0) {
-        const reason = toastSafeMessage(result.envelope.error || t("plan.failed"));
-        setPlanError(reason);
-        toast.err(reason);
+        const failure = failureFromEnvelope(result.envelope, t);
+        setPlanFailure(failure);
+        toast.err(failure.message);
+        return;
+      }
+      if (plan.kind === "reconcile") {
+        toast.ok(t("plan.reconciled"));
+        setPlan(null);
+        await loadContext();
+        // Back to what the person was doing: the deploy is planned again from the repaired state.
+        if (plan.then === "activate") await openPlan("activate");
         return;
       }
       toast.ok(t("plan.success"));
@@ -151,8 +180,9 @@ export function PromptDetailPage({
       await loadContext();
       onChanged();
     } catch (err) {
-      const reason = toastSafeMessage(err);
-      setPlanError(reason);
+      // Whatever went wrong, a plan that was confirmed once is not confirmed again.
+      const reason = readableError(err, t);
+      setPlanFailure({ message: reason, detail: null });
       toast.err(reason);
     } finally {
       setBusy(false);
@@ -194,20 +224,45 @@ export function PromptDetailPage({
       <ConfirmDialog
         open={Boolean(plan)}
         wide
-        title={plan?.kind === "deactivate" ? t("plan.titleDeactivate", { tool: t(`nav.${tool}`) }) : t("plan.titleActivate")}
+        title={
+          plan?.kind === "deactivate"
+            ? t("plan.titleDeactivate", { tool: t(`nav.${tool}`) })
+            : plan?.kind === "reconcile"
+              ? t("plan.titleReconcile", { tool: t(`nav.${tool}`) })
+              : t("plan.titleActivate")
+        }
         description={currentDetailRef.current?.title}
-        confirmLabel={plan?.kind === "deactivate" ? t("plan.confirmDeactivate") : t("plan.confirmActivate")}
+        confirmLabel={
+          plan?.kind === "deactivate"
+            ? t("plan.confirmDeactivate")
+            : plan?.kind === "reconcile"
+              ? t("plan.confirmReconcile")
+              : t("plan.confirmActivate")
+        }
         cancelLabel={t("common.cancel")}
         closeLabel={t("common.close")}
         busy={busy}
-        confirmDisabled={!plan || !canConfirmPlan(plan.result.envelope) || isRecoveryState(plan.result.envelope) || busy}
+        confirmDisabled={
+          !plan ||
+          !canConfirmPlan(plan.result.envelope) ||
+          (plan.kind !== "reconcile" && isRecoveryState(plan.result.envelope)) ||
+          busy ||
+          Boolean(planFailure)
+        }
         confirmTestId="plan-confirm"
         onClose={() => {
           if (busy) return;
           setPlan(null);
-          setPlanError(null);
+          setPlanFailure(null);
         }}
         onConfirm={() => void confirmPlan()}
+        footerStart={
+          plan?.kind === "activate" && needsReconcile(tool, plan.result.envelope) ? (
+            <Button size="sm" variant="outline" disabled={busy} data-testid="plan-reconcile" onClick={() => void openReconcile()}>
+              {t("plan.reconcileButton")}
+            </Button>
+          ) : null
+        }
       >
         {plan ? (
           <PlanPreview
@@ -218,14 +273,12 @@ export function PromptDetailPage({
             toTitle={currentDetailRef.current?.title}
           />
         ) : null}
-        {planError ? (
-          <div className="mt-3 rounded-2xl border border-destructive/40 bg-destructive/10 px-3 py-2 text-destructive">
-            <p className="font-medium">{t("plan.failed")}</p>
-            <p className="mt-0.5">{planError}</p>
-            <Button className="mt-2" size="sm" onClick={() => void loadContext()}>
-              {t("common.retry")}
-            </Button>
-          </div>
+        {planFailure && plan ? (
+          <PlanFailureNotice
+            failure={planFailure}
+            busy={busy}
+            onReplan={() => (plan.kind === "reconcile" ? void openReconcile() : void openPlan(plan.kind))}
+          />
         ) : null}
       </ConfirmDialog>
     </>

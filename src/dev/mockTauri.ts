@@ -13,6 +13,7 @@ const SEED: Array<[ToolId, string, string, string[], number]> = [
   ["claude", "中文写作润色", "把用户给出的文字润色得更自然、简洁，保留原意，不添加新事实。", ["写作"], 240],
   ["claude", "每日站会助手", "根据昨天的提交与今天的计划，生成三句话的站会发言。", ["效率"], 2880],
   ["codex", "重构小能手", "只做行为不变的重构；每一步都跑测试确认。", ["重构"], 60],
+  ["grok", "Grok 示例提示词", "Grok 的示例。", ["示例"], 20],
   ["zcode", "全栈脚手架", "为新项目生成最小可运行的全栈脚手架，并解释每个目录的用途。", ["脚手架"], 30],
 ];
 
@@ -88,6 +89,8 @@ function extView() {
   const packs = extPacks.map((p) => ({ ...p, updateAvailable: p.compatible && p.installedVersion !== null && p.installedVersion !== p.version }));
   return { packs, updates: packs.filter((p) => p.updateAvailable).length, error: null, checkedAt: now() };
 }
+
+let grokDrift = new URLSearchParams(window.location.search).get("grok") === "drift";
 
 const delay = <T,>(value: T, ms = 260) => new Promise<T>((resolve) => setTimeout(() => resolve(value), ms));
 
@@ -166,8 +169,18 @@ async function handle(cmd: string, args: Record<string, any> = {}): Promise<unkn
       const prompt = store.prompts.find((p) => p.id === args.promptId)!;
       const operationId = `op${store.ops.size + 1}`;
       store.ops.set(operationId, { kind: "activate", tool: prompt.tool, promptId: prompt.id });
+      // ?grok=drift: Grok's config was changed behind the adapter's back until it is tidied.
+      if (prompt.tool === "grok" && grokDrift) {
+        const why = "config content does not match managed after-state";
+        return delay({ operationId, envelope: envelope(prompt.tool, "plan-activate", { ok: false, exitCode: 1, blockers: [why], warnings: [why] }) }, 320);
+      }
       return delay({ operationId, envelope: envelope(prompt.tool, "plan-activate") }, 320);
     }
+    case "plan_reconcile":
+      return delay({ operationId: "reconcile-1", envelope: envelope("grok", "reconcile") }, 400);
+    case "confirm_reconcile":
+      grokDrift = false;
+      return delay({ operationId: "reconcile-1", envelope: envelope("grok", "reconcile", { preview: false }) }, 900);
     case "plan_deactivate": {
       const operationId = `op${store.ops.size + 1}`;
       store.ops.set(operationId, { kind: "deactivate", tool: args.tool, promptId: null });

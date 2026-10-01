@@ -626,6 +626,21 @@ pub async fn remove_harness(state: State<'_, AppState>, tool: String) -> Result<
 }
 
 #[tauri::command(rename_all = "camelCase")]
+pub async fn plan_reconcile(state: State<'_, AppState>, tool: String) -> Result<UiPlanResult> {
+    let result = ops::plan_reconcile(&state.store, parse_tool(&tool)?, &opts()).await?;
+    Ok(map_plan(result))
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn confirm_reconcile(
+    state: State<'_, AppState>,
+    operation_id: String,
+) -> Result<UiPlanResult> {
+    let result = ops::confirm_reconcile(&state.store, &operation_id, &opts()).await?;
+    Ok(map_plan(result))
+}
+
+#[tauri::command(rename_all = "camelCase")]
 pub async fn recover_tool(
     state: State<'_, AppState>,
     tool: String,

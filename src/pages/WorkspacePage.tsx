@@ -7,7 +7,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { DeployCelebration } from "../components/DeployCelebration";
 import { Dropdown } from "../components/Dropdown";
 import { EmptyState } from "../components/EmptyState";
-import { Callout, PlanPreview } from "../components/PlanPreview";
+import { Callout, PlanFailureNotice, PlanPreview } from "../components/PlanPreview";
 import { PromptList } from "../components/PromptList";
 import { QuickDeployPanel } from "../components/QuickDeployPanel";
 import { ToolLogo } from "../components/ToolLogos";
@@ -18,6 +18,8 @@ import type { ToastApi } from "../hooks/useToasts";
 import { applyHarnessOutcome, getHarnessStatus, loadHarnessStatus, useHarnessStatus } from "../lib/harnessState";
 import { DEPLOY_PROMPT_EVENT, QUICK_DEPLOY_EVENT } from "../lib/paletteEvents";
 import { canConfirmPlan } from "../lib/planGate";
+import { failureFromEnvelope, needsReconcile, readableError } from "../lib/planFailure";
+import type { PlanFailure } from "../lib/planFailure";
 import { toastSafeMessage } from "../lib/redact";
 import { activeIdsFor, isRecoveryState, mergeTools } from "../lib/tools";
 import { isZcodeUnavailable } from "../lib/zcode";
@@ -32,7 +34,7 @@ import type {
   ToolInfo,
 } from "../types";
 
-type PlanKind = "activate" | "deactivate" | "recover";
+type PlanKind = "activate" | "deactivate" | "recover" | "reconcile";
 
 interface OpenPlan {
   kind: PlanKind;
@@ -42,6 +44,8 @@ interface OpenPlan {
   title: string;
   /** Plans opened from the composer keep the draft dirty until they resolve. */
   source: "composer" | "library" | "machine";
+  /** The deploy that was blocked and is planned again once this repair is done. */
+  then?: { promptId: string; title: string; source: "composer" | "library" | "machine" };
 }
 
 /**
@@ -106,7 +110,8 @@ export function WorkspacePage({
   const [composerMessage, setComposerMessage] = useState<string | null>(null);
 
   const [plan, setPlan] = useState<OpenPlan | null>(null);
-  const [planError, setPlanError] = useState<string | null>(null);
+  /** Set once a confirmed plan failed: that plan is spent, so only a new one can go ahead. */
+  const [planFailure, setPlanFailure] = useState<PlanFailure | null>(null);
   const [busy, setBusy] = useState(false);
   /** Which action the person just started, so its own button shows progress. */
   const [pending, setPending] = useState<string | null>(null);
@@ -283,7 +288,7 @@ export function WorkspacePage({
       const prompt = await api.createPastedPrompt({ tool, title: title.trim(), content });
       setSavedDraft(`${title}\0${content}`);
       const result = await api.planActivate({ promptId: prompt.id, scope: "user" });
-      setPlanError(null);
+      setPlanFailure(null);
       setPlan({ kind: "activate", result, promptId: prompt.id, title: prompt.title, source: "composer" });
     } catch (reason) {
       setComposerMessage(fail(reason, t("quickDeploy.failed")));
@@ -316,7 +321,7 @@ export function WorkspacePage({
     try {
       const result = await api.planActivate({ promptId, scope: "user" });
       const summary = prompts.find((item) => item.id === promptId);
-      setPlanError(null);
+      setPlanFailure(null);
       setPlan({ kind: "activate", result, promptId, title: summary?.title ?? "", source: "library" });
     } catch (reason) {
       fail(reason, t("errors.planFailed"));
@@ -380,7 +385,7 @@ export function WorkspacePage({
     setPending("remove");
     try {
       const result = await api.planDeactivate({ tool, scope: "user" });
-      setPlanError(null);
+      setPlanFailure(null);
       setPlan({ kind: "deactivate", result, promptId: null, title: deployedTitle ?? "", source: "machine" });
     } catch (reason) {
       fail(reason, t("quickDeploy.failed"));
@@ -396,7 +401,7 @@ export function WorkspacePage({
     setPending("recover");
     try {
       const result = await api.recoverTool({ tool, scope: "user" });
-      setPlanError(null);
+      setPlanFailure(null);
       setPlan({ kind: "recover", result, promptId: null, title: "", source: "machine" });
     } catch (reason) {
       fail(reason, t("errors.recoverFailed"));
@@ -409,23 +414,87 @@ export function WorkspacePage({
   const planBlocked = (candidate: OpenPlan | null) =>
     !candidate ||
     !canConfirmPlan(candidate.result.envelope) ||
-    (candidate.kind !== "recover" && isRecoveryState(candidate.result.envelope));
+    (candidate.kind !== "recover" && candidate.kind !== "reconcile" && isRecoveryState(candidate.result.envelope));
+
+  /** Plan the same action again, in the open dialog, after a plan was spent or a repair was made. */
+  const replan = async (from: OpenPlan | null = plan): Promise<boolean> => {
+    if (!from) return false;
+    setBusy(true);
+    setPlanFailure(null);
+    try {
+      if (from.kind === "activate" && from.promptId) {
+        const result = await api.planActivate({ promptId: from.promptId, scope: "user" });
+        setPlan({ ...from, result });
+      } else if (from.kind === "deactivate") {
+        const result = await api.planDeactivate({ tool, scope: "user" });
+        setPlan({ ...from, result });
+      } else if (from.kind === "recover") {
+        const result = await api.recoverTool({ tool, scope: "user" });
+        setPlan({ ...from, result });
+      } else if (from.kind === "reconcile") {
+        const result = await api.planReconcile(tool);
+        setPlan({ ...from, result });
+      }
+      return true;
+    } catch (reason) {
+      fail(reason, t("errors.planFailed"));
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Grok's config was changed behind Keysmith's back: tidy it (previewed first), then deploy again. */
+  const openReconcilePlan = async () => {
+    if (busy || !plan) return;
+    setBusy(true);
+    try {
+      const result = await api.planReconcile(tool);
+      setPlanFailure(null);
+      setPlan({
+        kind: "reconcile",
+        result,
+        promptId: null,
+        title: "",
+        source: "machine",
+        then: { promptId: plan.promptId ?? "", title: plan.title, source: plan.source },
+      });
+    } catch (reason) {
+      fail(reason, t("errors.planFailed"));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const confirmPlan = async () => {
-    if (!plan || planBlocked(plan)) return;
+    if (!plan || planBlocked(plan) || planFailure) return;
     setBusy(true);
-    setPlanError(null);
+    setPlanFailure(null);
     try {
       const result =
         plan.kind === "activate"
           ? await api.activate(plan.result.operationId)
           : plan.kind === "deactivate"
             ? await api.deactivate(plan.result.operationId)
-            : await api.confirmRecover(plan.result.operationId);
+            : plan.kind === "reconcile"
+              ? await api.confirmReconcile(plan.result.operationId)
+              : await api.confirmRecover(plan.result.operationId);
       if (!result.envelope.ok || result.envelope.exitCode !== 0) {
-        const message = toastSafeMessage(result.envelope.error || t("plan.failed"));
-        setPlanError(message);
-        toast?.err(message);
+        const failure = failureFromEnvelope(result.envelope, t);
+        setPlanFailure(failure);
+        toast?.err(failure.message);
+        return;
+      }
+      if (plan.kind === "reconcile") {
+        toast?.ok(t("plan.reconciled"));
+        // Back to what the person was doing: the deploy is planned again from the repaired state.
+        if (plan.then?.promptId) {
+          const next = await api.planActivate({ promptId: plan.then.promptId, scope: "user" });
+          setPlan({ kind: "activate", result: next, promptId: plan.then.promptId, title: plan.then.title, source: plan.then.source });
+        } else {
+          setPlan(null);
+        }
+        setLocalEpoch((value) => value + 1);
         return;
       }
       if (plan.kind === "recover") void loadHarnessStatus(tool, true);
@@ -441,7 +510,10 @@ export function WorkspacePage({
       setPlan(null);
       setLocalEpoch((value) => value + 1);
     } catch (reason) {
-      setPlanError(fail(reason, t("quickDeploy.failed")));
+      const message = readableError(reason, t);
+      // Whatever went wrong, a plan that was confirmed once is not confirmed again.
+      setPlanFailure({ message, detail: null });
+      toast?.err(message);
     } finally {
       setBusy(false);
     }
@@ -450,7 +522,7 @@ export function WorkspacePage({
   const closePlan = () => {
     if (busy) return;
     setPlan(null);
-    setPlanError(null);
+    setPlanFailure(null);
   };
 
   const availableTags = useMemo(() => {
@@ -467,7 +539,8 @@ export function WorkspacePage({
   const filtered = Boolean(query.trim() || tag);
   const locked = busy || Boolean(plan);
   const toolName = t(`nav.${tool}`);
-  const planRecoverable = plan && plan.kind !== "recover" && isRecoveryState(plan.result.envelope);
+  const planRecoverable = plan && plan.kind !== "recover" && plan.kind !== "reconcile" && isRecoveryState(plan.result.envelope);
+  const planReconcilable = plan?.kind === "activate" && needsReconcile(tool, plan.result.envelope);
 
   return (
     <section
@@ -666,7 +739,9 @@ export function WorkspacePage({
             ? t("plan.titleDeactivate", { tool: toolName })
             : plan?.kind === "recover"
               ? t("operations.recover")
-              : t("plan.titleDeploy", { tool: toolName })
+              : plan?.kind === "reconcile"
+                ? t("plan.titleReconcile", { tool: toolName })
+                : t("plan.titleDeploy", { tool: toolName })
         }
         description={[toolName, plan?.title].filter(Boolean).join(" · ")}
         confirmLabel={
@@ -674,18 +749,24 @@ export function WorkspacePage({
             ? t("plan.confirmDeactivate")
             : plan?.kind === "recover"
               ? t("operations.restoreEntry")
-              : t("quickDeploy.confirm")
+              : plan?.kind === "reconcile"
+                ? t("plan.confirmReconcile")
+                : t("quickDeploy.confirm")
         }
         cancelLabel={t("common.cancel")}
         closeLabel={t("common.close")}
         busy={busy}
         danger={plan?.kind === "deactivate"}
-        confirmDisabled={planBlocked(plan) || busy}
+        confirmDisabled={planBlocked(plan) || busy || Boolean(planFailure)}
         confirmTestId="quick-deploy-confirm"
         onClose={closePlan}
         onConfirm={() => void confirmPlan()}
         footerStart={
-          planRecoverable ? (
+          planReconcilable ? (
+            <Button size="sm" variant="outline" disabled={busy} data-testid="plan-reconcile" onClick={() => void openReconcilePlan()}>
+              {t("plan.reconcileButton")}
+            </Button>
+          ) : planRecoverable ? (
             <Button size="sm" variant="ghost" disabled={busy} data-testid="plan-recover" onClick={() => void openRecoverPlan()}>
               {t("operations.restoreEntry")}
             </Button>
@@ -701,14 +782,7 @@ export function WorkspacePage({
             toTitle={plan.title}
           />
         ) : null}
-        {planError ? (
-          <div className="mt-3">
-            <Callout tone="danger" icon={<IconAlert size={14} />}>
-              <p className="font-medium">{t("plan.failed")}</p>
-              <p className="mt-0.5">{planError}</p>
-            </Callout>
-          </div>
-        ) : null}
+        {planFailure ? <PlanFailureNotice failure={planFailure} busy={busy} onReplan={() => void replan()} /> : null}
       </ConfirmDialog>
 
       {celebration ? (

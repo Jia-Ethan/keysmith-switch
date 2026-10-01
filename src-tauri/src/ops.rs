@@ -584,6 +584,93 @@ pub async fn confirm_recover(
     })
 }
 
+/// Grok only: the adapter's own repair for a config file whose Keysmith-managed lines were
+/// moved or rewritten since the last deploy. It backs the config up and puts its managed
+/// block back, keeps everything else, and fails closed when the values no longer line up.
+pub async fn plan_reconcile(
+    store: &Store,
+    tool: ToolKind,
+    opts: &AdapterOptions,
+) -> Result<OperationResult> {
+    if tool != ToolKind::Grok {
+        return Err(Error::invalid("reconcile is a Grok command"));
+    }
+    let _lock = HomeLock::acquire(store.paths())?;
+    let preview = run_adapter_with(
+        tool,
+        AdapterCommand::Reconcile {
+            execute: false,
+            expected_preview_token: None,
+        },
+        opts,
+    )
+    .await?;
+    let operation = store_preview(
+        store,
+        tool,
+        OperationKind::Reconcile,
+        None,
+        Scope::User,
+        None,
+        json!({"tool": tool, "scope": Scope::User}),
+        &preview,
+    )?;
+    Ok(OperationResult {
+        operation_id: operation.id,
+        envelope: preview,
+    })
+}
+
+pub async fn confirm_reconcile(
+    store: &Store,
+    operation_id: &str,
+    opts: &AdapterOptions,
+) -> Result<OperationResult> {
+    let _lock = HomeLock::acquire(store.paths())?;
+    let plan = require_preview(store, operation_id, OperationKind::Reconcile)?;
+    let preview: Envelope = plan
+        .envelope_json
+        .as_deref()
+        .and_then(|text| serde_json::from_str(text).ok())
+        .ok_or_else(|| Error::command_failed("the reconcile preview is missing"))?;
+    if !preview.ok || !preview.blockers.is_empty() {
+        return Err(Error::command_failed(
+            preview
+                .error
+                .unwrap_or_else(|| "reconcile preview reported blockers".into()),
+        ));
+    }
+    let token = preview.confirmation_token.clone().ok_or_else(|| {
+        Error::command_failed("grok preview did not include a confirmation token")
+    })?;
+    check_adapter_version(plan.tool, opts).await?;
+    let request: serde_json::Value = serde_json::from_str(&plan.request_json)?;
+    let envelope = run_adapter_with(
+        plan.tool,
+        AdapterCommand::Reconcile {
+            execute: true,
+            expected_preview_token: Some(token),
+        },
+        opts,
+    )
+    .await?;
+    let execute_id = persist_execute(store, &plan, OperationKind::Reconcile, &envelope, request)?;
+    store.update_operation(
+        operation_id,
+        if envelope.ok {
+            OperationStatus::Succeeded
+        } else {
+            OperationStatus::Failed
+        },
+        None,
+        envelope.error.as_deref(),
+    )?;
+    Ok(OperationResult {
+        operation_id: execute_id,
+        envelope,
+    })
+}
+
 pub async fn tool_status(
     store: &Store,
     tool: ToolKind,
@@ -622,20 +709,22 @@ fn require_preview(
     operation_id: &str,
     expected: OperationKind,
 ) -> Result<Operation> {
+    // Four different reasons, four different messages: "already used" is the one a person
+    // meets after a failed confirm, and it must not read like nothing was ever planned.
     let operation = store
         .get_operation(operation_id)?
-        .ok_or_else(|| Error::user_cancel("activate without confirmed plan"))?;
+        .ok_or_else(|| Error::user_cancel("plan not found"))?;
     if operation.kind != expected {
-        return Err(Error::user_cancel("activate without confirmed plan"));
+        return Err(Error::user_cancel("plan is for a different action"));
     }
     if !matches!(
         operation.status,
         OperationStatus::Preview | OperationStatus::Ready
     ) {
-        return Err(Error::user_cancel("activate without confirmed plan"));
+        return Err(Error::user_cancel("plan already used"));
     }
     if !operation.preview {
-        return Err(Error::user_cancel("activate without confirmed plan"));
+        return Err(Error::user_cancel("plan is not a preview"));
     }
     Ok(operation)
 }

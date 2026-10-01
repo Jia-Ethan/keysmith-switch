@@ -191,6 +191,15 @@ export function adoptLivePrompt(input: { tool: ToolId; title: string }): Promise
   return call("adopt_live_prompt", input);
 }
 
+/** Grok only: put the managed lines of a drifted config back. Preview first, then confirm. */
+export function planReconcile(tool: ToolId): Promise<PlanResult> {
+  return call("plan_reconcile", { tool });
+}
+
+export function confirmReconcile(operationId: string): Promise<PlanResult> {
+  return call("confirm_reconcile", { operationId });
+}
+
 export function removeHarness(tool: ToolId): Promise<HarnessOutcome> {
   return call("remove_harness", { tool });
 }
