@@ -228,7 +228,8 @@
       "data": "資料與備份",
       "updates": "更新",
       "advanced": "進階",
-      "about": "關於"
+      "about": "關於",
+      "versions": "版本"
     }
   },
   "data": {
@@ -251,7 +252,7 @@
     "openHome": "開啟資料目錄",
     "openLogs": "開啟日誌目錄",
     "clearAll": "清除全部資料",
-    "clearAllHint": "將刪除提示詞庫、歷史、備份和日誌。此操作不可逆。普通解除安裝不會刪除這些檔案。",
+    "clearAllHint": "將刪除提示詞庫、歷史、備份和日誌。此操作不可逆。普通解除安裝不會刪除這些檔案。「版本」裡保存的清理版本不在其中，需要在那裡單獨刪除。",
     "clearConfirm": "確認清除",
     "clearSecond": "我已閱讀範圍並確認不可恢復",
     "cleared": "資料已清除",
@@ -373,7 +374,9 @@
     "deactivateFailed": "停用失敗",
     "recoverFailed": "還原失敗",
     "validation": "請先補全必填項",
-    "planUsed": "這份部署計畫已經用過了，請重新產生。"
+    "planUsed": "這份部署計畫已經用過了，請重新產生。",
+    "cleanupFailed": "清理沒有完成，已儲存的版本不受影響。",
+    "rollbackFailed": "回滾沒有完成。"
   },
   "quickDeploy": {
     "title": "快速部署",
@@ -471,5 +474,55 @@
       "store": "操作失敗，沒有做任何改動。",
       "default": "操作失敗，沒有做任何改動。"
     }
+  },
+  "cleanup": {
+    "button": "清理",
+    "buttonHint": "清空這個 Agent 上由 Keysmith 部署的內容，並先儲存一個版本",
+    "title": "清理 {{tool}}",
+    "checking": "正在檢查有什麼可以清理…",
+    "nothing": "沒有可清理的內容：這個 Agent 上沒有部署的提示詞，也沒有需要清空的 memory。",
+    "willRemoveDeployment": "停用並移除正在部署的提示詞{{title}}",
+    "unsaved": "沒能讀出這條提示詞的原文，所以清理後無法恢復它。",
+    "willEmptyMemory": "清空 CLAUDE.md（{{lines}} 行，{{size}}），包括你自己寫在裡面的內容",
+    "untouched": "不會動：專案裡的檔案、專案和本機範圍的部署、你的提示詞庫。",
+    "saves": "清理前會先自動儲存一個版本，之後可以在「設定 → 版本」裡回滾。",
+    "ack": "我知道這會清空 CLAUDE.md 裡我自己寫的內容",
+    "confirm": "清理",
+    "working": "正在清理…",
+    "done": "已清理，並儲存了一個版本。",
+    "doneNothing": "沒有需要清理的內容。",
+    "openVersions": "查看版本",
+    "repair": "這個 Agent 的設定在上次部署之後被改過，需要先整理才能清理。"
+  },
+  "versions": {
+    "title": "版本",
+    "lead": "每次清理前，Keysmith 都會儲存一個版本。選一個版本可以把當時的提示詞和 CLAUDE.md 恢復回來。",
+    "empty": "還沒有儲存的版本",
+    "emptyHint": "在 Agent 頁面點「清理」後，會在這裡出現一個版本。",
+    "kindCleanup": "清理前",
+    "kindBeforeRollback": "回滾前",
+    "deployed": "部署：{{title}}",
+    "deployedUnknown": "部署：一條提示詞",
+    "deployedLost": "部署：一條提示詞（原文沒能儲存）",
+    "noDeployment": "當時沒有部署",
+    "memory": "CLAUDE.md {{size}}",
+    "rollback": "回滾",
+    "delete": "刪除",
+    "deleteTitle": "刪除這個版本？",
+    "deleteBody": "刪除後無法再回滾到它。",
+    "deleted": "已刪除這個版本。",
+    "rollbackTitle": "回滾到這個版本",
+    "checking": "正在檢查回滾會改動什麼…",
+    "willDeploy": "重新部署{{title}}",
+    "willReplace": "它會取代現在正在用的{{title}}",
+    "willRestoreMemory": "把 CLAUDE.md 恢復成當時的樣子（{{size}}）",
+    "currentMemory": "現在的 CLAUDE.md 有 {{size}} 的內容，回滾前會先把它另存為一個版本。",
+    "savesCurrent": "現在的狀態會先另存為一個版本，所以這次回滾也可以撤銷。",
+    "cannotRedeploy": "這個版本沒有儲存提示詞原文，只能恢復 CLAUDE.md。",
+    "nothingToRestore": "這個版本裡沒有可以恢復的內容。",
+    "confirmRollback": "回滾",
+    "rolledBack": "已回滾。",
+    "rolledBackSaved": "已回滾，回滾前的狀態另存為了一個版本。",
+    "untitled": "（未命名的提示詞）"
   }
 }

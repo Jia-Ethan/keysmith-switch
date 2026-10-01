@@ -416,3 +416,61 @@ export interface ExtensionChange {
   view: ExtensionsView;
   report: ExtensionReport;
 }
+
+/** What an agent is running, as recorded in a snapshot. */
+export interface DeploymentMeta {
+  present: boolean;
+  title: string | null;
+  /** The live text was saved, so a rollback can deploy it again. */
+  restorable: boolean;
+}
+
+export interface MemoryMeta {
+  path: string;
+  bytes: number;
+  lines: number;
+  sha256: string;
+  mode: number | null;
+}
+
+/** A saved state of one agent: made before a cleanup, or before a rollback overwrote something. */
+export interface SnapshotMeta {
+  id: string;
+  createdAt: string;
+  tool: ToolId;
+  kind: "cleanup" | "before-rollback";
+  deployment: DeploymentMeta;
+  memory: MemoryMeta | null;
+}
+
+export interface CleanupPlan {
+  operationId: string;
+  tool: ToolId;
+  deployment: DeploymentMeta;
+  memory: MemoryMeta | null;
+  nothingToDo: boolean;
+  blockers: string[];
+}
+
+export interface CleanupResult {
+  snapshotId: string | null;
+  deactivated: boolean;
+  memoryCleared: boolean;
+}
+
+export interface RollbackPlan {
+  operationId: string;
+  snapshot: SnapshotMeta;
+  currentTitle: string | null;
+  replacesDeployment: boolean;
+  memory: { restoreBytes: number; currentBytes: number; currentDiffers: boolean } | null;
+  /** What is there now is saved as a snapshot first. */
+  savesCurrent: boolean;
+  blockers: string[];
+}
+
+export interface RollbackResult {
+  savedSnapshotId: string | null;
+  redeployed: boolean;
+  memoryRestored: boolean;
+}

@@ -228,7 +228,8 @@
       "data": "Data & backups",
       "updates": "Updates",
       "advanced": "Advanced",
-      "about": "About"
+      "about": "About",
+      "versions": "Versions"
     }
   },
   "data": {
@@ -251,7 +252,7 @@
     "openHome": "Open data folder",
     "openLogs": "Open logs folder",
     "clearAll": "Clear all data",
-    "clearAllHint": "Deletes the prompt library, history, backups, and logs. Irreversible. A normal uninstall keeps these files.",
+    "clearAllHint": "Deletes the prompt library, history, backups, and logs. Irreversible. A normal uninstall keeps these files. Versions saved before a cleanup are not included; delete those under Versions.",
     "clearConfirm": "Clear",
     "clearSecond": "I have read the scope and confirm this cannot be undone",
     "cleared": "Data cleared",
@@ -373,7 +374,9 @@
     "deactivateFailed": "Deactivate failed",
     "recoverFailed": "Recover failed",
     "validation": "Fill in the required fields first",
-    "planUsed": "This plan was already used. Make a new one."
+    "planUsed": "This plan was already used. Make a new one.",
+    "cleanupFailed": "Cleanup did not finish. Saved versions are unaffected.",
+    "rollbackFailed": "The rollback did not finish."
   },
   "quickDeploy": {
     "title": "Quick Deploy",
@@ -471,5 +474,55 @@
       "store": "That failed and nothing was changed.",
       "default": "That failed and nothing was changed."
     }
+  },
+  "cleanup": {
+    "button": "Clean up",
+    "buttonHint": "Clear what Keysmith deployed to this agent, saving a version first",
+    "title": "Clean up {{tool}}",
+    "checking": "Checking what can be cleaned…",
+    "nothing": "Nothing to clean: no deployed prompt and no memory to empty.",
+    "willRemoveDeployment": "Turn off and remove the deployed prompt{{title}}",
+    "unsaved": "The prompt text could not be read back, so it cannot be restored after cleaning.",
+    "willEmptyMemory": "Empty CLAUDE.md ({{lines}} lines, {{size}}), including what you wrote in it",
+    "untouched": "Not touched: files in your projects, project and local deployments, your prompt library.",
+    "saves": "A version is saved first. You can roll back in Settings → Versions.",
+    "ack": "I understand this empties what I wrote in CLAUDE.md",
+    "confirm": "Clean up",
+    "working": "Cleaning…",
+    "done": "Cleaned. A version was saved.",
+    "doneNothing": "Nothing needed cleaning.",
+    "openVersions": "View versions",
+    "repair": "This agent's setup changed after the last deploy; repair it before cleaning."
+  },
+  "versions": {
+    "title": "Versions",
+    "lead": "A version is saved before every cleanup. Pick one to put that prompt and CLAUDE.md back.",
+    "empty": "No saved versions yet",
+    "emptyHint": "After you clean an agent, a version shows up here.",
+    "kindCleanup": "Before cleanup",
+    "kindBeforeRollback": "Before rollback",
+    "deployed": "Deployed: {{title}}",
+    "deployedUnknown": "Deployed: a prompt",
+    "deployedLost": "Deployed: a prompt (text not saved)",
+    "noDeployment": "Nothing was deployed",
+    "memory": "CLAUDE.md {{size}}",
+    "rollback": "Roll back",
+    "delete": "Delete",
+    "deleteTitle": "Delete this version?",
+    "deleteBody": "You will not be able to roll back to it.",
+    "deleted": "Version deleted.",
+    "rollbackTitle": "Roll back to this version",
+    "checking": "Checking what a rollback changes…",
+    "willDeploy": "Deploy {{title}} again",
+    "willReplace": "It replaces what is in use now{{title}}",
+    "willRestoreMemory": "Put CLAUDE.md back as it was ({{size}})",
+    "currentMemory": "CLAUDE.md has {{size}} now; it is saved as a version first.",
+    "savesCurrent": "The current state is saved as a version first, so this rollback can be undone too.",
+    "cannotRedeploy": "This version has no saved prompt text; only CLAUDE.md can be restored.",
+    "nothingToRestore": "Nothing in this version can be restored.",
+    "confirmRollback": "Roll back",
+    "rolledBack": "Rolled back.",
+    "rolledBackSaved": "Rolled back. The state before it was saved as a version.",
+    "untitled": "(untitled prompt)"
   }
 }

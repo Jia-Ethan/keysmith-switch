@@ -641,6 +641,52 @@ pub async fn confirm_reconcile(
 }
 
 #[tauri::command(rename_all = "camelCase")]
+pub async fn plan_cleanup(
+    state: State<'_, AppState>,
+    tool: String,
+) -> Result<crate::cleanup::CleanupPlan> {
+    crate::cleanup::plan_cleanup(&state.store, parse_tool(&tool)?, &opts()).await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn confirm_cleanup(
+    state: State<'_, AppState>,
+    operation_id: String,
+) -> Result<crate::cleanup::CleanupResult> {
+    crate::cleanup::confirm_cleanup(&state.store, &operation_id, &opts()).await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn list_snapshots(state: State<'_, AppState>) -> Result<Vec<crate::cleanup::SnapshotMeta>> {
+    Ok(crate::cleanup::list_snapshots(&state.store))
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn plan_rollback(
+    state: State<'_, AppState>,
+    snapshot_id: String,
+) -> Result<crate::cleanup::RollbackPlan> {
+    crate::cleanup::plan_rollback(&state.store, &snapshot_id, &opts()).await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn confirm_rollback(
+    state: State<'_, AppState>,
+    operation_id: String,
+) -> Result<crate::cleanup::RollbackResult> {
+    crate::cleanup::confirm_rollback(&state.store, &operation_id, &opts()).await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn delete_snapshot(
+    state: State<'_, AppState>,
+    snapshot_id: String,
+) -> Result<serde_json::Value> {
+    crate::cleanup::delete_snapshot(&state.store, &snapshot_id)?;
+    Ok(serde_json::json!({ "ok": true }))
+}
+
+#[tauri::command(rename_all = "camelCase")]
 pub async fn recover_tool(
     state: State<'_, AppState>,
     tool: String,

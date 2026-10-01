@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { ToolId } from "../types";
-import { IconAlert, IconPencil, IconPower, IconRefresh } from "./icons";
+import { IconAlert, IconPencil, IconPower, IconRefresh, IconTrash } from "./icons";
 import { ToolLogo } from "./ToolLogos";
 import { Button, IconButton, cx } from "./ui";
 
@@ -29,6 +29,7 @@ export function AgentHero({
   removeDisabled,
   onEdit,
   editing = false,
+  onCleanup,
 }: {
   tool: ToolId;
   name: string;
@@ -49,6 +50,8 @@ export function AgentHero({
   /** Open the live prompt in the editor. */
   onEdit?: () => void;
   editing?: boolean;
+  /** Clean the agent back to nothing (a version is saved first). */
+  onCleanup?: () => void;
 }) {
   const { t } = useTranslation();
   const deployed = machine === "deployed";
@@ -172,6 +175,19 @@ export function AgentHero({
             >
               <IconPencil size={14} />
               {t("hero.edit")}
+            </Button>
+          ) : null}
+          {onCleanup && (deployed || tool === "claude") && !unavailable ? (
+            <Button
+              size="md"
+              variant="outline"
+              disabled={removeDisabled}
+              title={t("cleanup.buttonHint")}
+              data-testid="hero-cleanup"
+              onClick={onCleanup}
+            >
+              <IconTrash size={14} />
+              {t("cleanup.button")}
             </Button>
           ) : null}
           {deployed ? (

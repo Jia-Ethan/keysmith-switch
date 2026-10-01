@@ -30,8 +30,13 @@ import type {
   ScopeId,
   Settings,
   SettingsPatch,
+  CleanupPlan,
+  CleanupResult,
   ExtensionChange,
   ExtensionsView,
+  RollbackPlan,
+  RollbackResult,
+  SnapshotMeta,
   ToolId,
   ToolInfo,
   UpdateChannel,
@@ -362,4 +367,30 @@ export function installExtension(packId: string): Promise<ExtensionChange> {
 
 export function uninstallExtension(packId: string): Promise<ExtensionChange> {
   return call("extension_uninstall", { packId });
+}
+
+/** Preview a cleanup: what would be removed, nothing is changed. */
+export function planCleanup(tool: ToolId): Promise<CleanupPlan> {
+  return call("plan_cleanup", { tool });
+}
+
+/** Save a snapshot, then remove the deployment (and Claude Code's user-level memory file). */
+export function confirmCleanup(operationId: string): Promise<CleanupResult> {
+  return call("confirm_cleanup", { operationId });
+}
+
+export function listSnapshots(): Promise<SnapshotMeta[]> {
+  return call("list_snapshots", {});
+}
+
+export function planRollback(snapshotId: string): Promise<RollbackPlan> {
+  return call("plan_rollback", { snapshotId });
+}
+
+export function confirmRollback(operationId: string): Promise<RollbackResult> {
+  return call("confirm_rollback", { operationId });
+}
+
+export function deleteSnapshot(snapshotId: string): Promise<OkResult> {
+  return call("delete_snapshot", { snapshotId });
 }

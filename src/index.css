@@ -732,7 +732,8 @@ html[data-titlebar="overlay"] .titlebar-inset {
   background: radial-gradient(220px circle at var(--mx, 50%) var(--my, 50%), rgb(var(--primary) / 0.13), transparent 70%);
 }
 
-.card-spotlight:hover::before {
+.group:hover > .card-spotlight::before,
+.group[data-engaged] > .card-spotlight::before {
   opacity: 1;
 }
 

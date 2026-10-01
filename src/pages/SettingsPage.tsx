@@ -6,6 +6,7 @@ import { ErrorBanner } from "../components/ErrorBanner";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Feedback } from "../components/Feedback";
 import { UpdateSection } from "../components/UpdateSection";
+import { VersionsTab } from "../components/VersionsTab";
 import { useUpdateOptional } from "../components/UpdateProvider";
 import { IconCheck, IconExternal, IconMonitor, IconMoon, IconSun } from "../components/icons";
 import { ToolLogo } from "../components/ToolLogos";
@@ -18,9 +19,9 @@ import { formatBytes } from "../lib/format";
 import { openExternal } from "../lib/runtime";
 import type { AboutInfo, Language, Settings, SettingsPatch, ToolId } from "../types";
 
-type TabId = "general" | "tools" | "about";
+type TabId = "general" | "tools" | "versions" | "about";
 
-const TABS: TabId[] = ["general", "tools", "about"];
+const TABS: TabId[] = ["general", "tools", "versions", "about"];
 
 const KEYSMITHS: { tool: ToolId; name: string; repo: string }[] = [
   { tool: "claude", name: "Claude Keysmith", repo: "https://github.com/Jia-Ethan/claude-keysmith" },
@@ -285,6 +286,8 @@ export function SettingsPage({
             ))}
           </div>
         ) : null}
+
+        {tab === "versions" ? <VersionsTab toast={toast} /> : null}
 
         {tab === "about" ? (
           <div className="space-y-4">

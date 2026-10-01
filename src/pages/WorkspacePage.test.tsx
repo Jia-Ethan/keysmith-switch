@@ -19,6 +19,8 @@ const confirmRecover = vi.fn();
 const adoptLivePrompt = vi.fn();
 const planReconcile = vi.fn();
 const confirmReconcile = vi.fn();
+const planCleanup = vi.fn();
+const confirmCleanup = vi.fn();
 
 vi.mock("../components/MarkdownEditor", () => ({
   MarkdownEditor: ({ value, onChange, ariaLabel }: { value: string; onChange: (value: string) => void; ariaLabel?: string }) => (
@@ -43,6 +45,8 @@ vi.mock("../api", () => ({
   adoptLivePrompt: (...args: unknown[]) => adoptLivePrompt(...args),
   planReconcile: (...args: unknown[]) => planReconcile(...args),
   confirmReconcile: (...args: unknown[]) => confirmReconcile(...args),
+  planCleanup: (...args: unknown[]) => planCleanup(...args),
+  confirmCleanup: (...args: unknown[]) => confirmCleanup(...args),
 }));
 
 const envelope = {
@@ -494,6 +498,39 @@ describe("Workspace: prompt library", () => {
     await waitFor(() => expect(toast.err).toHaveBeenCalledWith(expect.stringContaining("手动粘贴")));
     expect(await screen.findByTestId("quick-deploy-panel")).toBeInTheDocument();
     expect(onNavigate).not.toHaveBeenCalled();
+  });
+
+  it("cleans an agent from its hero and points to the saved version", async () => {
+    getHarnessState.mockResolvedValue({ tool: "codex", deployed: true, error: null, promptId: "b", promptTitle: "Spare" });
+    listPrompts.mockResolvedValue({ prompts: [prompt({ id: "b", title: "Spare" })] });
+    planCleanup.mockResolvedValue({
+      operationId: "op-c",
+      tool: "codex",
+      deployment: { present: true, title: "Spare", restorable: true },
+      memory: null,
+      nothingToDo: false,
+      blockers: [],
+    });
+    confirmCleanup.mockResolvedValue({ snapshotId: "s1", deactivated: true, memoryCleared: false });
+    const toast = { ok: vi.fn(), err: vi.fn(), info: vi.fn(), toasts: [], dismiss: vi.fn() };
+    const onNavigate = vi.fn();
+    await renderPage({ onNavigate, toast: toast as never });
+    fireEvent.click(await screen.findByTestId("hero-cleanup"));
+    await screen.findByTestId("cleanup-plan");
+    expect(planCleanup).toHaveBeenCalledWith("codex");
+    fireEvent.click(screen.getByTestId("cleanup-confirm"));
+    await screen.findByTestId("cleanup-done");
+    expect(confirmCleanup).toHaveBeenCalledWith("op-c");
+    expect(toast.ok).toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("cleanup-open-versions"));
+    expect(onNavigate).toHaveBeenCalledWith({ kind: "settings", tab: "versions" });
+  });
+
+  it("offers no cleanup for an agent with nothing deployed and no memory file", async () => {
+    getHarnessState.mockResolvedValue({ tool: "codex", deployed: false, error: null });
+    await renderPage();
+    await screen.findByRole("heading", { name: "Codex" });
+    expect(screen.queryByTestId("hero-cleanup")).not.toBeInTheDocument();
   });
 
   it("edits a live library prompt straight from the hero", async () => {

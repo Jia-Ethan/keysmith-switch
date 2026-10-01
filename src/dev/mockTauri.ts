@@ -90,6 +90,8 @@ function extView() {
   return { packs, updates: packs.filter((p) => p.updateAvailable).length, error: null, checkedAt: now() };
 }
 
+let claudeMemoryBytes = 1342;
+const snapshots: Array<{ id: string; createdAt: string; tool: ToolId; kind: string; deployment: { present: boolean; title: string | null; restorable: boolean }; memory: { path: string; bytes: number; lines: number; sha256: string; mode: number } | null }> = [];
 let grokDrift = new URLSearchParams(window.location.search).get("grok") === "drift";
 
 const delay = <T,>(value: T, ms = 260) => new Promise<T>((resolve) => setTimeout(() => resolve(value), ms));
@@ -175,6 +177,39 @@ async function handle(cmd: string, args: Record<string, any> = {}): Promise<unkn
         return delay({ operationId, envelope: envelope(prompt.tool, "plan-activate", { ok: false, exitCode: 1, blockers: [why], warnings: [why] }) }, 320);
       }
       return delay({ operationId, envelope: envelope(prompt.tool, "plan-activate") }, 320);
+    }
+    case "plan_cleanup": {
+      const tool = args.tool as ToolId;
+      const live = store.live[tool];
+      const memory = tool === "claude" && claudeMemoryBytes > 0 ? { path: "/Users/you/.claude/CLAUDE.md", bytes: claudeMemoryBytes, lines: 31, sha256: "m1", mode: 420 } : null;
+      return delay({ operationId: `cleanup-${tool}`, tool, deployment: { present: Boolean(live), title: live?.title || null, restorable: Boolean(live) }, memory, nothingToDo: !live && !memory, blockers: [] }, 450);
+    }
+    case "confirm_cleanup": {
+      const tool = String(args.operationId).replace("cleanup-", "") as ToolId;
+      const live = store.live[tool];
+      const id = `2026100${snapshots.length + 1}T120000Z-${tool}-a1b2c3`;
+      snapshots.unshift({ id, createdAt: now(), tool, kind: "cleanup", deployment: { present: Boolean(live), title: live?.title || null, restorable: Boolean(live) }, memory: tool === "claude" && claudeMemoryBytes > 0 ? { path: "/Users/you/.claude/CLAUDE.md", bytes: claudeMemoryBytes, lines: 31, sha256: "m1", mode: 420 } : null });
+      delete store.live[tool];
+      if (tool === "claude") claudeMemoryBytes = 0;
+      return delay({ snapshotId: id, deactivated: Boolean(live), memoryCleared: tool === "claude" }, 1100);
+    }
+    case "list_snapshots":
+      return snapshots;
+    case "plan_rollback": {
+      const snap = snapshots.find((s) => s.id === args.snapshotId)!;
+      const live = store.live[snap.tool];
+      return delay({ operationId: `rollback-${snap.id}`, snapshot: snap, currentTitle: live?.title || null, replacesDeployment: Boolean(live), memory: snap.memory ? { restoreBytes: snap.memory.bytes, currentBytes: claudeMemoryBytes, currentDiffers: claudeMemoryBytes !== snap.memory.bytes } : null, savesCurrent: Boolean(live) || claudeMemoryBytes > 0, blockers: [] }, 400);
+    }
+    case "confirm_rollback": {
+      const snap = snapshots.find((s) => `rollback-${s.id}` === args.operationId)!;
+      if (snap.deployment.present) store.live[snap.tool] = { id: null, title: snap.deployment.title || "", body: "restored" };
+      if (snap.memory) claudeMemoryBytes = snap.memory.bytes;
+      return delay({ savedSnapshotId: null, redeployed: snap.deployment.present, memoryRestored: Boolean(snap.memory) }, 1000);
+    }
+    case "delete_snapshot": {
+      const index = snapshots.findIndex((s) => s.id === args.snapshotId);
+      if (index >= 0) snapshots.splice(index, 1);
+      return { ok: true };
     }
     case "plan_reconcile":
       return delay({ operationId: "reconcile-1", envelope: envelope("grok", "reconcile") }, 400);
