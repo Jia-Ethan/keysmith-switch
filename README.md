@@ -261,6 +261,7 @@ npx tauri build --target aarch64-apple-darwin --config src-tauri/tauri.preview.m
 
 | 版本 | 更新内容 |
 | --- | --- |
+| [`v0.2.9`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.2.9) | 检查更新时不再闪烁；Codex 的“清理”可以清空 `AGENTS.md`，也可以勾选清理记忆文件夹。[#57](https://github.com/Jia-Ethan/keysmith-switch/pull/57)、[#58](https://github.com/Jia-Ethan/keysmith-switch/pull/58) |
 | [`v0.2.8`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.2.8) | 修复点击部署按钮时卡片闪烁；新增“清理”与“回滚”。[#53](https://github.com/Jia-Ethan/keysmith-switch/pull/53) |
 | [`v0.2.7`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.2.7) | 修复 ZCode 无法安装、Grok 配置被改动后无法部署；部署失败时会说明原因。[#50](https://github.com/Jia-Ethan/keysmith-switch/pull/50) |
 | [`v0.2.6`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.2.6) | 新增拓展包：官方提示词包可以单独更新，不用更新 App。[#46](https://github.com/Jia-Ethan/keysmith-switch/pull/46)、[#47](https://github.com/Jia-Ethan/keysmith-switch/pull/47) |
