@@ -1,4 +1,5 @@
 pub mod adapter;
+pub mod announcements;
 pub mod cleanup;
 pub mod commands;
 pub mod data;
@@ -78,6 +79,9 @@ pub fn run() {
             commands::plan_reconcile,
             commands::confirm_reconcile,
             commands::extensions_state,
+            commands::announcements_state,
+            commands::announcements_refresh,
+            commands::announcements_mark,
             commands::extensions_refresh,
             commands::extension_install,
             commands::extension_uninstall,

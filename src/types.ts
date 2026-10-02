@@ -514,3 +514,29 @@ export interface RollbackResult {
   memoriesRestored: boolean;
   extrasRestored?: number;
 }
+
+export type AnnouncementKind = "news" | "release" | "preview";
+
+/** One announcement, already in the person's language. Text is plain: never rendered as HTML. */
+export interface Announcement {
+  id: string;
+  kind: AnnouncementKind;
+  publishedAt: string;
+  title: string;
+  body: string;
+  /** Shown as a card at the top of the agent pages until closed. */
+  pinned: boolean;
+  /** Only on these agents' pages; empty means everywhere. */
+  tools: ToolId[];
+  link: string | null;
+  read: boolean;
+  dismissed: boolean;
+}
+
+export interface AnnouncementsView {
+  items: Announcement[];
+  unread: number;
+  fetchedAt: string | null;
+  /** Why the last look failed (`offline`, `invalid`, `too-new`), when it did. */
+  error: string | null;
+}

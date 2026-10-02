@@ -1920,7 +1920,7 @@ where
         work(&state)
     })
     .await
-    .map_err(|error| Error::message(format!("extensions task failed: {error}")))?
+    .map_err(|error| Error::message(format!("background task failed: {error}")))?
 }
 
 /// Extensions read the network only after the person has turned them on.
@@ -1937,6 +1937,42 @@ fn require_extensions(state: &AppState) -> Result<String> {
 pub struct ExtensionChange {
     pub view: crate::extensions::ExtensionsView,
     pub report: crate::extensions::Report,
+}
+
+/// The announcements known now; never touches the network.
+#[tauri::command(rename_all = "camelCase")]
+pub fn announcements_state(
+    state: State<'_, AppState>,
+) -> Result<crate::announcements::AnnouncementsView> {
+    let language = state.store.get_settings()?.language;
+    Ok(crate::announcements::state_view(&state.store, &language))
+}
+
+/// Read the announcements feed. A failure keeps the last good copy.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn announcements_refresh(
+    app: tauri::AppHandle,
+) -> Result<crate::announcements::AnnouncementsView> {
+    blocking(app, |state| {
+        let language = state.store.get_settings()?.language;
+        Ok(crate::announcements::refresh(
+            &state.store,
+            &crate::extensions::CurlFetch,
+            &language,
+        ))
+    })
+    .await
+}
+
+/// Mark announcements as read, or closed when `dismiss` is set.
+#[tauri::command(rename_all = "camelCase")]
+pub fn announcements_mark(
+    state: State<'_, AppState>,
+    ids: Vec<String>,
+    dismiss: Option<bool>,
+) -> Result<crate::announcements::AnnouncementsView> {
+    let language = state.store.get_settings()?.language;
+    crate::announcements::mark(&state.store, &ids, dismiss.unwrap_or(false), &language)
 }
 
 /// The last verified answer; never touches the network.

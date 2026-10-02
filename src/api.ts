@@ -7,13 +7,18 @@ import type {
   AdvancedKind,
   AdvancedResult,
   AdvancedToolInfo,
+  AnnouncementsView,
   BackupEntry,
+  CleanupPlan,
+  CleanupResult,
   ClearPlan,
   DataDirs,
   Envelope,
-  FirstRunReport,
+  ExtensionChange,
+  ExtensionsView,
   FeedbackInput,
   FeedbackResult,
+  FirstRunReport,
   ImportResult,
   OfficialAction,
   OfficialPlan,
@@ -27,15 +32,11 @@ import type {
   PromptSort,
   PromptSummary,
   PromptVersion,
+  RollbackPlan,
+  RollbackResult,
   ScopeId,
   Settings,
   SettingsPatch,
-  CleanupPlan,
-  CleanupResult,
-  ExtensionChange,
-  ExtensionsView,
-  RollbackPlan,
-  RollbackResult,
   SnapshotMeta,
   ToolId,
   ToolInfo,
@@ -359,6 +360,21 @@ export function extensionsState(): Promise<ExtensionsView> {
 /** Ask the network. Needs extensions to be switched on. */
 export function extensionsRefresh(): Promise<ExtensionsView> {
   return call("extensions_refresh", {});
+}
+
+/** The announcements known now; never touches the network. */
+export function announcementsState(): Promise<AnnouncementsView> {
+  return call("announcements_state", {});
+}
+
+/** Read the announcements feed. A failure keeps the last good copy. */
+export function announcementsRefresh(): Promise<AnnouncementsView> {
+  return call("announcements_refresh", {});
+}
+
+/** Mark announcements as read, or closed (`dismiss`) for a pinned card. */
+export function markAnnouncements(ids: string[], dismiss = false): Promise<AnnouncementsView> {
+  return call("announcements_mark", { ids, dismiss });
 }
 
 export function installExtension(packId: string): Promise<ExtensionChange> {

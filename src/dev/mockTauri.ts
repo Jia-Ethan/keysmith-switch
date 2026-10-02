@@ -85,6 +85,33 @@ const extPacks = [
   { id: "keysmith.example", version: extUpdate ? "0.2.0" : "0.1.0", minAppVersion: "0.2.5", name: "示例包", description: "用来演示拓展包格式的示例，不建议长期使用；正式内容会另外发布。", tools: ["claude", "codex"], itemCount: 2, size: 1312, official: true, compatible: true, installedVersion: extUpdate ? "0.1.0" : (null as string | null), updateAvailable: false },
   { id: "keysmith.future", version: "1.0.0", minAppVersion: "9.0.0", name: "需要新版 App 的包", description: "这个包要求比现在更新的 App。", tools: ["claude"], itemCount: 5, size: 8800, official: true, compatible: false, installedVersion: null as string | null, updateAvailable: false },
 ];
+const annMarks = { read: new Set<string>(), dismissed: new Set<string>() };
+function annView() {
+  const items = [
+    {
+      id: "2026-10-zcode-login",
+      kind: "news",
+      publishedAt: "2026-10-02T09:00:00Z",
+      title: "ZCode 请用 API 登录",
+      body: "ZCode 只支持 API 登录。其他 Agent 用 API 或账号登录都一样，建议用 API。",
+      pinned: true,
+      tools: ["zcode"],
+      link: null,
+    },
+    {
+      id: "2026-10-v0.3.0",
+      kind: "release",
+      publishedAt: "2026-10-02T07:40:00Z",
+      title: "v0.3.0：完整清理",
+      body: "“清理”现在能把四个 Agent 清回刚安装的样子。",
+      pinned: false,
+      tools: [],
+      link: "https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.3.0",
+    },
+  ].map((item) => ({ ...item, read: annMarks.read.has(item.id), dismissed: annMarks.dismissed.has(item.id) }));
+  return { items, unread: items.filter((item) => !item.read).length, fetchedAt: now(), error: null };
+}
+
 function extView() {
   const packs = extPacks.map((p) => ({ ...p, updateAvailable: p.compatible && p.installedVersion !== null && p.installedVersion !== p.version }));
   return { packs, updates: packs.filter((p) => p.updateAvailable).length, error: null, checkedAt: now() };
@@ -109,6 +136,17 @@ async function handle(cmd: string, args: Record<string, any> = {}): Promise<unkn
     case "update_settings": {
       Object.assign(settings, args);
       return settings;
+    }
+    case "announcements_state":
+      return annView();
+    case "announcements_refresh":
+      return delay(annView(), 600);
+    case "announcements_mark": {
+      for (const id of (args.ids as string[]) ?? []) {
+        annMarks.read.add(id);
+        if (args.dismiss) annMarks.dismissed.add(id);
+      }
+      return annView();
     }
     case "extensions_state":
       return extView();
