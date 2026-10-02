@@ -909,7 +909,11 @@ fn current_rollback_pieces(
 
 /// What goes into a snapshot: everything except what is erased.
 fn kept(extras: &[ExtraMeta]) -> Vec<ExtraMeta> {
-    extras.iter().filter(|e| e.kind != "erased").cloned().collect()
+    extras
+        .iter()
+        .filter(|e| e.kind != "erased")
+        .cloned()
+        .collect()
 }
 
 fn extra_in_snapshot(store: &Store, id: &str, name: &str) -> Result<PathBuf> {
@@ -971,13 +975,30 @@ fn check_extras_volume(store: &Store, extras: &[ExtraMeta]) -> Result<()> {
 /// Key names that hold a login, a key or an account. A size setting such as `max_tokens` is not one.
 fn secret_key(name: &str) -> bool {
     let lower = name.to_ascii_lowercase().replace(['-', '_'], "");
-    let sizing = ["max", "limit", "budget", "context", "output", "input", "thinking", "count"];
-    if lower.contains("tokens") && !lower.contains("auth") && sizing.iter().any(|w| lower.contains(w)) {
+    let sizing = [
+        "max", "limit", "budget", "context", "output", "input", "thinking", "count",
+    ];
+    if lower.contains("tokens")
+        && !lower.contains("auth")
+        && sizing.iter().any(|w| lower.contains(w))
+    {
         return false;
     }
     [
-        "token", "secret", "password", "passwd", "apikey", "credential", "oauth", "auth",
-        "cookie", "bearer", "userid", "accountuuid", "emailaddress", "history",
+        "token",
+        "secret",
+        "password",
+        "passwd",
+        "apikey",
+        "credential",
+        "oauth",
+        "auth",
+        "cookie",
+        "bearer",
+        "userid",
+        "accountuuid",
+        "emailaddress",
+        "history",
     ]
     .iter()
     .any(|word| lower.contains(word))
@@ -1013,7 +1034,12 @@ fn strip_json(value: &mut serde_json::Value) {
 fn strip_toml(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     for line in text.lines() {
-        let key = line.split('=').next().unwrap_or("").trim().trim_matches('"');
+        let key = line
+            .split('=')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .trim_matches('"');
         let is_value_line = line.contains('=') && !line.trim_start().starts_with('[');
         if (is_value_line && secret_key(key)) || crate::redact::redact_text(line) != line {
             continue;
@@ -1029,13 +1055,17 @@ fn strip_toml(text: &str) -> String {
 fn sanitized_copy(path: &Path, name: &str) -> Result<Vec<u8>> {
     let raw = std::fs::read(path)?;
     let text = String::from_utf8(raw).map_err(|_| {
-        Error::command_failed(format!("{name} is not text, so it cannot be saved without its login"))
+        Error::command_failed(format!(
+            "{name} is not text, so it cannot be saved without its login"
+        ))
     })?;
     let cleaned = if name.ends_with(".toml") {
         strip_toml(&text)
     } else {
         let mut value: serde_json::Value = serde_json::from_str(&text).map_err(|_| {
-            Error::command_failed(format!("{name} could not be read, so it cannot be saved without its login"))
+            Error::command_failed(format!(
+                "{name} could not be read, so it cannot be saved without its login"
+            ))
         })?;
         strip_json(&mut value);
         let mut pretty = serde_json::to_string_pretty(&value)?;
@@ -1157,7 +1187,11 @@ fn create_snapshot(
         }
         // A config file is saved only as a copy with every key and account taken out, so a
         // snapshot never holds a login. A file that cannot be cleaned that way stops the cleanup.
-        for extra in meta.extras.iter().filter(|e| e.kind == "saved-without-login") {
+        for extra in meta
+            .extras
+            .iter()
+            .filter(|e| e.kind == "saved-without-login")
+        {
             if !valid_extra_name(&extra.name) {
                 return Err(Error::invalid("a saved piece has a bad name"));
             }
@@ -1165,7 +1199,10 @@ fn create_snapshot(
             if let Some(parent) = target.parent() {
                 std::fs::create_dir_all(parent)?;
             }
-            std::fs::write(&target, sanitized_copy(Path::new(&extra.path), &extra.name)?)?;
+            std::fs::write(
+                &target,
+                sanitized_copy(Path::new(&extra.path), &extra.name)?,
+            )?;
         }
         std::fs::write(staging.join("meta.json"), serde_json::to_vec_pretty(&meta)?)?;
         std::fs::rename(&staging, root.join(&id))?;
@@ -1247,8 +1284,7 @@ fn move_extras_into(store: &Store, snapshot: &SnapshotMeta, root: &Path) -> Resu
         let result = if extra.kind == "saved-without-login" {
             // The copy without its login is already in the snapshot; only now is the original
             // taken away, and only when that copy is really there.
-            std::fs::symlink_metadata(&to)
-                .and_then(|_| std::fs::remove_file(&from))
+            std::fs::symlink_metadata(&to).and_then(|_| std::fs::remove_file(&from))
         } else {
             to.parent()
                 .map_or(Ok(()), std::fs::create_dir_all)
@@ -1366,7 +1402,9 @@ fn erase_keychain(services: &[&str]) -> Result<bool> {
             let done = std::process::Command::new("security")
                 .args(["delete-generic-password", "-s", service])
                 .output()
-                .map_err(|error| Error::command_failed(format!("the keychain could not be reached: {error}")))?;
+                .map_err(|error| {
+                    Error::command_failed(format!("the keychain could not be reached: {error}"))
+                })?;
             if !done.status.success() {
                 break;
             }
@@ -1630,7 +1668,11 @@ async fn run_cleanup(
     }
     check_extras_volume(store, &extras)?;
     let to_keep = kept(&extras);
-    let to_erase: Vec<ExtraMeta> = extras.iter().filter(|e| e.kind == "erased").cloned().collect();
+    let to_erase: Vec<ExtraMeta> = extras
+        .iter()
+        .filter(|e| e.kind == "erased")
+        .cloned()
+        .collect();
     let keychain = keychain_services(tool, opts);
     if (!to_erase.is_empty() || !keychain.is_empty()) && agent_running(tool, opts) {
         return Err(Error::command_failed(
@@ -2211,17 +2253,32 @@ mod tests {
         .unwrap();
         let out = String::from_utf8(sanitized_copy(&json, "settings.json").unwrap()).unwrap();
         assert!(out.contains("opus") && out.contains("hooks") && out.contains("API_TIMEOUT_MS"));
-        assert!(!out.contains("sk-ant") && !out.contains("a@b.c") && !out.contains("oauth"), "{out}");
+        assert!(
+            !out.contains("sk-ant") && !out.contains("a@b.c") && !out.contains("oauth"),
+            "{out}"
+        );
 
         let sizes = tmp.path().join("limits.json");
-        std::fs::write(&sizes, r#"{"max_tokens":4096,"maxOutputTokens":8000,"apiKeyRequired":false}"#).unwrap();
+        std::fs::write(
+            &sizes,
+            r#"{"max_tokens":4096,"maxOutputTokens":8000,"apiKeyRequired":false}"#,
+        )
+        .unwrap();
         let out = String::from_utf8(sanitized_copy(&sizes, "limits.json").unwrap()).unwrap();
-        assert!(out.contains("max_tokens") && out.contains("maxOutputTokens") && !out.contains("apiKey"), "{out}");
+        assert!(
+            out.contains("max_tokens")
+                && out.contains("maxOutputTokens")
+                && !out.contains("apiKey"),
+            "{out}"
+        );
 
         let toml = tmp.path().join("config.toml");
         std::fs::write(&toml, "model = \"gpt\"\nexperimental_bearer_token = \"abc123\"\n[mcp_servers.x]\ncommand = \"npx\"\n").unwrap();
         let out = String::from_utf8(sanitized_copy(&toml, "config.toml").unwrap()).unwrap();
-        assert!(out.contains("model") && out.contains("mcp_servers") && !out.contains("abc123"), "{out}");
+        assert!(
+            out.contains("model") && out.contains("mcp_servers") && !out.contains("abc123"),
+            "{out}"
+        );
     }
 
     #[test]
