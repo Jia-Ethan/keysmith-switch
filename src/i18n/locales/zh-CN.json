@@ -422,7 +422,8 @@
     "livePromptUnknown": "机器上现有的提示词",
     "emptyTitle": "还没有部署提示词",
     "emptyHint": "从下方挑一条，或新建一条，一键就能用上。",
-    "edit": "编辑"
+    "edit": "编辑",
+    "drifted": "这个 Agent 的配置在部署后被手动改过。提示词仍在使用中；可以重新部署，或用“清理”从头开始。"
   },
   "palette": {
     "title": "命令面板",

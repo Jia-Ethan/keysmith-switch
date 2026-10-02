@@ -181,7 +181,10 @@ export interface HarnessOutcome {
 
 export interface HarnessState {
   tool: ToolId;
+  /** A prompt is on the machine; true for a drifted deployment too. */
   deployed: boolean;
+  /** The agent's config was changed by hand after the last deploy. */
+  drifted?: boolean;
   error: string | null;
   /** The library prompt the machine is running, when the backend could identify it. */
   promptId?: string | null;

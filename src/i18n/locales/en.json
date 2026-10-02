@@ -422,7 +422,8 @@
     "livePromptUnknown": "The prompt already on this machine",
     "emptyTitle": "No prompt deployed yet",
     "emptyHint": "Pick one below or create a new one. One click and it is live.",
-    "edit": "Edit"
+    "edit": "Edit",
+    "drifted": "This agent's config was changed by hand after the deploy. The prompt is still in use; redeploy it or use Clean up to start over."
   },
   "palette": {
     "title": "Command palette",
