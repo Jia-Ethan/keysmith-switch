@@ -100,6 +100,25 @@ describe("VersionsTab", () => {
     expect(screen.getByTestId("rollback-confirm")).toBeDisabled();
   });
 
+  it("lists the setup that comes back and says logins do not", async () => {
+    const withSetup = {
+      ...snapshot,
+      deployment: { present: false, title: null, restorable: false },
+      memory: null,
+      extras: [
+        { name: ".claude/rules", path: "/h/.claude/rules", files: 2, bytes: 10, kind: "saved" as const },
+        { name: ".claude/settings.json", path: "/h/.claude/settings.json", files: 1, bytes: 40, kind: "saved-without-login" as const },
+      ],
+    };
+    planRollback.mockResolvedValue(rollbackPlan({ snapshot: withSetup, memory: null }));
+    render(<VersionsTab toast={toast} />);
+    fireEvent.click(await screen.findByTestId(`version-rollback-${snapshot.id}`));
+    await screen.findByTestId("rollback-plan");
+    expect(screen.getAllByTestId("rollback-extra")).toHaveLength(2);
+    expect(screen.getByTestId("rollback-no-login")).toBeInTheDocument();
+    expect(screen.getByTestId("rollback-confirm")).toBeEnabled();
+  });
+
   it("does not report success when the rollback fails", async () => {
     planRollback.mockResolvedValue(rollbackPlan());
     confirmRollback.mockRejectedValue("plan already used");

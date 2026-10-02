@@ -177,7 +177,7 @@ export function AgentHero({
               {t("hero.edit")}
             </Button>
           ) : null}
-          {onCleanup && (deployed || tool === "claude" || tool === "codex") && !unavailable ? (
+          {onCleanup && !unavailable ? (
             <Button
               size="md"
               variant="outline"

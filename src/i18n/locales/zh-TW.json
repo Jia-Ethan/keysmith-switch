@@ -477,15 +477,19 @@
   },
   "cleanup": {
     "button": "清理",
-    "buttonHint": "清空這個 Agent 上由 Keysmith 部署的內容，並先儲存一個版本",
+    "buttonHint": "讓這個 Agent 回到剛安裝的狀態：移除設定、登入和歷史，並先儲存一個版本（不含登入）",
     "title": "清理 {{tool}}",
     "checking": "正在檢查有什麼可以清理…",
-    "nothing": "沒有可清理的內容：這個 Agent 上沒有部署的提示詞，也沒有需要清空的記憶檔案。",
+    "nothing": "沒有可清理的內容：這個 Agent 已經和剛安裝時一樣。",
     "willRemoveDeployment": "停用並移除正在部署的提示詞{{title}}",
     "unsaved": "沒能讀出這條提示詞的原文，所以清理後無法恢復它。",
     "willEmptyMemory": "清空 {{file}}（{{lines}} 行，{{size}}），包括你自己寫在裡面的內容",
-    "untouched": "不會動：專案裡的檔案、專案和本機範圍的部署、你的提示詞庫。",
-    "saves": "清理前會先自動儲存一個版本，之後可以在「設定 → 版本」裡回滾。",
+    "extraSaved": "儲存並移除 {{name}}（{{files}} 個檔案，{{size}}）",
+    "extraSavedWithoutLogin": "儲存並移除 {{name}}（{{files}} 個檔案，{{size}}），儲存的副本不含登入資訊",
+    "extraErased": "刪除 {{name}}（{{files}} 個檔案，{{size}}）；不儲存，裡面是歷史紀錄或登入資訊",
+    "loginInKeychain": "從系統鑰匙圈刪除這個 Agent 的登入；不儲存",
+    "untouched": "不會動：你專案裡的檔案（包括 git 專案）、你的提示詞庫、Agent 軟體本身。",
+    "saves": "清理前會先儲存一個版本，之後可以在「設定 → 版本」裡回滾。登入、工作階段歷史和快取會直接刪除，不在版本裡：清理後需要重新登入。",
     "ack": "我知道這會清空 {{file}} 裡我自己寫的內容",
     "confirm": "清理",
     "working": "正在清理…",
@@ -493,9 +497,9 @@
     "doneNothing": "沒有需要清理的內容。",
     "openVersions": "查看版本",
     "repair": "這個 Agent 的設定在上次部署之後被改過，需要先整理才能清理。",
-    "memoriesOption": "同時清理記憶資料夾（{{files}} 個檔案，{{size}}）",
-    "memoriesHint": "整個 memories 資料夾會移進儲存的版本裡，之後可以回滾恢復；資料庫、工作階段等其他檔案不會動。預設不勾選。",
-    "memoriesRunning": "Codex 正在執行，先結束它才能清理記憶資料夾。"
+    "drifted": "這個 Agent 的設定在上次部署之後被手動改過。部署的提示詞留待整理，這裡列出的內容照常清理。",
+    "memoriesOption": "儲存並移走 memories 資料夾（{{files}} 個檔案，{{size}}）",
+    "agentRunning": "{{tool}} 正在執行。請先結束：它的工作階段、記憶和登入正在使用中。"
   },
   "versions": {
     "title": "版本",
@@ -529,6 +533,9 @@
     "untitled": "（未命名的提示詞）",
     "memories": "記憶資料夾 {{files}} 個檔案，{{size}}",
     "willRestoreMemories": "把記憶資料夾恢復成當時的樣子（{{files}} 個檔案，{{size}}）",
+    "willRestoreExtra": "把 {{name}} 恢復原樣",
+    "willRestoreExtraWithoutLogin": "恢復 {{name}}，不含登入資訊（僅在現在沒有這個檔案時）",
+    "noLoginBack": "登入和工作階段歷史在清理時已刪除，不會恢復：回滾後需要重新登入。",
     "currentMemories": "現在的記憶資料夾有 {{files}} 個檔案，回滾前會先把它另存為一個版本。",
     "memoriesRunning": "Codex 正在執行，先結束它才能恢復記憶資料夾。"
   }

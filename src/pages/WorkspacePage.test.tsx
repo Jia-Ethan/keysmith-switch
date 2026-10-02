@@ -528,11 +528,11 @@ describe("Workspace: prompt library", () => {
     expect(onNavigate).toHaveBeenCalledWith({ kind: "settings", tab: "versions" });
   });
 
-  it("offers no cleanup for an agent with nothing deployed and no memory file Keysmith knows", async () => {
+  it("offers cleanup for Grok even with nothing deployed, because its setup, login and history can still be cleared", async () => {
     getHarnessState.mockResolvedValue({ tool: "grok", deployed: false, error: null });
     await renderPage({ tool: "grok" });
     await screen.findByRole("heading", { name: "Grok Build" });
-    expect(screen.queryByTestId("hero-cleanup")).not.toBeInTheDocument();
+    expect(await screen.findByTestId("hero-cleanup")).toBeInTheDocument();
   });
 
   it("offers cleanup for Codex even with nothing deployed, because AGENTS.md and its memories can still be cleared", async () => {

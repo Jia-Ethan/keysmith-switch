@@ -572,9 +572,9 @@ async fn clearing_the_codex_memories_folder_moves_it_into_the_snapshot_and_rollb
     let folder = root.join("memories");
     assert!(folder.is_dir(), "the folder is put back, empty");
     assert_eq!(std::fs::read_dir(&folder).unwrap().count(), 0);
-    assert_eq!(
-        std::fs::read(root.join("memories_1.sqlite")).unwrap(),
-        b"database"
+    assert!(
+        !root.join("memories_1.sqlite").exists(),
+        "Codex's own database is session history: it is erased, not saved"
     );
     let saved = list_snapshots(&world.store)
         .into_iter()
@@ -664,4 +664,339 @@ async fn a_codex_memories_folder_that_is_a_link_is_refused() {
         std::fs::read_to_string(elsewhere.join("MEMORY.md")).unwrap(),
         "remember this\n"
     );
+}
+
+// ---- Full cleanup: back to a fresh install, logins and history included --------------------
+
+const SECRET: &str = "sk-ant-LOGINSECRET123456";
+
+fn write(path: PathBuf, text: &str) {
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(path, text).unwrap();
+}
+
+/// A Claude home with settings, a login, history, plugins and a git project beside it.
+fn claude_fresh_install_world() -> (World, PathBuf) {
+    let world = world("claude/claude-instruct.py");
+    let home = &world.home;
+    write(
+        home.join(".claude/settings.json"),
+        &format!(
+            r#"{{"model":"opus","hooks":{{"Stop":[]}},"env":{{"ANTHROPIC_AUTH_TOKEN":"{SECRET}","API_TIMEOUT_MS":"5"}}}}"#
+        ),
+    );
+    write(
+        home.join(".claude.json"),
+        &format!(
+            r#"{{"hasCompletedOnboarding":true,"oauthAccount":{{"emailAddress":"a@b.c"}},"mcpServers":{{"x":{{"command":"npx"}}}},"apiKey":"{SECRET}"}}"#
+        ),
+    );
+    write(home.join(".claude/rules/a.md"), "rule\n");
+    write(home.join(".claude/skills/s/SKILL.md"), "skill\n");
+    write(home.join(".claude/history.jsonl"), "{\"display\":\"hi\"}\n");
+    write(home.join(".claude/projects/p/s.jsonl"), "conversation\n");
+    write(home.join(".claude/plugins/x/plugin.json"), "{}");
+    write(
+        home.join(".claude/settings.json.bak_1"),
+        &format!("{{\"k\":\"{SECRET}\"}}"),
+    );
+    let project = world.home.parent().unwrap().join("project");
+    write(project.join("CLAUDE.md"), "project notes\n");
+    write(project.join(".git/HEAD"), "ref\n");
+    (world, project)
+}
+
+fn tree_text(root: &std::path::Path) -> String {
+    let mut all = String::new();
+    for entry in walkdir::WalkDir::new(root).into_iter().flatten() {
+        if entry.file_type().is_file() {
+            all.push_str(&String::from_utf8_lossy(
+                &std::fs::read(entry.path()).unwrap(),
+            ));
+        }
+    }
+    all
+}
+
+#[tokio::test]
+async fn a_full_cleanup_returns_claude_to_a_fresh_install_and_keeps_no_login_in_the_snapshot() {
+    if !python3_available() {
+        return;
+    }
+    let (world, project) = claude_fresh_install_world();
+    let home = world.home.clone();
+
+    let plan = plan_cleanup(&world.store, ToolKind::Claude, &world.opts)
+        .await
+        .unwrap();
+    assert!(!plan.nothing_to_do && plan.blockers.is_empty());
+    assert!(plan
+        .extras
+        .iter()
+        .any(|e| e.name == ".claude/settings.json" && e.kind == "saved-without-login"));
+    assert!(plan
+        .extras
+        .iter()
+        .any(|e| e.name == ".claude/projects" && e.kind == "erased"));
+    assert!(
+        !plan.login_in_keychain,
+        "a test home never reaches the real keychain"
+    );
+
+    let done = confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
+        .await
+        .unwrap();
+    assert!(done.erased >= 4 && done.extras_cleared >= 3, "{done:?}");
+
+    for gone in [
+        ".claude/settings.json",
+        ".claude.json",
+        ".claude/rules",
+        ".claude/skills",
+        ".claude/history.jsonl",
+        ".claude/projects",
+        ".claude/plugins",
+        ".claude/settings.json.bak_1",
+    ] {
+        assert!(!home.join(gone).exists(), "{gone} should be gone");
+    }
+    assert_eq!(
+        std::fs::read_to_string(project.join("CLAUDE.md")).unwrap(),
+        "project notes\n"
+    );
+    assert!(
+        project.join(".git/HEAD").exists(),
+        "a git project is never touched"
+    );
+
+    let snapshots = world.store.paths().home.join("snapshots");
+    let kept = tree_text(&snapshots);
+    assert!(
+        !kept.contains(SECRET) && !kept.contains("a@b.c"),
+        "no login in a snapshot"
+    );
+    assert!(
+        kept.contains("opus") && kept.contains("mcpServers"),
+        "settings are kept"
+    );
+    assert!(
+        !kept.contains("conversation"),
+        "history is erased, not saved"
+    );
+
+    // Rolling back brings the setup back, without a login.
+    let id = done.snapshot_id.unwrap();
+    let back = plan_rollback(&world.store, &id, &world.opts).await.unwrap();
+    confirm_rollback(&world.store, &back.operation_id, &world.opts)
+        .await
+        .unwrap();
+    assert_eq!(
+        std::fs::read_to_string(home.join(".claude/rules/a.md")).unwrap(),
+        "rule\n"
+    );
+    let settings = std::fs::read_to_string(home.join(".claude/settings.json")).unwrap();
+    assert!(
+        settings.contains("opus") && !settings.contains(SECRET),
+        "{settings}"
+    );
+    assert!(
+        !home.join(".claude/history.jsonl").exists(),
+        "history is not restored"
+    );
+}
+
+#[tokio::test]
+async fn a_saved_folder_holding_a_git_project_is_left_where_it_is() {
+    if !python3_available() {
+        return;
+    }
+    let (world, _project) = claude_fresh_install_world();
+    write(world.home.join(".claude/agents/repo/.git/HEAD"), "ref\n");
+    write(world.home.join(".claude/agents/repo/a.md"), "agent\n");
+    let plan = plan_cleanup(&world.store, ToolKind::Claude, &world.opts)
+        .await
+        .unwrap();
+    confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
+        .await
+        .unwrap();
+    assert!(world.home.join(".claude/agents/repo/.git/HEAD").exists());
+}
+
+// ---- Grok and ZCode ----------------------------------------------------------------------
+
+#[tokio::test]
+async fn a_full_cleanup_returns_grok_to_a_fresh_install_and_keeps_its_program_and_projects() {
+    if !python3_available() {
+        return;
+    }
+    let world = world("grok/grok-keysmith.py");
+    let home = world.home.clone();
+    write(
+        home.join(".grok/config.toml"),
+        &format!(
+            "[ui]\ntheme = \"dark\"\napi_key = \"{SECRET}\"\n[compat.claude]\nenabled = false\n"
+        ),
+    );
+    write(
+        home.join(".grok/auth.json"),
+        &format!("{{\"https://auth.x.ai::x\":{{\"token\":\"{SECRET}\"}}}}"),
+    );
+    write(home.join(".grok/rules/50-mine.md"), "my rule\n");
+    write(home.join(".grok/memory/MEMORY.md"), "remember\n");
+    write(
+        home.join(".grok/sessions/s/session.jsonl"),
+        "conversation\n",
+    );
+    write(home.join(".grok/bin/grok"), "program\n");
+    write(home.join(".grok/downloads/grok-1.0/grok"), "program\n");
+    let project = world.home.parent().unwrap().join("project");
+    write(project.join(".git/HEAD"), "ref\n");
+    write(project.join("AGENTS.md"), "project notes\n");
+
+    let plan = plan_cleanup(&world.store, ToolKind::Grok, &world.opts)
+        .await
+        .unwrap();
+    assert!(!plan.nothing_to_do, "{plan:?}");
+    let done = confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
+        .await
+        .unwrap();
+    assert!(done.erased >= 2, "{done:?}");
+
+    assert!(!home.join(".grok/auth.json").exists() && !home.join(".grok/sessions").exists());
+    assert!(!home.join(".grok/config.toml").exists() && !home.join(".grok/rules").exists());
+    assert!(
+        home.join(".grok/bin/grok").exists() && home.join(".grok/downloads/grok-1.0/grok").exists(),
+        "the program stays"
+    );
+    assert!(project.join(".git/HEAD").exists() && project.join("AGENTS.md").exists());
+
+    let kept = tree_text(&world.store.paths().home.join("snapshots"));
+    assert!(
+        !kept.contains(SECRET) && !kept.contains("conversation"),
+        "no login or history in a snapshot"
+    );
+    assert!(kept.contains("my rule") && kept.contains("compat.claude"));
+
+    let id = done.snapshot_id.unwrap();
+    let back = plan_rollback(&world.store, &id, &world.opts).await.unwrap();
+    confirm_rollback(&world.store, &back.operation_id, &world.opts)
+        .await
+        .unwrap();
+    assert_eq!(
+        std::fs::read_to_string(home.join(".grok/rules/50-mine.md")).unwrap(),
+        "my rule\n"
+    );
+    let config = std::fs::read_to_string(home.join(".grok/config.toml")).unwrap();
+    assert!(
+        config.contains("theme") && !config.contains(SECRET),
+        "{config}"
+    );
+}
+
+#[tokio::test]
+async fn a_full_cleanup_of_zcode_leaves_its_workspace_and_projects_alone() {
+    if !python3_available() {
+        return;
+    }
+    let world = world("zcode/zcode-keysmith.py");
+    let home = world.home.clone();
+    write(
+        home.join(".zcode/v2/config.json"),
+        &format!(
+            r#"{{"provider":{{"p":{{"name":"x","options":{{"apiKey":"{SECRET}","baseURL":"https://u"}}}}}}}}"#
+        ),
+    );
+    write(
+        home.join(".zcode/v2/credentials.json"),
+        &format!("{{\"k\":\"{SECRET}\"}}"),
+    );
+    write(home.join(".zcode/commands/neat.md"), "command\n");
+    write(
+        home.join(".zcode/cli/rollout/model-io.jsonl"),
+        "conversation\n",
+    );
+    write(home.join(".zcode/cli/db/db.sqlite"), "db");
+    write(
+        home.join(".zcode/workspace/default/repo/.git/HEAD"),
+        "ref\n",
+    );
+    write(home.join(".zcode/workspace/default/repo/a.md"), "work\n");
+    write(home.join(".zcode-keysmith/system-role.md"), "role\n");
+    write(
+        home.join(".zcode-keysmith/backups/zcode.cjs.1.original"),
+        "runtime\n",
+    );
+    write(
+        home.join("Library/Application Support/ZCode/session/Preferences"),
+        "{}",
+    );
+
+    let plan = plan_cleanup(&world.store, ToolKind::Zcode, &world.opts)
+        .await
+        .unwrap();
+    assert!(!plan.nothing_to_do, "{plan:?}");
+    assert!(
+        !plan
+            .extras
+            .iter()
+            .any(|e| e.name.starts_with(".zcode/workspace")),
+        "the workspace is never named"
+    );
+    let done = confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
+        .await
+        .unwrap();
+    assert!(done.erased >= 3, "{done:?}");
+
+    assert!(
+        !home.join(".zcode/v2/credentials.json").exists()
+            && !home.join(".zcode/cli/rollout").exists()
+    );
+    assert!(!home.join(".zcode/v2/config.json").exists() && !home.join(".zcode/commands").exists());
+    assert!(!home
+        .join("Library/Application Support/ZCode/session")
+        .exists());
+    assert!(
+        home.join(".zcode/workspace/default/repo/.git/HEAD")
+            .exists(),
+        "projects are never touched"
+    );
+    assert!(home.join(".zcode/workspace/default/repo/a.md").exists());
+
+    let kept = tree_text(&world.store.paths().home.join("snapshots"));
+    assert!(
+        !kept.contains(SECRET) && !kept.contains("conversation") && !kept.contains("runtime\n")
+    );
+    assert!(kept.contains("command") && kept.contains("role"));
+}
+
+#[tokio::test]
+async fn zcode_is_not_cleaned_while_its_app_is_still_patched_and_not_deployed() {
+    if !python3_available() {
+        return;
+    }
+    let world = world("zcode/zcode-keysmith.py");
+    let home = world.home.clone();
+    write(
+        home.join(".zcode-keysmith/config.json"),
+        r#"{"app_bundle_modified": true}"#,
+    );
+    write(
+        home.join(".zcode-keysmith/backups/zcode.cjs.1.original"),
+        "original app\n",
+    );
+    write(home.join(".zcode/v2/credentials.json"), "{}");
+
+    let plan = plan_cleanup(&world.store, ToolKind::Zcode, &world.opts)
+        .await
+        .unwrap();
+    assert!(!plan.blockers.is_empty(), "{plan:?}");
+    let refused = confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts).await;
+    assert!(refused.is_err(), "{refused:?}");
+    assert!(
+        home.join(".zcode-keysmith/backups/zcode.cjs.1.original")
+            .exists(),
+        "the only copy of the original app is kept"
+    );
+    assert!(home.join(".zcode/v2/credentials.json").exists());
+    assert!(list_snapshots(&world.store).is_empty());
 }

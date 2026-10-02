@@ -477,15 +477,19 @@
   },
   "cleanup": {
     "button": "Clean up",
-    "buttonHint": "Clear what Keysmith deployed to this agent, saving a version first",
+    "buttonHint": "Return this agent to a fresh install: setup, logins and history removed, a version saved first (without logins)",
     "title": "Clean up {{tool}}",
     "checking": "Checking what can be cleaned…",
-    "nothing": "Nothing to clean: no deployed prompt and no memory file to empty.",
+    "nothing": "Nothing to clean: this agent looks like a fresh install already.",
     "willRemoveDeployment": "Turn off and remove the deployed prompt{{title}}",
     "unsaved": "The prompt text could not be read back, so it cannot be restored after cleaning.",
     "willEmptyMemory": "Empty {{file}} ({{lines}} lines, {{size}}), including what you wrote in it",
-    "untouched": "Not touched: files in your projects, project and local deployments, your prompt library.",
-    "saves": "A version is saved first. You can roll back in Settings → Versions.",
+    "extraSaved": "Save and remove {{name}} ({{files}} files, {{size}})",
+    "extraSavedWithoutLogin": "Save and remove {{name}} ({{files}} files, {{size}}), without its login",
+    "extraErased": "Delete {{name}} ({{files}} files, {{size}}); not saved — it holds history or a login",
+    "loginInKeychain": "Remove this agent's login from the system keychain; not saved",
+    "untouched": "Not touched: files in your projects (including git projects), your prompt library, the agent app itself.",
+    "saves": "A version is saved first, so you can roll back in Settings → Versions. Logins, session history and caches are deleted and are not in it: you will have to sign in again.",
     "ack": "I understand this empties what I wrote in {{file}}",
     "confirm": "Clean up",
     "working": "Cleaning…",
@@ -493,9 +497,9 @@
     "doneNothing": "Nothing needed cleaning.",
     "openVersions": "View versions",
     "repair": "This agent's setup changed after the last deploy; repair it before cleaning.",
-    "memoriesOption": "Also clear the memories folder ({{files}} files, {{size}})",
-    "memoriesHint": "The whole memories folder is moved into the saved version and can be rolled back. Its database, sessions and other files are left alone. Off by default.",
-    "memoriesRunning": "Codex is running. Quit it to clear its memories folder."
+    "drifted": "This agent's config was changed by hand after the last deploy. The deployed prompt is left for a repair; everything listed here is still cleaned.",
+    "memoriesOption": "Save and move out the memories folder ({{files}} files, {{size}})",
+    "agentRunning": "{{tool}} is running. Quit it first: its sessions, memories and login are in use."
   },
   "versions": {
     "title": "Versions",
@@ -529,6 +533,9 @@
     "untitled": "(untitled prompt)",
     "memories": "Memories folder, {{files}} files, {{size}}",
     "willRestoreMemories": "Put the memories folder back as it was ({{files}} files, {{size}})",
+    "willRestoreExtra": "Put {{name}} back as it was",
+    "willRestoreExtraWithoutLogin": "Put {{name}} back, without its login (only if there is none now)",
+    "noLoginBack": "Logins and session history were deleted by the cleanup and do not come back: sign in again after rolling back.",
     "currentMemories": "The memories folder has {{files}} files now; it is saved as a version first.",
     "memoriesRunning": "Codex is running. Quit it to restore its memories folder."
   }
