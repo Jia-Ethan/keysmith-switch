@@ -1,1 +1,1 @@
-Keysmith Switch v0.3.1：新增“公告”。左侧栏的铃铛会显示 Keysmith 的公告，比如本版内容、下版预告和各 Agent 的登录建议。
+Keysmith Switch v0.3.2：修复 Agent 配置被手动改过后，页面顶部显示“还没有部署提示词”、列表里却显示“部署中”的问题。
