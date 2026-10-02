@@ -1,1 +1,1 @@
-Keysmith Switch v0.3.0：“清理”现在能把 Claude Code、Codex、Grok 和 ZCode 清回刚安装的样子，包括登录和会话历史；配置先存一份不含登录的版本，可以回滚。
+Keysmith Switch v0.3.1：新增“公告”。左侧栏的铃铛会显示 Keysmith 的公告，比如本版内容、下版预告和各 Agent 的登录建议。
