@@ -19,8 +19,13 @@
 //! plan and puts the memory file's bytes back. Rolling back first saves the current state
 //! as a snapshot of its own, so a rollback can be undone too.
 //!
-//! Project files, project and local scope deployments, any other agent folder (Codex's
-//! database, sessions and so on) and the prompt library are never touched.
+//! Leftover user-level instruction files (the `rules`, `agents` and, for Claude Code, `commands`
+//! folders, and a wrapper the adapter reports inside the agent folder) are moved whole into the
+//! snapshot's `extras` folder and copied back on rollback. A piece that is a link, or holds a git
+//! project or a login file, is left where it is.
+//!
+//! Project files, project and local scope deployments, logins and credentials, any other agent
+//! folder (Codex's database, sessions and so on) and the prompt library are never touched.
 
 use std::path::{Path, PathBuf};
 
@@ -43,6 +48,260 @@ const MAX_MEMORY_BYTES: u64 = 8 * 1024 * 1024;
 /// Tests and unusual setups say whether Codex is running instead of asking the system: "1" or "0".
 pub const CODEX_RUNNING_KEY: &str = "KEYSMITH_SWITCH_CODEX_RUNNING";
 
+/// What a fresh install does not have, named from the user's home folder. Three kinds:
+/// - saved: the person's own setup (rules, agents, skills, hooks, Switch's leftovers). Moved whole
+///   into the snapshot and copied back on rollback.
+/// - saved without the login: config files that also carry keys. The snapshot gets a copy with
+///   every key, token and account removed, so no login is ever kept in a snapshot.
+/// - erased: logins, session history, plugins and caches. Deleted, not saved.
+///
+/// A saved folder that is a link, or holds a git project anywhere inside, is left where it is.
+/// Project folders, the prompt library and the agent program itself are never named here.
+struct Table {
+    saved: &'static [&'static str],
+    without_login: &'static [&'static str],
+    erased: &'static [&'static str],
+    /// Files in one folder whose names start with the prefix: (folder, prefix). Old copies of the
+    /// config files carry the same keys, so they are erased; the person's own instruction
+    /// backups are saved.
+    saved_prefixes: &'static [(&'static str, &'static str)],
+    erased_prefixes: &'static [(&'static str, &'static str)],
+    /// The agent's folder: a wrapper the adapter reports inside it is saved too.
+    folder: &'static str,
+    /// Where the agent keeps its login besides files (the macOS keychain).
+    keychain: &'static [&'static str],
+    /// Background jobs Switch left for this agent (macOS LaunchAgent labels): stopped first.
+    launch_agents: &'static [&'static str],
+}
+
+const CLAUDE: Table = Table {
+    saved: &[
+        ".claude/rules",
+        ".claude/agents",
+        ".claude/commands",
+        ".claude/hooks",
+        ".claude/skills",
+        ".claude/output-styles",
+        ".claude/keysmith",
+    ],
+    without_login: &[
+        ".claude/settings.json",
+        ".claude/settings.local.json",
+        ".claude.json",
+    ],
+    erased: &[
+        ".claude/plugins",
+        ".claude/projects",
+        ".claude/sessions",
+        ".claude/history.jsonl",
+        ".claude/file-history",
+        ".claude/session-env",
+        ".claude/shell-snapshots",
+        ".claude/paste-cache",
+        ".claude/plans",
+        ".claude/todos",
+        ".claude/debug",
+        ".claude/downloads",
+        ".claude/cache",
+        ".claude/backups",
+        ".claude/teams",
+        ".claude/ide",
+        ".claude/statsig",
+        ".claude/telemetry",
+        ".claude/config.json",
+        ".claude/policy-limits.json",
+        ".claude/.last-cleanup",
+        ".claude/.last-update-result.json",
+    ],
+    saved_prefixes: &[(".claude", "CLAUDE.md.")],
+    erased_prefixes: &[
+        (".claude", "settings.json."),
+        (".claude", "settings.local.json."),
+        ("", ".claude.json."),
+    ],
+    folder: ".claude",
+    keychain: &["Claude Code-credentials"],
+    launch_agents: &[],
+};
+
+const CODEX: Table = Table {
+    saved: &[
+        ".codex/rules",
+        ".codex/agents",
+        ".codex/skills",
+        ".codex/prompts",
+        ".codex/hooks.json",
+        ".codex/.codex-keysmith-manifest.json",
+    ],
+    without_login: &[".codex/config.toml"],
+    erased: &[
+        ".codex/auth.json",
+        ".codex/plugins",
+        ".codex/sessions",
+        ".codex/archived_sessions",
+        ".codex/session_index.jsonl",
+        ".codex/history.jsonl",
+        ".codex/shell_snapshots",
+        ".codex/log",
+        ".codex/logs",
+        ".codex/cache",
+        ".codex/tmp",
+        ".codex/backups",
+        ".codex/runtime-backups",
+        ".codex/memory-backups",
+        ".codex/models_cache.json",
+        ".codex/installation_id",
+        ".codex/.codex-global-state.json",
+        ".codex/transcription-history.jsonl",
+        ".codex/dictation-history",
+        ".codex/generated_images",
+        ".codex/attachments",
+        ".codex/vendor_imports",
+        ".codex/state_5.sqlite",
+        ".codex/logs_2.sqlite",
+        ".codex/memories_1.sqlite",
+        ".codex/goals_1.sqlite",
+        ".codex/queue_1.sqlite",
+        ".codex/thread_history_1.sqlite",
+    ],
+    saved_prefixes: &[(".codex", "AGENTS.md.")],
+    erased_prefixes: &[
+        (".codex", "auth.json."),
+        (".codex", "config.toml."),
+        (".codex", "state_5.sqlite-"),
+        (".codex", "logs_2.sqlite-"),
+        (".codex", "memories_1.sqlite-"),
+        (".codex", "goals_1.sqlite-"),
+        (".codex", "queue_1.sqlite-"),
+        (".codex", "thread_history_1.sqlite-"),
+    ],
+    folder: ".codex",
+    keychain: &["Codex Auth"],
+    launch_agents: &[],
+};
+
+/// Grok keeps its program in `bin`, `bundled`, `vendor` and `downloads`: those are never named.
+/// `Grok Bot` is a separate app and is not touched.
+const GROK: Table = Table {
+    saved: &[
+        ".grok/rules",
+        ".grok/agents",
+        ".grok/skills",
+        ".grok/AGENTS.md",
+        ".grok/memory",
+        ".grok/memory-v2",
+        ".grok/.grok-keysmith-manifest.json",
+    ],
+    without_login: &[".grok/config.toml"],
+    erased: &[
+        ".grok/auth.json",
+        ".grok/auth.json.lock",
+        ".grok/sessions",
+        ".grok/memtrace",
+        ".grok/logs",
+        ".grok/installed-plugins",
+        ".grok/marketplace-cache",
+        ".grok/models_cache.json",
+        ".grok/settings_cache.json",
+        ".grok/slash-mru.json",
+        ".grok/tip_cursor.json",
+        ".grok/upload_queue",
+        ".grok/active_sessions.json",
+        ".grok/active_sessions.lock",
+        ".grok/campaigns_state.json",
+        ".grok/campaigns_state.json.lock",
+        ".grok/worktrees.db",
+    ],
+    saved_prefixes: &[(".grok", "AGENTS.md.")],
+    erased_prefixes: &[(".grok", "auth.json."), (".grok", "config.toml.")],
+    folder: ".grok",
+    keychain: &[],
+    launch_agents: &[],
+};
+
+/// ZCode's `~/.zcode/workspace` is where its projects live (git projects inside): never named.
+const ZCODE: Table = Table {
+    saved: &[
+        ".zcode/AGENTS.md",
+        ".zcode/commands",
+        ".zcode/skills",
+        ".zcode/cli/memories",
+        // Switch's own folder. Its `backups` and `cache` hold copies of the app's runtime
+        // (large, and not the person's setup), so they are erased below, not saved.
+        ".zcode-keysmith/system-role.md",
+        ".zcode-keysmith/config.json",
+        ".zcode-keysmith/runtime-shim.json",
+        ".zcode-keysmith/bin",
+    ],
+    without_login: &[
+        // `~/.zcode/cli/config.json` is a link to this one, and a link is never touched.
+        ".zcode/v2/config.json",
+        ".zcode/v2/setting.json",
+        ".zcode/v2/provider_config.json",
+        ".zcode/v2/bot-config.json",
+        ".zcode/v2/bot-config.v3.json",
+    ],
+    erased: &[
+        ".zcode/v2/credentials.json",
+        ".zcode/v2/onboarding-record.json",
+        ".zcode/v2/bot-state.v2.json",
+        ".zcode/v2/bot-state.v3.json",
+        ".zcode/v2/bots-model-cache.v2.json",
+        ".zcode/v2/coding-plan-cache.json",
+        ".zcode/v2/telemetry-state.json",
+        ".zcode/v2/tasks-index.sqlite",
+        ".zcode/v2/cache",
+        ".zcode/v2/logs",
+        ".zcode/v2/crash",
+        ".zcode/cli/db",
+        ".zcode/cli/rollout",
+        ".zcode/cli/exec",
+        ".zcode/cli/artifacts",
+        ".zcode/cli/agents",
+        ".zcode/cli/log",
+        ".zcode/cli/image-cache",
+        ".zcode/cli/pdf-cache",
+        ".zcode/cli/plugins",
+        ".zcode/backups",
+        ".zcode/tmp",
+        ".zcode-keysmith/backups",
+        ".zcode-keysmith/cache",
+        ".zcode-keysmith/logs",
+        "Library/Application Support/ZCode/session",
+        "Library/Application Support/ZCode/rum-electron-store",
+        "Library/Application Support/ZCode/zcode-data-size-telemetry.json",
+        "Library/Caches/dev.zcode.app",
+    ],
+    saved_prefixes: &[("Library/LaunchAgents", "com.jia.zcode-keysmith.")],
+    erased_prefixes: &[
+        (".zcode/v2", "tasks-index.sqlite"),
+        (".zcode/v2", "config.json."),
+        (".zcode/v2", "credentials.json."),
+        (".zcode/cli", "config.json."),
+    ],
+    folder: ".zcode",
+    keychain: &["ZCode Safe Storage"],
+    launch_agents: &["com.jia.zcode-keysmith.env", "com.jia.zcode-keysmith.rearm"],
+};
+
+fn table(tool: ToolKind) -> Option<&'static Table> {
+    match tool {
+        ToolKind::Claude => Some(&CLAUDE),
+        ToolKind::Codex => Some(&CODEX),
+        ToolKind::Grok => Some(&GROK),
+        ToolKind::Zcode => Some(&ZCODE),
+    }
+}
+
+/// Login and credential files. A saved folder holding one is left where it is.
+const SECRET_NAMES: [&str; 5] = [
+    "auth.json",
+    ".credentials.json",
+    "credentials.json",
+    ".netrc",
+    ".env",
+];
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct DeploymentMeta {
@@ -60,6 +319,25 @@ pub struct MemoryMeta {
     pub lines: u64,
     pub sha256: String,
     pub mode: Option<u32>,
+}
+
+/// One more piece of the agent's user-level setup that a fresh install does not have (rules,
+/// custom agents, commands, a leftover wrapper). It is moved whole into the snapshot.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtraMeta {
+    /// Its place under the home folder, such as `.claude/rules` or `.codex/config.toml`.
+    pub name: String,
+    pub path: String,
+    pub files: u64,
+    pub bytes: u64,
+    /// `saved`, `saved-without-login` (a copy with every key removed) or `erased` (not saved).
+    #[serde(default = "kind_saved")]
+    pub kind: String,
+}
+
+fn kind_saved() -> String {
+    "saved".into()
 }
 
 /// An agent's own memory folder (Codex: `~/.codex/memories`), counted but never read.
@@ -84,6 +362,9 @@ pub struct SnapshotMeta {
     /// The agent's memory folder, kept inside the snapshot's own `memories` folder.
     #[serde(default)]
     pub memories: Option<MemoriesMeta>,
+    /// The rest of the user-level setup, kept inside the snapshot's own `extras` folder.
+    #[serde(default)]
+    pub extras: Vec<ExtraMeta>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -93,10 +374,16 @@ pub struct CleanupPlan {
     pub tool: ToolKind,
     pub deployment: DeploymentMeta,
     pub memory: Option<MemoryMeta>,
-    /// The agent's memory folder, if it has one with something in it. Only cleared when asked.
+    /// The agent's memory folder, if it has one with something in it.
     pub memories: Option<MemoriesMeta>,
+    /// The rest of the user-level setup that a fresh install does not have.
+    pub extras: Vec<ExtraMeta>,
+    /// The agent's login is in the system keychain: it is removed, and never saved.
+    pub login_in_keychain: bool,
     /// The agent is running now, so its memory folder cannot be cleared or restored.
     pub agent_running: bool,
+    /// The deployed config was changed by hand: it is left in place, the rest is still cleaned.
+    pub config_drifted: bool,
     pub nothing_to_do: bool,
     pub blockers: Vec<String>,
 }
@@ -108,6 +395,10 @@ pub struct CleanupResult {
     pub deactivated: bool,
     pub memory_cleared: bool,
     pub memories_cleared: bool,
+    pub extras_cleared: u64,
+    /// Logins, session history and caches that were deleted (they are not in the snapshot).
+    pub erased: u64,
+    pub keychain_cleared: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -136,6 +427,8 @@ pub struct RollbackPlan {
     pub replaces_deployment: bool,
     pub memory: Option<RollbackMemory>,
     pub memories: Option<RollbackMemories>,
+    /// How many saved pieces of setup are put back.
+    pub extras: u64,
     pub agent_running: bool,
     /// What is there now is saved as a snapshot first.
     pub saves_current: bool,
@@ -149,6 +442,7 @@ pub struct RollbackResult {
     pub redeployed: bool,
     pub memory_restored: bool,
     pub memories_restored: bool,
+    pub extras_restored: u64,
 }
 
 fn sha_hex(bytes: &[u8]) -> String {
@@ -361,14 +655,18 @@ fn current_memories(tool: ToolKind, opts: &AdapterOptions) -> Result<Option<Memo
     })
 }
 
-/// Whether Codex is running, which keeps its memory folder in use. A process list that cannot
-/// be read counts as not running; the person is also told to close Codex first.
+/// Whether the agent is running, which keeps its sessions, login and memory folder in use. A
+/// process list that cannot be read counts as not running; the person is also told to quit it
+/// first. A test or preview run with a home of its own never asks the system.
 fn agent_running(tool: ToolKind, opts: &AdapterOptions) -> bool {
-    if tool != ToolKind::Codex {
+    if table(tool).is_none() {
         return false;
     }
     if let Some(forced) = opts.extra_env.get(CODEX_RUNNING_KEY) {
         return forced == "1";
+    }
+    if opts.home.is_some() {
+        return false;
     }
     #[cfg(unix)]
     let listing = std::process::Command::new("ps")
@@ -387,13 +685,369 @@ fn agent_running(tool: ToolKind, opts: &AdapterOptions) -> bool {
             let name = name.split('"').next().unwrap_or(name);
             let base = name.rsplit(['/', '\\']).next().unwrap_or(name);
             let base = base.to_ascii_lowercase();
-            base == "codex" || base == "codex.exe"
+            let base = base.trim_end_matches(".exe");
+            match tool {
+                ToolKind::Codex => base == "codex",
+                ToolKind::Claude => base == "claude",
+                ToolKind::Grok => base == "grok",
+                // The app, its helpers and its command line all hold the data.
+                ToolKind::Zcode => base.starts_with("zcode"),
+            }
         })
     })
 }
 
 fn memories_in_snapshot(store: &Store, id: &str) -> Result<PathBuf> {
     Ok(snapshot_path(store, id)?.join("memories"))
+}
+
+/// The agent's setup lives in the user's home folder; every piece is named from there.
+fn agent_home(tool: ToolKind, opts: &AdapterOptions) -> Result<Option<PathBuf>> {
+    Ok(match table(tool) {
+        Some(_) => Some(home_dir(opts)?),
+        None => None,
+    })
+}
+
+/// A plain relative path with no way out of the folder it is joined to.
+fn valid_extra_name(name: &str) -> bool {
+    let path = Path::new(name);
+    !name.is_empty()
+        && path
+            .components()
+            .all(|part| matches!(part, std::path::Component::Normal(_)))
+}
+
+fn is_secret_name(name: &std::ffi::OsStr) -> bool {
+    SECRET_NAMES.iter().any(|secret| name == *secret)
+}
+
+/// One piece of setup: its place under the home folder and what is done to it.
+type Entry = (String, String);
+
+/// Files in `folder` (under home) whose names start with `prefix`, as places under home.
+fn prefixed(home: &Path, folder: &str, prefix: &str) -> Vec<String> {
+    let dir = if folder.is_empty() {
+        home.to_path_buf()
+    } else {
+        home.join(folder)
+    };
+    let mut found: Vec<String> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|name| name.starts_with(prefix) && name.len() > prefix.len())
+        .map(|name| {
+            if folder.is_empty() {
+                name
+            } else {
+                format!("{folder}/{name}")
+            }
+        })
+        .collect();
+    found.sort();
+    found
+}
+
+/// Which pieces to look at, in a fixed order: the agent's tables, the old copies of its config
+/// files, and the wrapper the adapter reports when it lies inside the agent's folder.
+fn extra_entries(tool: ToolKind, envelope: &Envelope, opts: &AdapterOptions) -> Result<Vec<Entry>> {
+    let (Some(table), Some(home)) = (table(tool), agent_home(tool, opts)?) else {
+        return Ok(Vec::new());
+    };
+    let mut entries: Vec<Entry> = Vec::new();
+    let mut add = |name: String, kind: &str| {
+        if !entries.iter().any(|(known, _)| *known == name) {
+            entries.push((name, kind.to_string()));
+        }
+    };
+    for name in table.saved {
+        add(name.to_string(), "saved");
+    }
+    for name in table.without_login {
+        add(name.to_string(), "saved-without-login");
+    }
+    for (folder, prefix) in table.saved_prefixes {
+        for name in prefixed(&home, folder, prefix) {
+            add(name, "saved");
+        }
+    }
+    for name in table.erased {
+        add(name.to_string(), "erased");
+    }
+    for (folder, prefix) in table.erased_prefixes {
+        for name in prefixed(&home, folder, prefix) {
+            add(name, "erased");
+        }
+    }
+    let agent_folder = home.join(table.folder);
+    for target in envelope.target_paths.iter().filter(|t| t.role == "wrapper") {
+        if let Ok(relative) = Path::new(&target.path).strip_prefix(&home) {
+            if Path::new(&target.path).starts_with(&agent_folder) {
+                let name = relative.to_string_lossy().replace('\\', "/");
+                if valid_extra_name(&name) {
+                    add(name, "saved");
+                }
+            }
+        }
+    }
+    Ok(entries)
+}
+
+/// Whether a folder holds a git project or a login file anywhere inside. Links are not followed.
+fn holds_project_or_secret(root: &Path) -> Result<bool> {
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(dir) = pending.pop() {
+        for entry in std::fs::read_dir(&dir)? {
+            let entry = entry?;
+            let name = entry.file_name();
+            if name == ".git" || is_secret_name(&name) {
+                return Ok(true);
+            }
+            if std::fs::symlink_metadata(entry.path())?.is_dir() {
+                pending.push(entry.path());
+            }
+        }
+    }
+    Ok(false)
+}
+
+/// How many files and bytes a file or folder holds.
+fn path_stats(path: &Path) -> Result<(u64, u64)> {
+    let meta = std::fs::symlink_metadata(path)?;
+    if meta.is_dir() {
+        dir_stats(path)
+    } else {
+        Ok((1, meta.len()))
+    }
+}
+
+/// One piece of setup as it is now, or `None` when it is missing, empty or a link. A saved folder
+/// that holds a git project or a login file is left alone as well, and so is a saved file that
+/// is itself a login file.
+fn extra_info(home: &Path, name: &str, kind: &str) -> Result<Option<ExtraMeta>> {
+    if !valid_extra_name(name) {
+        return Ok(None);
+    }
+    let path = home.join(name);
+    let meta = match std::fs::symlink_metadata(&path) {
+        Ok(meta) => meta,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    if meta.file_type().is_symlink() || (!meta.is_dir() && !meta.is_file()) {
+        return Ok(None);
+    }
+    match kind {
+        "saved" => {
+            if path.file_name().is_some_and(is_secret_name) {
+                return Ok(None);
+            }
+            if meta.is_dir() && holds_project_or_secret(&path)? {
+                return Ok(None);
+            }
+        }
+        "saved-without-login" if !meta.is_file() => return Ok(None),
+        "saved-without-login" | "erased" => {}
+        _ => return Ok(None),
+    }
+    let (files, bytes) = path_stats(&path)?;
+    Ok((files > 0).then(|| ExtraMeta {
+        name: name.to_string(),
+        path: path.to_string_lossy().into_owned(),
+        files,
+        bytes,
+        kind: kind.to_string(),
+    }))
+}
+
+fn current_extras(
+    tool: ToolKind,
+    entries: &[Entry],
+    opts: &AdapterOptions,
+) -> Result<Vec<ExtraMeta>> {
+    let Some(home) = agent_home(tool, opts)? else {
+        return Ok(Vec::new());
+    };
+    let mut found = Vec::new();
+    for (name, kind) in entries {
+        if let Some(info) = extra_info(&home, name, kind)? {
+            found.push(info);
+        }
+    }
+    Ok(found)
+}
+
+fn extras_json(extras: &[ExtraMeta]) -> serde_json::Value {
+    json!(extras
+        .iter()
+        .map(|e| json!({ "name": e.name, "files": e.files, "bytes": e.bytes, "kind": e.kind }))
+        .collect::<Vec<_>>())
+}
+
+fn entries_of(extras: &[ExtraMeta]) -> Vec<Entry> {
+    extras
+        .iter()
+        .map(|e| (e.name.clone(), e.kind.clone()))
+        .collect()
+}
+
+/// What a rollback would move aside: the saved folders and files that are there now. A config file
+/// that is there is left in place, since it may hold a login made since the cleanup.
+fn current_rollback_pieces(
+    tool: ToolKind,
+    snapshot: &SnapshotMeta,
+    opts: &AdapterOptions,
+) -> Result<Vec<ExtraMeta>> {
+    let entries: Vec<Entry> = entries_of(&snapshot.extras)
+        .into_iter()
+        .filter(|(_, kind)| kind == "saved")
+        .collect();
+    current_extras(tool, &entries, opts)
+}
+
+/// What goes into a snapshot: everything except what is erased.
+fn kept(extras: &[ExtraMeta]) -> Vec<ExtraMeta> {
+    extras.iter().filter(|e| e.kind != "erased").cloned().collect()
+}
+
+fn extra_in_snapshot(store: &Store, id: &str, name: &str) -> Result<PathBuf> {
+    if !valid_extra_name(name) {
+        return Err(Error::invalid(
+            "snapshot is damaged: a saved piece has a bad name",
+        ));
+    }
+    Ok(snapshot_path(store, id)?.join("extras").join(name))
+}
+
+/// The pieces of setup kept in a snapshot. A saved piece is checked against what the snapshot
+/// says it holds; a config copy made without its login has no original to compare with.
+fn snapshot_extras(store: &Store, meta: &SnapshotMeta) -> Result<Vec<(ExtraMeta, PathBuf)>> {
+    let mut found = Vec::new();
+    for saved in &meta.extras {
+        let path = extra_in_snapshot(store, &meta.id, &saved.name)?;
+        let (files, bytes) = path_stats(&path).map_err(|_| {
+            Error::invalid(format!("snapshot is damaged: {} is missing", saved.name))
+        })?;
+        let same = if saved.kind == "saved-without-login" {
+            files == 1
+        } else {
+            files == saved.files && bytes == saved.bytes
+        };
+        if !same {
+            return Err(Error::invalid(format!(
+                "snapshot is damaged: {} does not match",
+                saved.name
+            )));
+        }
+        found.push((saved.clone(), path));
+    }
+    Ok(found)
+}
+
+/// The saved pieces must be on the snapshots' volume, so moving them is a rename that cannot
+/// lose anything. A config copy is written, not moved, and needs no such check.
+fn check_extras_volume(store: &Store, extras: &[ExtraMeta]) -> Result<()> {
+    let moved: Vec<&ExtraMeta> = extras.iter().filter(|e| e.kind == "saved").collect();
+    if moved.is_empty() {
+        return Ok(());
+    }
+    std::fs::create_dir_all(snapshots_dir(store))?;
+    if let Some(extra) = moved
+        .iter()
+        .find(|e| !same_volume(Path::new(&e.path), &snapshots_dir(store)))
+    {
+        return Err(Error::command_failed(format!(
+            "{} is on another disk than the snapshots, so it cannot be moved safely",
+            extra.name
+        )));
+    }
+    Ok(())
+}
+
+// ---- Config copies without their login ---------------------------------------------------
+
+/// Key names that hold a login, a key or an account. A size setting such as `max_tokens` is not one.
+fn secret_key(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase().replace(['-', '_'], "");
+    let sizing = ["max", "limit", "budget", "context", "output", "input", "thinking", "count"];
+    if lower.contains("tokens") && !lower.contains("auth") && sizing.iter().any(|w| lower.contains(w)) {
+        return false;
+    }
+    [
+        "token", "secret", "password", "passwd", "apikey", "credential", "oauth", "auth",
+        "cookie", "bearer", "userid", "accountuuid", "emailaddress", "history",
+    ]
+    .iter()
+    .any(|word| lower.contains(word))
+}
+
+fn strip_json(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Object(map) => {
+            map.retain(|key, inner| {
+                if secret_key(key) {
+                    return false;
+                }
+                if let serde_json::Value::String(text) = inner {
+                    if crate::redact::redact_text(text) != *text {
+                        return false;
+                    }
+                }
+                true
+            });
+            map.values_mut().for_each(strip_json);
+        }
+        serde_json::Value::Array(items) => {
+            items.retain(|item| {
+                !matches!(item, serde_json::Value::String(text) if crate::redact::redact_text(text) != *text)
+            });
+            items.iter_mut().for_each(strip_json);
+        }
+        _ => {}
+    }
+}
+
+/// A TOML line carries a login when its key names one or its value looks like one.
+fn strip_toml(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for line in text.lines() {
+        let key = line.split('=').next().unwrap_or("").trim().trim_matches('"');
+        let is_value_line = line.contains('=') && !line.trim_start().starts_with('[');
+        if (is_value_line && secret_key(key)) || crate::redact::redact_text(line) != line {
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
+}
+
+/// The text of a config file with every key, token, account and history entry taken out. When
+/// what is left still looks like it holds a login, nothing is saved and the cleanup stops.
+fn sanitized_copy(path: &Path, name: &str) -> Result<Vec<u8>> {
+    let raw = std::fs::read(path)?;
+    let text = String::from_utf8(raw).map_err(|_| {
+        Error::command_failed(format!("{name} is not text, so it cannot be saved without its login"))
+    })?;
+    let cleaned = if name.ends_with(".toml") {
+        strip_toml(&text)
+    } else {
+        let mut value: serde_json::Value = serde_json::from_str(&text).map_err(|_| {
+            Error::command_failed(format!("{name} could not be read, so it cannot be saved without its login"))
+        })?;
+        strip_json(&mut value);
+        let mut pretty = serde_json::to_string_pretty(&value)?;
+        pretty.push('\n');
+        pretty
+    };
+    if crate::redact::redact_text(&cleaned) != cleaned {
+        return Err(Error::command_failed(format!(
+            "{name} still holds a login after removing the keys; nothing was changed"
+        )));
+    }
+    Ok(cleaned.into_bytes())
 }
 
 /// A copy of a folder, keeping links as links. The destination must not exist yet.
@@ -458,6 +1112,7 @@ fn memory_info(path: &Path) -> Result<(MemoryMeta, Vec<u8>)> {
 }
 
 /// Write a snapshot, check what was written, and only then make it visible.
+#[allow(clippy::too_many_arguments)]
 fn create_snapshot(
     store: &Store,
     tool: ToolKind,
@@ -466,6 +1121,7 @@ fn create_snapshot(
     prompt: Option<&str>,
     memory: Option<(MemoryMeta, &[u8])>,
     memories: Option<MemoriesMeta>,
+    extras: Vec<ExtraMeta>,
 ) -> Result<SnapshotMeta> {
     let _lock = HomeLock::acquire(store.paths())?;
     let id = format!(
@@ -482,6 +1138,7 @@ fn create_snapshot(
         deployment,
         memory: memory.as_ref().map(|(info, _)| info.clone()),
         memories,
+        extras,
     };
     let root = snapshots_dir(store);
     let staging = root.join(format!(".{id}.writing"));
@@ -497,6 +1154,18 @@ fn create_snapshot(
                     "the snapshot copy could not be verified",
                 ));
             }
+        }
+        // A config file is saved only as a copy with every key and account taken out, so a
+        // snapshot never holds a login. A file that cannot be cleaned that way stops the cleanup.
+        for extra in meta.extras.iter().filter(|e| e.kind == "saved-without-login") {
+            if !valid_extra_name(&extra.name) {
+                return Err(Error::invalid("a saved piece has a bad name"));
+            }
+            let target = staging.join("extras").join(&extra.name);
+            if let Some(parent) = target.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(&target, sanitized_copy(Path::new(&extra.path), &extra.name)?)?;
         }
         std::fs::write(staging.join("meta.json"), serde_json::to_vec_pretty(&meta)?)?;
         std::fs::rename(&staging, root.join(&id))?;
@@ -527,16 +1196,184 @@ fn truncate_file(path: &Path) -> Result<()> {
 fn move_memories_into(store: &Store, snapshot: &SnapshotMeta, from: &Path) -> Result<()> {
     let to = memories_in_snapshot(store, &snapshot.id)?;
     if let Err(error) = std::fs::rename(from, &to) {
-        let mut meta = snapshot.clone();
-        meta.memories = None;
-        if let Ok(bytes) = serde_json::to_vec_pretty(&meta) {
-            let _ = std::fs::write(snapshot_path(store, &snapshot.id)?.join("meta.json"), bytes);
-        }
+        rewrite_meta(store, snapshot, |meta| meta.memories = None);
         return Err(Error::command_failed(format!(
             "the memories folder could not be moved into the snapshot: {error}"
         )));
     }
     Ok(())
+}
+
+/// Change what a written snapshot says it holds, starting from what is on disk.
+fn rewrite_meta(store: &Store, snapshot: &SnapshotMeta, change: impl FnOnce(&mut SnapshotMeta)) {
+    let mut meta = read_snapshot(store, &snapshot.id).unwrap_or_else(|_| snapshot.clone());
+    change(&mut meta);
+    if let (Ok(path), Ok(bytes)) = (
+        snapshot_path(store, &snapshot.id),
+        serde_json::to_vec_pretty(&meta),
+    ) {
+        let _ = std::fs::write(path.join("meta.json"), bytes);
+    }
+}
+
+/// Move each piece of setup into the snapshot made for it, by rename only. A piece that is gone
+/// by now (the adapter's uninstall may take its wrapper away) is dropped from the snapshot, and
+/// so is every piece after one that cannot be moved. Returns how many were moved.
+fn move_extras_into(store: &Store, snapshot: &SnapshotMeta, root: &Path) -> Result<u64> {
+    let mut moved = Vec::new();
+    let mut failure = None;
+    let mut changed = false;
+    for extra in &snapshot.extras {
+        let from = root.join(&extra.name);
+        if std::fs::symlink_metadata(&from).is_err() {
+            continue;
+        }
+        // What the piece holds now: the adapter's uninstall may have taken its own file out of
+        // it (Grok's deployed rule lives in `rules`), and that file is saved as the prompt.
+        let mut extra = extra.clone();
+        if extra.kind == "saved" {
+            let (files, bytes) = path_stats(&from)?;
+            if files == 0 {
+                changed = true;
+                continue;
+            }
+            if (files, bytes) != (extra.files, extra.bytes) {
+                changed = true;
+                extra.files = files;
+                extra.bytes = bytes;
+            }
+        }
+        let to = extra_in_snapshot(store, &snapshot.id, &extra.name)?;
+        let result = if extra.kind == "saved-without-login" {
+            // The copy without its login is already in the snapshot; only now is the original
+            // taken away, and only when that copy is really there.
+            std::fs::symlink_metadata(&to)
+                .and_then(|_| std::fs::remove_file(&from))
+        } else {
+            to.parent()
+                .map_or(Ok(()), std::fs::create_dir_all)
+                .and_then(|()| std::fs::rename(&from, &to))
+        };
+        if let Err(error) = result {
+            failure = Some(Error::command_failed(format!(
+                "{} could not be moved into the snapshot: {error}",
+                extra.name
+            )));
+            break;
+        }
+        moved.push(extra);
+    }
+    let count = moved.len() as u64;
+    if changed || moved.len() != snapshot.extras.len() {
+        rewrite_meta(store, snapshot, |meta| meta.extras = moved);
+    }
+    match failure {
+        Some(error) => Err(error),
+        None => Ok(count),
+    }
+}
+
+/// Delete what is not saved: logins, session history, plugins and caches. Everything is tried;
+/// the first failure is reported at the end. A link is never followed or removed.
+fn erase_extras(home: &Path, erased: &[ExtraMeta]) -> Result<u64> {
+    let mut count = 0;
+    let mut failure = None;
+    for extra in erased {
+        if !valid_extra_name(&extra.name) {
+            continue;
+        }
+        let path = home.join(&extra.name);
+        let meta = match std::fs::symlink_metadata(&path) {
+            Ok(meta) => meta,
+            Err(_) => continue,
+        };
+        if meta.file_type().is_symlink() {
+            continue;
+        }
+        let removed = if meta.is_dir() {
+            std::fs::remove_dir_all(&path)
+        } else {
+            std::fs::remove_file(&path)
+        };
+        match removed {
+            Ok(()) => count += 1,
+            Err(error) => {
+                failure.get_or_insert_with(|| {
+                    Error::command_failed(format!("{} could not be removed: {error}", extra.name))
+                });
+            }
+        }
+    }
+    match failure {
+        Some(error) => Err(error),
+        None => Ok(count),
+    }
+}
+
+/// The agent's login in the macOS keychain. Only the real home is ever asked: a test or a
+/// preview run with a home of its own never reaches the person's keychain.
+#[cfg(target_os = "macos")]
+fn keychain_services(tool: ToolKind, opts: &AdapterOptions) -> Vec<&'static str> {
+    if opts.home.is_some() {
+        return Vec::new();
+    }
+    let Some(table) = table(tool) else {
+        return Vec::new();
+    };
+    table
+        .keychain
+        .iter()
+        .copied()
+        .filter(|service| {
+            std::process::Command::new("security")
+                .args(["find-generic-password", "-s", service])
+                .output()
+                .is_ok_and(|out| out.status.success())
+        })
+        .collect()
+}
+
+#[cfg(not(target_os = "macos"))]
+fn keychain_services(_tool: ToolKind, _opts: &AdapterOptions) -> Vec<&'static str> {
+    Vec::new()
+}
+
+/// Stop the background jobs Switch left for the agent, so a moved or deleted file is not loaded
+/// again. Best effort, and only for the real home. A job that is not loaded is not an error.
+#[cfg(target_os = "macos")]
+fn stop_launch_agents(tool: ToolKind, opts: &AdapterOptions) {
+    let Some(table) = table(tool) else { return };
+    if opts.home.is_some() {
+        return;
+    }
+    // SAFETY: getuid has no preconditions.
+    let uid = unsafe { libc::getuid() };
+    for label in table.launch_agents {
+        let _ = std::process::Command::new("launchctl")
+            .args(["bootout", &format!("gui/{uid}/{label}")])
+            .output();
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn stop_launch_agents(_tool: ToolKind, _opts: &AdapterOptions) {}
+
+/// Remove every keychain entry of the service (one per account). Returns whether any was removed.
+fn erase_keychain(services: &[&str]) -> Result<bool> {
+    let mut removed = false;
+    for service in services {
+        for _ in 0..16 {
+            let done = std::process::Command::new("security")
+                .args(["delete-generic-password", "-s", service])
+                .output()
+                .map_err(|error| Error::command_failed(format!("the keychain could not be reached: {error}")))?;
+            if !done.status.success() {
+                break;
+            }
+            removed = true;
+        }
+    }
+    Ok(removed)
 }
 
 /// Replace a file's bytes through a temporary file beside it, keeping its permissions.
@@ -638,17 +1475,25 @@ pub async fn plan_cleanup(
     }
     let envelope = ops::tool_status(store, tool, Scope::User, None, opts).await?;
     let (deployment, _body, memory) = current_state(store, tool, &envelope, opts)?;
+    // Drift does not stop a cleanup: the memory file and the rest of the setup are still
+    // cleaned, and the drifted deployment is left for a repair. A half-done transaction does.
+    let config_drifted = envelope.status == ToolStatus::Drift;
     let mut blockers = Vec::new();
-    if envelope.status == ToolStatus::Drift || envelope.recovery_required {
+    if envelope.recovery_required {
         blockers.push(
             "the agent's setup was changed after the last deploy; repair it first".to_string(),
         );
     }
     let memory_meta = memory.as_ref().map(|(info, _)| info.clone());
     let memories = current_memories(tool, opts)?;
+    let entries = extra_entries(tool, &envelope, opts)?;
+    let extras = current_extras(tool, &entries, opts)?;
+    let login_in_keychain = !keychain_services(tool, opts).is_empty();
     let nothing_to_do = !deployment.present
         && memory_meta.as_ref().is_none_or(|m| m.bytes == 0)
-        && memories.is_none();
+        && memories.is_none()
+        && extras.is_empty()
+        && !login_in_keychain;
     let operation = ops::store_preview(
         store,
         tool,
@@ -661,6 +1506,9 @@ pub async fn plan_cleanup(
             "deployed": deployment.present,
             "memorySha": memory_meta.as_ref().map(|m| m.sha256.clone()),
             "memories": memories.as_ref().map(|m| json!({ "files": m.files, "bytes": m.bytes })),
+            "extraNames": entries,
+            "extras": extras_json(&extras),
+            "keychain": login_in_keychain,
         }),
         &preview_envelope(&envelope, "plan-cleanup"),
     )?;
@@ -670,7 +1518,10 @@ pub async fn plan_cleanup(
         deployment,
         memory: memory_meta,
         memories,
+        extras,
+        login_in_keychain,
         agent_running: agent_running(tool, opts),
+        config_drifted,
         nothing_to_do,
         blockers,
     })
@@ -713,7 +1564,7 @@ async fn run_cleanup(
     opts: &AdapterOptions,
 ) -> Result<CleanupResult> {
     let envelope = ops::tool_status(store, tool, Scope::User, None, opts).await?;
-    if envelope.status == ToolStatus::Drift || envelope.recovery_required {
+    if envelope.recovery_required {
         return Err(Error::command_failed(
             "the agent's setup was changed after the last deploy; repair it first",
         ));
@@ -766,9 +1617,31 @@ async fn run_cleanup(
         None
     };
 
+    // The pieces of setup are looked for under the same names as in the preview.
+    let entries: Vec<Entry> = request
+        .get("extraNames")
+        .and_then(|value| serde_json::from_value(value.clone()).ok())
+        .unwrap_or_default();
+    let extras = current_extras(tool, &entries, opts)?;
+    if request.get("extras").cloned().unwrap_or_else(|| json!([])) != extras_json(&extras) {
+        return Err(Error::user_cancel(
+            "plan already used: things changed since the preview",
+        ));
+    }
+    check_extras_volume(store, &extras)?;
+    let to_keep = kept(&extras);
+    let to_erase: Vec<ExtraMeta> = extras.iter().filter(|e| e.kind == "erased").cloned().collect();
+    let keychain = keychain_services(tool, opts);
+    if (!to_erase.is_empty() || !keychain.is_empty()) && agent_running(tool, opts) {
+        return Err(Error::command_failed(
+            "close the agent first: its sessions and login are in use",
+        ));
+    }
+
     let snapshot = if deployment.present
         || memory.as_ref().is_some_and(|(info, _)| info.bytes > 0)
         || memories.is_some()
+        || !to_keep.is_empty()
     {
         Some(create_snapshot(
             store,
@@ -780,6 +1653,7 @@ async fn run_cleanup(
                 .as_ref()
                 .map(|(info, bytes)| (info.clone(), bytes.as_slice())),
             memories.clone(),
+            to_keep.clone(),
         )?)
     } else {
         None
@@ -845,11 +1719,27 @@ async fn run_cleanup(
         std::fs::create_dir(from)?;
         memories_cleared = true;
     }
+
+    let mut extras_cleared = 0;
+    let mut erased = 0;
+    if let Some(home) = agent_home(tool, opts)? {
+        let _lock = HomeLock::acquire(store.paths())?;
+        stop_launch_agents(tool, opts);
+        if let (false, Some(snapshot)) = (to_keep.is_empty(), &snapshot) {
+            extras_cleared = move_extras_into(store, snapshot, &home)?;
+        }
+        // Logins, session history and caches go last, after everything saved is safe.
+        erased = erase_extras(&home, &to_erase)?;
+    }
+    let keychain_cleared = erase_keychain(&keychain)?;
     Ok(CleanupResult {
         snapshot_id: snapshot.map(|meta| meta.id),
         deactivated,
         memory_cleared,
         memories_cleared,
+        extras_cleared,
+        erased,
+        keychain_cleared,
     })
 }
 
@@ -861,9 +1751,11 @@ pub async fn plan_rollback(
     let snapshot = read_snapshot(store, snapshot_id)?;
     snapshot_memory(store, &snapshot)?;
     snapshot_memories(store, &snapshot)?;
+    snapshot_extras(store, &snapshot)?;
     let tool = snapshot.tool;
     let envelope = ops::tool_status(store, tool, Scope::User, None, opts).await?;
     let (deployment, _body, memory) = current_state(store, tool, &envelope, opts)?;
+    let current_extras = current_rollback_pieces(tool, &snapshot, opts)?;
     let mut blockers = Vec::new();
     if envelope.status == ToolStatus::Drift || envelope.recovery_required {
         blockers.push(
@@ -907,9 +1799,13 @@ pub async fn plan_rollback(
         operation_id: operation.id,
         current_title: deployment.title.clone(),
         replaces_deployment: deployment.present && snapshot.deployment.restorable,
-        saves_current: deployment.present || overwrites_memory || current_memories.is_some(),
+        saves_current: deployment.present
+            || overwrites_memory
+            || current_memories.is_some()
+            || !current_extras.is_empty(),
         memory: memory_plan,
         memories: memories_plan,
+        extras: snapshot.extras.len() as u64,
         agent_running: snapshot.memories.is_some() && agent_running(tool, opts),
         snapshot,
         blockers,
@@ -944,6 +1840,7 @@ async fn run_rollback(store: &Store, id: &str, opts: &AdapterOptions) -> Result<
     let saved_prompt = snapshot_prompt(store, &snapshot)?;
     let saved_memory = snapshot_memory(store, &snapshot)?;
     let saved_memories = snapshot_memories(store, &snapshot)?;
+    let saved_extras = snapshot_extras(store, &snapshot)?;
     if saved_memories.is_some() && agent_running(tool, opts) {
         return Err(Error::command_failed(
             "close the agent first: it is using its memories folder",
@@ -958,7 +1855,69 @@ async fn run_rollback(store: &Store, id: &str, opts: &AdapterOptions) -> Result<
     }
     let (deployment, body, memory) = current_state(store, tool, &envelope, opts)?;
 
-    // The deploy is planned first; if the adapter would refuse it, nothing has been touched.
+    // What is there now is kept, so this rollback can be undone as well.
+    let current_differs = match (&snapshot.memory, &memory) {
+        (Some(saved), Some((info, _))) => info.sha256 != saved.sha256 && info.bytes > 0,
+        _ => false,
+    };
+    let current_folder = match &saved_memories {
+        Some(_) => current_memories(tool, opts)?,
+        None => None,
+    };
+    if let Some(info) = &current_folder {
+        std::fs::create_dir_all(snapshots_dir(store))?;
+        if !same_volume(Path::new(&info.path), &snapshots_dir(store)) {
+            return Err(Error::command_failed(
+                "the memories folder is on another disk than the snapshots, so it cannot be moved safely",
+            ));
+        }
+    }
+    let current_pieces = current_rollback_pieces(tool, &snapshot, opts)?;
+    check_extras_volume(store, &current_pieces)?;
+    let saved_snapshot = if deployment.present
+        || current_differs
+        || current_folder.is_some()
+        || !current_pieces.is_empty()
+    {
+        Some(create_snapshot(
+            store,
+            tool,
+            "before-rollback",
+            deployment.clone(),
+            body.as_deref(),
+            memory
+                .as_ref()
+                .map(|(info, bytes)| (info.clone(), bytes.as_slice())),
+            current_folder.clone(),
+            current_pieces.clone(),
+        )?)
+    } else {
+        None
+    };
+    let saved_snapshot_id = saved_snapshot.as_ref().map(|meta| meta.id.clone());
+
+    // The config files and instruction folders come back first: the adapter's deploy needs them.
+    let mut extras_restored = 0;
+    if !saved_extras.is_empty() {
+        let root = agent_home(tool, opts)?
+            .ok_or_else(|| Error::invalid("this agent has no setup folder; nothing was changed"))?;
+        let _lock = HomeLock::acquire(store.paths())?;
+        // Whatever is there now goes into the snapshot made above first.
+        if let Some(snapshot) = &saved_snapshot {
+            move_extras_into(store, snapshot, &root)?;
+        }
+        for (saved, source) in &saved_extras {
+            // A config file saved without its login is put back only where there is none now:
+            // one the agent wrote since (a new login) is never replaced by the stripped copy.
+            if saved.kind == "saved-without-login"
+                && std::fs::symlink_metadata(root.join(&saved.name)).is_ok()
+            {
+                continue;
+            }
+            extras_restored += u64::from(restore_extra(&root, saved, source)?);
+        }
+    }
+    // The deploy is planned now that its config is back.
     let planned = match &saved_prompt {
         Some(text) => {
             let title = format!(
@@ -993,40 +1952,6 @@ async fn run_rollback(store: &Store, id: &str, opts: &AdapterOptions) -> Result<
         }
         None => None,
     };
-
-    // What is there now is kept, so this rollback can be undone as well.
-    let current_differs = match (&snapshot.memory, &memory) {
-        (Some(saved), Some((info, _))) => info.sha256 != saved.sha256 && info.bytes > 0,
-        _ => false,
-    };
-    let current_folder = match &saved_memories {
-        Some(_) => current_memories(tool, opts)?,
-        None => None,
-    };
-    if let Some(info) = &current_folder {
-        std::fs::create_dir_all(snapshots_dir(store))?;
-        if !same_volume(Path::new(&info.path), &snapshots_dir(store)) {
-            return Err(Error::command_failed(
-                "the memories folder is on another disk than the snapshots, so it cannot be moved safely",
-            ));
-        }
-    }
-    let saved_snapshot = if deployment.present || current_differs || current_folder.is_some() {
-        Some(create_snapshot(
-            store,
-            tool,
-            "before-rollback",
-            deployment.clone(),
-            body.as_deref(),
-            memory
-                .as_ref()
-                .map(|(info, bytes)| (info.clone(), bytes.as_slice())),
-            current_folder.clone(),
-        )?)
-    } else {
-        None
-    };
-    let saved_snapshot_id = saved_snapshot.as_ref().map(|meta| meta.id.clone());
 
     let mut redeployed = false;
     if let Some(plan) = planned {
@@ -1124,12 +2049,70 @@ async fn run_rollback(store: &Store, id: &str, opts: &AdapterOptions) -> Result<
         }
         memories_restored = true;
     }
+
     Ok(RollbackResult {
         saved_snapshot_id,
         redeployed,
         memory_restored,
         memories_restored,
+        extras_restored,
     })
+}
+
+/// Put one saved piece of setup back: copy and check it beside its place, then rename it in. Only
+/// an empty folder may be in the way; anything else there is left alone and the piece is refused.
+fn restore_extra(root: &Path, saved: &ExtraMeta, source: &Path) -> Result<bool> {
+    let target = root.join(&saved.name);
+    if let Ok(meta) = std::fs::symlink_metadata(&target) {
+        let empty_dir = meta.is_dir() && std::fs::read_dir(&target)?.next().is_none();
+        if !empty_dir {
+            return Err(Error::command_failed(format!(
+                "{} is in the way and was left as it is; nothing more was restored",
+                saved.name
+            )));
+        }
+        std::fs::remove_dir(&target)?;
+    }
+    let parent = target
+        .parent()
+        .ok_or_else(|| Error::invalid("a saved piece has no parent folder"))?;
+    std::fs::create_dir_all(parent)?;
+    let last = target
+        .file_name()
+        .map(|part| part.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "extra".into());
+    let staging = parent.join(format!(
+        ".{last}.keysmith-restore-{}",
+        uuid::Uuid::new_v4().simple()
+    ));
+    let copied = (|| -> Result<()> {
+        if std::fs::symlink_metadata(source)?.is_dir() {
+            copy_dir(source, &staging)?;
+        } else {
+            std::fs::copy(source, &staging)?;
+        }
+        // A config copy made without its login is checked against the copy in the snapshot, since
+        // it is not the size of the original.
+        let expected = if saved.kind == "saved-without-login" {
+            path_stats(source)?
+        } else {
+            (saved.files, saved.bytes)
+        };
+        if path_stats(&staging)? != expected {
+            return Err(Error::command_failed(format!(
+                "the copy of {} could not be verified",
+                saved.name
+            )));
+        }
+        std::fs::rename(&staging, &target)?;
+        Ok(())
+    })();
+    if let Err(error) = copied {
+        let _ = std::fs::remove_dir_all(&staging);
+        let _ = std::fs::remove_file(&staging);
+        return Err(error);
+    }
+    Ok(true)
 }
 
 #[cfg(test)]
@@ -1189,6 +2172,56 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+    }
+
+    #[test]
+    fn extras_skip_links_projects_and_logins() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join("rules")).unwrap();
+        std::fs::write(root.join("rules/a.md"), "rule\n").unwrap();
+        std::fs::create_dir_all(root.join("agents/repo/.git")).unwrap();
+        std::fs::create_dir_all(root.join("commands")).unwrap();
+        std::fs::write(root.join("commands/auth.json"), "{}").unwrap();
+
+        let rules = extra_info(root, "rules", "saved").unwrap().unwrap();
+        assert_eq!((rules.files, rules.bytes), (1, 5));
+        assert!(extra_info(root, "agents", "saved").unwrap().is_none());
+        assert!(extra_info(root, "commands", "saved").unwrap().is_none());
+        assert!(extra_info(root, "missing", "saved").unwrap().is_none());
+        for bad in ["", "../rules", "/etc"] {
+            assert!(!valid_extra_name(bad), "{bad:?}");
+        }
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(root.join("rules"), root.join("linked")).unwrap();
+            assert!(extra_info(root, "linked", "saved").unwrap().is_none());
+            assert!(extra_info(root, "linked", "erased").unwrap().is_none());
+        }
+    }
+
+    #[test]
+    fn config_copies_keep_settings_and_lose_every_login() {
+        let tmp = tempfile::tempdir().unwrap();
+        let json = tmp.path().join("settings.json");
+        std::fs::write(
+            &json,
+            r#"{"model":"opus","hooks":{"Stop":[]},"env":{"ANTHROPIC_AUTH_TOKEN":"sk-ant-abcdef123456","API_TIMEOUT_MS":"5"},"oauthAccount":{"emailAddress":"a@b.c"}}"#,
+        )
+        .unwrap();
+        let out = String::from_utf8(sanitized_copy(&json, "settings.json").unwrap()).unwrap();
+        assert!(out.contains("opus") && out.contains("hooks") && out.contains("API_TIMEOUT_MS"));
+        assert!(!out.contains("sk-ant") && !out.contains("a@b.c") && !out.contains("oauth"), "{out}");
+
+        let sizes = tmp.path().join("limits.json");
+        std::fs::write(&sizes, r#"{"max_tokens":4096,"maxOutputTokens":8000,"apiKeyRequired":false}"#).unwrap();
+        let out = String::from_utf8(sanitized_copy(&sizes, "limits.json").unwrap()).unwrap();
+        assert!(out.contains("max_tokens") && out.contains("maxOutputTokens") && !out.contains("apiKey"), "{out}");
+
+        let toml = tmp.path().join("config.toml");
+        std::fs::write(&toml, "model = \"gpt\"\nexperimental_bearer_token = \"abc123\"\n[mcp_servers.x]\ncommand = \"npx\"\n").unwrap();
+        let out = String::from_utf8(sanitized_copy(&toml, "config.toml").unwrap()).unwrap();
+        assert!(out.contains("model") && out.contains("mcp_servers") && !out.contains("abc123"), "{out}");
     }
 
     #[test]

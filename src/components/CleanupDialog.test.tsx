@@ -93,6 +93,15 @@ describe("CleanupDialog", () => {
     expect(screen.getByTestId("cleanup-confirm")).toBeDisabled();
   });
 
+  it("still cleans when only the agent's config drifted", async () => {
+    planCleanup.mockResolvedValue(
+      plan({ configDrifted: true, deployment: { present: false, title: null, restorable: false } }),
+    );
+    renderDialog();
+    await screen.findByTestId("cleanup-drifted");
+    expect(screen.queryByTestId("cleanup-blocked")).toBeNull();
+  });
+
   it("keeps a failed confirmation closed and does not call it again", async () => {
     planCleanup.mockResolvedValue(plan({ memory: null }));
     confirmCleanup.mockRejectedValue("plan already used: things changed since the preview");
@@ -125,47 +134,55 @@ describe("CleanupDialog", () => {
       expect(screen.getByTestId("cleanup-memory")).toHaveTextContent("AGENTS.md");
     });
 
-    it("starts unticked, and leaves the folder alone unless the person ticks it", async () => {
-      planCleanup.mockResolvedValue(codex());
-      confirmCleanup.mockResolvedValue({ snapshotId: "s", deactivated: true, memoryCleared: true, memoriesCleared: false });
-      renderDialog();
-      await screen.findByTestId("cleanup-plan");
-      const tick = screen.getByTestId("cleanup-memories-tick") as HTMLInputElement;
-      expect(tick.checked).toBe(false);
-      fireEvent.click(screen.getByTestId("cleanup-ack"));
-      fireEvent.click(screen.getByTestId("cleanup-confirm"));
-      await screen.findByTestId("cleanup-done");
-      expect(confirmCleanup).toHaveBeenCalledWith("op-1", false);
-    });
-
-    it("sends the tick when the person gives it", async () => {
+    it("lists the memories folder and always asks for it to be moved out", async () => {
       planCleanup.mockResolvedValue(codex());
       confirmCleanup.mockResolvedValue({ snapshotId: "s", deactivated: true, memoryCleared: true, memoriesCleared: true });
       renderDialog();
       await screen.findByTestId("cleanup-plan");
-      fireEvent.click(screen.getByTestId("cleanup-memories-tick"));
+      expect(screen.getByTestId("cleanup-memories")).toBeInTheDocument();
       fireEvent.click(screen.getByTestId("cleanup-ack"));
       fireEvent.click(screen.getByTestId("cleanup-confirm"));
       await screen.findByTestId("cleanup-done");
       expect(confirmCleanup).toHaveBeenCalledWith("op-1", true);
     });
 
-    it("cannot be ticked while the agent runs, and is not sent", async () => {
+    it("cannot run while the agent runs", async () => {
       planCleanup.mockResolvedValue(codex({ agentRunning: true, deployment: { present: false, title: null, restorable: false }, memory: null }));
       renderDialog();
       await screen.findByTestId("cleanup-plan");
-      expect(screen.getByTestId("cleanup-memories-tick")).toBeDisabled();
-      expect(screen.getByTestId("cleanup-memories-running")).toBeInTheDocument();
-      fireEvent.click(screen.getByTestId("cleanup-memories-tick"));
+      expect(screen.getByTestId("cleanup-running")).toBeInTheDocument();
       expect(screen.getByTestId("cleanup-confirm")).toBeDisabled();
     });
+  });
 
-    it("has nothing to do when only the folder is there and it is not ticked", async () => {
-      planCleanup.mockResolvedValue(codex({ deployment: { present: false, title: null, restorable: false }, memory: null }));
+  describe("a full cleanup", () => {
+    const none = { present: false, title: null, restorable: false };
+    const extra = (name: string, kind: "saved" | "saved-without-login" | "erased") => ({ name, path: `/h/${name}`, files: 3, bytes: 2048, kind });
+
+    it("lists what is saved, what is saved without its login, what is deleted, and the keychain login", async () => {
+      planCleanup.mockResolvedValue(
+        plan({
+          deployment: none,
+          memory: null,
+          extras: [extra(".claude/rules", "saved"), extra(".claude/settings.json", "saved-without-login"), extra(".claude/projects", "erased")],
+          loginInKeychain: true,
+        }),
+      );
+      confirmCleanup.mockResolvedValue({ snapshotId: "s", deactivated: false, memoryCleared: false, memoriesCleared: false, erased: 1, keychainCleared: true });
       renderDialog();
       await screen.findByTestId("cleanup-plan");
-      expect(screen.getByTestId("cleanup-confirm")).toBeDisabled();
-      fireEvent.click(screen.getByTestId("cleanup-memories-tick"));
+      expect(screen.getAllByTestId("cleanup-extra")).toHaveLength(2);
+      expect(screen.getByTestId("cleanup-extra-erased")).toHaveTextContent(".claude/projects");
+      expect(screen.getByTestId("cleanup-keychain")).toBeInTheDocument();
+      expect(screen.getByTestId("cleanup-confirm")).toBeEnabled();
+      fireEvent.click(screen.getByTestId("cleanup-confirm"));
+      await screen.findByTestId("cleanup-done");
+    });
+
+    it("can be run when only a login or history is left", async () => {
+      planCleanup.mockResolvedValue(plan({ deployment: none, memory: null, extras: [extra(".claude/projects", "erased")] }));
+      renderDialog();
+      await screen.findByTestId("cleanup-plan");
       expect(screen.getByTestId("cleanup-confirm")).toBeEnabled();
     });
   });

@@ -441,6 +441,16 @@ export interface MemoriesMeta {
   bytes: number;
 }
 
+/** One leftover piece of user-level setup, such as `rules` or a wrapper, counted, never read. */
+export interface ExtraMeta {
+  name: string;
+  path: string;
+  files: number;
+  bytes: number;
+  /** `saved`, `saved-without-login` (a copy with every key removed) or `erased` (not saved). */
+  kind?: "saved" | "saved-without-login" | "erased";
+}
+
 export interface SnapshotMeta {
   id: string;
   createdAt: string;
@@ -449,6 +459,8 @@ export interface SnapshotMeta {
   deployment: DeploymentMeta;
   memory: MemoryMeta | null;
   memories?: MemoriesMeta | null;
+  /** The rest of the user-level setup (rules, custom agents, wrapper) kept in the snapshot. */
+  extras?: ExtraMeta[];
 }
 
 export interface CleanupPlan {
@@ -458,8 +470,14 @@ export interface CleanupPlan {
   memory: MemoryMeta | null;
   /** The agent's memory folder, if it has files in it. Only cleared when asked for. */
   memories: MemoriesMeta | null;
+  /** The rest of the user-level setup a fresh install does not have. */
+  extras?: ExtraMeta[];
+  /** The agent's login is in the system keychain: it is removed and never saved. */
+  loginInKeychain?: boolean;
   /** The agent is running, so its memory folder cannot be cleared or restored now. */
   agentRunning: boolean;
+  /** The deployed config was changed by hand: it is left in place, the rest is still cleaned. */
+  configDrifted?: boolean;
   nothingToDo: boolean;
   blockers: string[];
 }
@@ -469,6 +487,9 @@ export interface CleanupResult {
   deactivated: boolean;
   memoryCleared: boolean;
   memoriesCleared: boolean;
+  extrasCleared?: number;
+  erased?: number;
+  keychainCleared?: boolean;
 }
 
 export interface RollbackPlan {
@@ -478,6 +499,8 @@ export interface RollbackPlan {
   replacesDeployment: boolean;
   memory: { restoreBytes: number; currentBytes: number; currentDiffers: boolean } | null;
   memories: { restoreFiles: number; restoreBytes: number; currentFiles: number; currentBytes: number } | null;
+  /** How many saved pieces of setup are put back. */
+  extras?: number;
   agentRunning: boolean;
   /** What is there now is saved as a snapshot first. */
   savesCurrent: boolean;
@@ -489,4 +512,5 @@ export interface RollbackResult {
   redeployed: boolean;
   memoryRestored: boolean;
   memoriesRestored: boolean;
+  extrasRestored?: number;
 }

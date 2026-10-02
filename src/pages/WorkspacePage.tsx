@@ -543,6 +543,15 @@ export function WorkspacePage({
   const toolName = t(`nav.${tool}`);
   const planRecoverable = plan && plan.kind !== "recover" && plan.kind !== "reconcile" && isRecoveryState(plan.result.envelope);
   const planReconcilable = plan?.kind === "activate" && needsReconcile(tool, plan.result.envelope);
+  // A deploy that cannot be confirmed can still be cleared away with the Cleanup dialog.
+  const planCleanable =
+    plan?.kind === "activate" && planBlocked(plan) && !unavailable;
+  const openCleanupFromPlan = () => {
+    if (busy) return;
+    setPlan(null);
+    setPlanFailure(null);
+    setCleanupOpen(true);
+  };
 
   return (
     <section
@@ -788,10 +797,19 @@ export function WorkspacePage({
             <Button size="sm" variant="outline" disabled={busy} data-testid="plan-reconcile" onClick={() => void openReconcilePlan()}>
               {t("plan.reconcileButton")}
             </Button>
-          ) : planRecoverable ? (
-            <Button size="sm" variant="ghost" disabled={busy} data-testid="plan-recover" onClick={() => void openRecoverPlan()}>
-              {t("operations.restoreEntry")}
-            </Button>
+          ) : planRecoverable || planCleanable ? (
+            <div className="flex items-center gap-2">
+              {planRecoverable ? (
+                <Button size="sm" variant="ghost" disabled={busy} data-testid="plan-recover" onClick={() => void openRecoverPlan()}>
+                  {t("operations.restoreEntry")}
+                </Button>
+              ) : null}
+              {planCleanable ? (
+                <Button size="sm" variant="ghost" disabled={busy} data-testid="plan-cleanup" onClick={openCleanupFromPlan}>
+                  {t("cleanup.button")}
+                </Button>
+              ) : null}
+            </div>
           ) : null
         }
       >
