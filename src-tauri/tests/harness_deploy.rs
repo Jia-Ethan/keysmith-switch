@@ -486,3 +486,34 @@ async fn a_spent_plan_says_so_instead_of_claiming_nothing_was_planned() {
         .unwrap_err();
     assert!(unknown.to_string().contains("plan not found"), "{unknown}");
 }
+
+#[tokio::test]
+async fn a_drifted_deployment_still_reads_as_deployed_and_says_it_drifted() {
+    let (_tmp, store, opts) = setup(ToolKind::Grok);
+    let outcome = deploy_harness_with(
+        &store,
+        ToolKind::Grok,
+        &opts,
+        Some("# Grok rules\nBe careful.\n".into()),
+    )
+    .await
+    .unwrap();
+    assert!(outcome.ok, "{outcome:?}");
+    let before = harness_state(&store, ToolKind::Grok, &opts).await.unwrap();
+    assert!(before.deployed && !before.drifted, "{before:?}");
+
+    // The person edits the deployed rule by hand: the adapter now reports drift.
+    let rule = opts
+        .home
+        .as_ref()
+        .unwrap()
+        .join(".grok/rules/99-keysmith.md");
+    std::fs::write(&rule, "edited by hand\n").unwrap();
+    let after = harness_state(&store, ToolKind::Grok, &opts).await.unwrap();
+    assert!(
+        after.deployed,
+        "a prompt is still on the machine, so the agent page must not say there is none: {after:?}"
+    );
+    assert!(after.drifted, "{after:?}");
+    assert!(after.error.is_none());
+}

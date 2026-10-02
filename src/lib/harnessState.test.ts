@@ -26,10 +26,18 @@ describe("harnessState", () => {
     expect(getHarnessState).toHaveBeenCalledTimes(1);
     expect(store.getHarnessStatus("claude")).toEqual({
       machine: "undeployed",
+      drifted: false,
       error: null,
       promptId: null,
       promptTitle: null,
     });
+  });
+
+  it("keeps a drifted deployment as deployed and says it drifted", async () => {
+    const store = await load();
+    getHarnessState.mockResolvedValue({ tool: "grok", deployed: true, drifted: true, error: null, promptId: "g", promptTitle: "Grok Keysmith" });
+    await store.loadHarnessStatus("grok", true);
+    expect(store.getHarnessStatus("grok")).toMatchObject({ machine: "deployed", drifted: true, promptId: "g" });
   });
 
   it("keeps the prompt the backend names as live, and drops it once undeployed", async () => {

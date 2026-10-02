@@ -55,7 +55,11 @@ pub struct HarnessOutcome {
 #[serde(rename_all = "camelCase")]
 pub struct HarnessState {
     pub tool: ToolKind,
+    /// A prompt is on the machine. True for a drifted deployment too: its prompt is still there.
     pub deployed: bool,
+    /// The agent's config was changed by hand after the last deploy.
+    #[serde(default)]
+    pub drifted: bool,
     pub error: Option<String>,
     /// The library prompt the machine is running, when it can be identified.
     #[serde(default)]
@@ -107,6 +111,7 @@ pub async fn harness_state(
         return Ok(HarnessState {
             tool,
             deployed: false,
+            drifted: false,
             error: Some(reason.to_string()),
             prompt_id: None,
             prompt_title: None,
@@ -114,7 +119,10 @@ pub async fn harness_state(
     }
     match ops::tool_status(store, tool, Scope::User, None, opts).await {
         Ok(envelope) => {
-            let deployed = envelope.status == ToolStatus::Active;
+            // Drift means the config was edited by hand after the deploy; the prompt is still
+            // live, so it counts as deployed and is flagged instead of shown as nothing.
+            let drifted = envelope.status == ToolStatus::Drift;
+            let deployed = envelope.status == ToolStatus::Active || drifted;
             let prompt = if deployed {
                 deployed_prompt(store, tool, live_fingerprint(tool, &envelope).as_deref())
             } else {
@@ -127,6 +135,7 @@ pub async fn harness_state(
             Ok(HarnessState {
                 tool,
                 deployed,
+                drifted,
                 error: None,
                 prompt_id,
                 prompt_title,
@@ -135,6 +144,7 @@ pub async fn harness_state(
         Err(error) => Ok(HarnessState {
             tool,
             deployed: false,
+            drifted: false,
             error: Some(error.to_string()),
             prompt_id: None,
             prompt_title: None,

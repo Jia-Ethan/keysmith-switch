@@ -565,6 +565,7 @@ export function WorkspacePage({
           tool={tool}
           name={toolName}
           machine={machine}
+          drifted={machine === "deployed" && Boolean(entry?.drifted)}
           reading={reading}
           statusError={statusError}
           deployedTitle={deployedTitle}

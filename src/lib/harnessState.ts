@@ -14,6 +14,8 @@ export type HarnessMachine = "deployed" | "undeployed";
 
 export interface HarnessEntry {
   machine: HarnessMachine;
+  /** Deployed, but the agent's config was changed by hand since. */
+  drifted?: boolean;
   error: string | null;
   /** The library prompt live on the machine; null when unknown or not deployed. */
   promptId: string | null;
@@ -62,6 +64,7 @@ async function read(tool: ToolId): Promise<HarnessEntry> {
     const deployed = state.deployed;
     return {
       machine: deployed ? "deployed" : "undeployed",
+      drifted: deployed && Boolean(state.drifted),
       error: state.error,
       promptId: deployed ? state.promptId ?? null : null,
       promptTitle: deployed ? state.promptTitle ?? null : null,

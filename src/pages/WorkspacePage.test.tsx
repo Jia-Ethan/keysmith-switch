@@ -333,6 +333,19 @@ describe("Workspace: Quick Deploy composer", () => {
     expect(toolStatus).not.toHaveBeenCalled();
   });
 
+  it("never says nothing is deployed while the list shows a live prompt (drifted config)", async () => {
+    getHarnessState.mockResolvedValue({ tool: "grok", deployed: true, drifted: true, error: null, promptId: "g", promptTitle: "Grok Keysmith" });
+    listPrompts.mockResolvedValue({ prompts: [prompt({ id: "g", title: "Grok Keysmith" })] });
+    listActivations.mockResolvedValue({
+      activations: [{ id: "x", tool: "grok", promptId: "g", promptTitle: "Grok Keysmith", scope: "user", projectDir: "", active: true, createdAt: "2026-10-01T05:46:14Z", fingerprint: null }],
+    });
+    await renderPage({ tool: "grok" });
+    expect(await screen.findByTestId("agent-deployed-title")).toHaveTextContent("Grok Keysmith");
+    expect(screen.getByTestId("agent-drifted")).toBeInTheDocument();
+    expect(screen.queryByText("还没有部署提示词")).toBeNull();
+    expect(screen.queryByText("No prompt deployed yet")).toBeNull();
+  });
+
   it("shows the remove button as working while its plan is prepared", async () => {
     getHarnessState.mockResolvedValue({ tool: "codex", deployed: true, error: null, promptId: "a", promptTitle: "Live one" });
     let release!: (value: unknown) => void;

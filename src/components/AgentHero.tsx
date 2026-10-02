@@ -17,6 +17,7 @@ export function AgentHero({
   tool,
   name,
   machine,
+  drifted = false,
   reading,
   statusError,
   deployedTitle,
@@ -34,6 +35,8 @@ export function AgentHero({
   tool: ToolId;
   name: string;
   machine: AgentMachine;
+  /** Deployed, but the agent's config was changed by hand since the deploy. */
+  drifted?: boolean;
   reading: boolean;
   statusError: string | null | undefined;
   /** Title of the library prompt that is live, or null when it is not known. */
@@ -146,7 +149,14 @@ export function AgentHero({
                   </span>
                 )}
               </p>
-            ) : tone === "idle" && !hint ? (
+            ) : null}
+            {showLive && drifted ? (
+              <p className="mt-1.5 flex items-start gap-1.5 text-[12px] text-warning" data-testid="agent-drifted">
+                <IconAlert size={13} className="mt-px shrink-0" />
+                <span className="min-w-0">{t("hero.drifted")}</span>
+              </p>
+            ) : null}
+            {!showLive && tone === "idle" && !hint ? (
               <p className="mt-2 text-[22px] font-semibold leading-tight tracking-[-0.02em] text-foreground">
                 {t("hero.emptyTitle")}
                 <span className="mt-1 block text-[13px] font-normal tracking-normal text-muted-foreground">
