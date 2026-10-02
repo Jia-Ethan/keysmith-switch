@@ -26,6 +26,9 @@ vi.mock("./api", () => ({
   quitApp: (...args: unknown[]) => quitApp(...args),
   checkAppUpdate: vi.fn(),
   logFrontendError: vi.fn(),
+  announcementsState: vi.fn().mockResolvedValue({ items: [], unread: 0, fetchedAt: null, error: null }),
+  announcementsRefresh: vi.fn().mockRejectedValue(new Error("no backend")),
+  markAnnouncements: vi.fn(),
 }));
 
 vi.mock("./hooks/useSettings", () => ({

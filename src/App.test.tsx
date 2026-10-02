@@ -26,6 +26,9 @@ vi.mock("./api", () => ({
   logFrontendError: vi.fn(),
   showMainWindow: vi.fn(),
   quitApp: vi.fn(),
+  announcementsState: vi.fn().mockResolvedValue({ items: [], unread: 0, fetchedAt: null, error: null }),
+  announcementsRefresh: vi.fn().mockRejectedValue(new Error("no backend")),
+  markAnnouncements: vi.fn(),
 }));
 
 describe("App smoke", () => {

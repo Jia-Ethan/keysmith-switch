@@ -5,8 +5,9 @@ import { useTranslation } from "react-i18next";
 import type { ScopeId, ToolId } from "../types";
 import { TOOL_IDS } from "../types";
 import { NoticeDot, cx, useSlidingIndicator } from "./ui";
-import { IconPuzzle, IconSearch, IconSettings, IconTerminal } from "./icons";
+import { IconBell, IconPuzzle, IconSearch, IconSettings, IconTerminal } from "./icons";
 import { paletteShortcutLabel } from "./CommandPalette";
+import { useAnnouncementsOptional } from "./AnnouncementsProvider";
 import { useExtensionsOptional } from "./ExtensionsProvider";
 import { useUpdateOptional } from "./UpdateProvider";
 import { ToolLogo } from "./ToolLogos";
@@ -25,6 +26,7 @@ export type AppPage =
     }
   | { kind: "settings"; tab?: string }
   | { kind: "extensions" }
+  | { kind: "announcements" }
   | { kind: "advanced" };
 
 const RAIL_BUTTON =
@@ -52,6 +54,7 @@ export function AppShell({
   const { t } = useTranslation();
   const hasUpdate = Boolean(useUpdateOptional()?.hasUpdate);
   const extensions = useExtensionsOptional();
+  const announcements = useAnnouncementsOptional();
   const railRef = useRef<HTMLElement>(null);
   const activeTool = page.kind === "tool" ? page.tool : null;
   const railKey = page.kind === "tool" ? page.tool : page.kind;
@@ -129,6 +132,18 @@ export function AppShell({
                 onClick={() => onNavigate({ kind: "advanced" })}
               >
                 <IconTerminal size={19} />
+              </UtilityButton>
+            ) : null}
+            {announcements ? (
+              <UtilityButton
+                testId="nav-announcements"
+                label={announcements.unread > 0 ? `${t("nav.announcements")} · ${t("nav.announcementsNew")}` : t("nav.announcements")}
+                badge={announcements.unread > 0}
+                active={page.kind === "announcements"}
+                indicatorReady={Boolean(indicator)}
+                onClick={() => onNavigate({ kind: "announcements" })}
+              >
+                <IconBell size={19} />
               </UtilityButton>
             ) : null}
             <UtilityButton

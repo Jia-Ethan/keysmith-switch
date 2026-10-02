@@ -12,6 +12,7 @@ import { Callout, PlanFailureNotice, PlanPreview } from "../components/PlanPrevi
 import { PromptList } from "../components/PromptList";
 import { QuickDeployPanel } from "../components/QuickDeployPanel";
 import { ToolLogo } from "../components/ToolLogos";
+import { PinnedAnnouncements } from "../components/PinnedAnnouncements";
 import { ZCodeBanner } from "../components/ZCodeBanner";
 import { IconAlert, IconPlus, IconSearch } from "../components/icons";
 import { Button, Disclosure, Input, Mono, cx } from "../components/ui";
@@ -579,6 +580,8 @@ export function WorkspacePage({
         />
 
         <ZCodeBanner tool={toolInfo} />
+
+        <PinnedAnnouncements tool={tool} onOpenAll={onNavigate ? () => onNavigate({ kind: "announcements" }) : undefined} />
 
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center gap-2">

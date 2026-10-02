@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { AnnouncementsProvider } from "./components/AnnouncementsProvider";
 import { AppShell, type AppPage } from "./components/AppShell";
 import { CommandPalette } from "./components/CommandPalette";
 import { DataRecoveryDialog } from "./components/DataRecoveryDialog";
@@ -16,6 +17,7 @@ import { useToasts } from "./hooks/useToasts";
 import { getHarnessStatus } from "./lib/harnessState";
 import { isTauriRuntime } from "./lib/runtime";
 import { AdvancedPage } from "./pages/AdvancedPage";
+import { AnnouncementsPage } from "./pages/AnnouncementsPage";
 import { ExtensionsPage } from "./pages/ExtensionsPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { WorkspacePage } from "./pages/WorkspacePage";
@@ -127,6 +129,7 @@ export function App() {
           await settingsState.save({ extensionsEnabled: next });
         }}
       >
+        <AnnouncementsProvider>
         <AppShell
           page={visiblePage}
           onNavigate={navigate}
@@ -225,12 +228,18 @@ export function App() {
               <ExtensionsPage toast={toast} />
             </div>
           ) : null}
+          {visiblePage.kind === "announcements" ? (
+            <div className="animate-page-in min-h-0 flex-1">
+              <AnnouncementsPage />
+            </div>
+          ) : null}
           {visiblePage.kind === "advanced" ? (
             <div className="animate-page-in min-h-0 flex-1 overflow-auto px-4 py-5 sm:px-6">
               <AdvancedPage enabled={advancedEnabled} toast={toast} />
             </div>
           ) : null}
         </AppShell>
+        </AnnouncementsProvider>
         <CommandPalette
           open={paletteOpen}
           onClose={() => setPaletteOpen(false)}

@@ -14,7 +14,9 @@
     "toolsLabel": "工具導覽",
     "more": "更多",
     "updateAvailable": "有新版本",
-    "extensions": "拓展"
+    "extensions": "拓展",
+    "announcements": "公告",
+    "announcementsNew": "有新公告"
   },
   "common": {
     "ok": "確定",
@@ -538,5 +540,27 @@
     "noLoginBack": "登入和工作階段歷史在清理時已刪除，不會恢復：回滾後需要重新登入。",
     "currentMemories": "現在的記憶資料夾有 {{files}} 個檔案，回滾前會先把它另存為一個版本。",
     "memoriesRunning": "Codex 正在執行，先結束它才能恢復記憶資料夾。"
+  },
+  "announcements": {
+    "title": "公告",
+    "lead": "Keysmith 的公告：這一版有什麼、下一版預告，以及各個 Agent 怎麼登入。",
+    "refresh": "檢查新公告",
+    "checking": "正在檢查…",
+    "empty": "還沒有公告",
+    "emptyHint": "有新公告時會顯示在這裡，鈴鐺上也會出現小紅點。",
+    "new": "新",
+    "openLink": "開啟連結",
+    "viewAll": "查看全部公告",
+    "dismiss": "關閉",
+    "kind": {
+      "news": "公告",
+      "release": "本版內容",
+      "preview": "下版預告"
+    },
+    "err": {
+      "invalid": "公告讀取失敗，顯示的是上一次的內容。",
+      "too-new": "這些公告需要更新版本的 App 才能顯示。",
+      "default": "公告檢查失敗，顯示的是上一次的內容。"
+    }
   }
 }

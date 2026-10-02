@@ -14,7 +14,9 @@
     "toolsLabel": "Tools",
     "more": "More",
     "updateAvailable": "Update available",
-    "extensions": "Extensions"
+    "extensions": "Extensions",
+    "announcements": "Announcements",
+    "announcementsNew": "New announcement"
   },
   "common": {
     "ok": "OK",
@@ -538,5 +540,27 @@
     "noLoginBack": "Logins and session history were deleted by the cleanup and do not come back: sign in again after rolling back.",
     "currentMemories": "The memories folder has {{files}} files now; it is saved as a version first.",
     "memoriesRunning": "Codex is running. Quit it to restore its memories folder."
+  },
+  "announcements": {
+    "title": "Announcements",
+    "lead": "News from Keysmith: what this version brings, what comes next, and how each agent signs in.",
+    "refresh": "Check for new",
+    "checking": "Checking…",
+    "empty": "No announcements yet",
+    "emptyHint": "New announcements show up here, and a dot appears on the bell.",
+    "new": "New",
+    "openLink": "Open link",
+    "viewAll": "View all announcements",
+    "dismiss": "Close",
+    "kind": {
+      "news": "News",
+      "release": "This version",
+      "preview": "Coming next"
+    },
+    "err": {
+      "invalid": "The announcements could not be read. The last copy is shown.",
+      "too-new": "These announcements need a newer version of the app.",
+      "default": "The announcements could not be checked. The last copy is shown."
+    }
   }
 }
