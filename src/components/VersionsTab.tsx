@@ -190,8 +190,13 @@ function RollbackDialog({
   };
 
   const restoresMemories = Boolean(plan?.memories && plan.memories.restoreFiles > 0);
+  const restoresExtras = (plan?.snapshot.extras ?? []).filter((e) => e.kind !== "erased");
   const restoresSomething = Boolean(
-    plan && (plan.snapshot.deployment.restorable || (plan.memory && plan.memory.restoreBytes > 0) || restoresMemories),
+    plan &&
+      (plan.snapshot.deployment.restorable ||
+        (plan.memory && plan.memory.restoreBytes > 0) ||
+        restoresMemories ||
+        restoresExtras.length > 0),
   );
   const memoryFile = plan?.snapshot.memory ? baseName(plan.snapshot.memory.path) : "";
   const title = plan?.snapshot.deployment.title ? `「${plan.snapshot.deployment.title}」` : "";
@@ -266,10 +271,25 @@ function RollbackDialog({
                   </span>
                 </li>
               ) : null}
+              {restoresExtras.map((extra) => (
+                <li className="flex items-start gap-2" key={extra.name} data-testid="rollback-extra">
+                  <Tick />
+                  <span>
+                    {t(extra.kind === "saved-without-login" ? "versions.willRestoreExtraWithoutLogin" : "versions.willRestoreExtra", {
+                      name: extra.name,
+                    })}
+                  </span>
+                </li>
+              ))}
             </ul>
           ) : (
             <p className="text-[13.5px] text-muted-foreground">{t("versions.nothingToRestore")}</p>
           )}
+          {restoresExtras.length > 0 ? (
+            <p className="text-[12.5px] text-warning" data-testid="rollback-no-login">
+              {t("versions.noLoginBack")}
+            </p>
+          ) : null}
           {!plan.snapshot.deployment.restorable && plan.snapshot.deployment.present ? (
             <p className="text-[12.5px] text-warning">{t("versions.cannotRedeploy")}</p>
           ) : null}

@@ -497,7 +497,7 @@
     "doneNothing": "没有需要清理的内容。",
     "openVersions": "查看版本",
     "repair": "这个 Agent 的配置在上次部署之后被改过，需要先整理才能清理。",
-    "drifted": "这个 Agent 的配置在上次部署之后被手动改过。这份配置保持原样，这里列出的其他内容照常清理。",
+    "drifted": "这个 Agent 的配置在上次部署之后被手动改过。部署的提示词留待整理，这里列出的内容照常清理。",
     "memoriesOption": "保存并移走 memories 文件夹（{{files}} 个文件，{{size}}）",
     "agentRunning": "{{tool}} 正在运行。请先退出：它的会话、记忆和登录正在使用中。"
   },
@@ -533,6 +533,9 @@
     "untitled": "（未命名的提示词）",
     "memories": "记忆文件夹 {{files}} 个文件，{{size}}",
     "willRestoreMemories": "把记忆文件夹恢复成当时的样子（{{files}} 个文件，{{size}}）",
+    "willRestoreExtra": "把 {{name}} 恢复原样",
+    "willRestoreExtraWithoutLogin": "恢复 {{name}}，不含登录信息（仅在现在没有这个文件时）",
+    "noLoginBack": "登录和会话历史在清理时已删除，不会恢复：回滚后需要重新登录。",
     "currentMemories": "现在的记忆文件夹有 {{files}} 个文件，回滚前会先把它另存为一个版本。",
     "memoriesRunning": "Codex 正在运行，先退出它才能恢复记忆文件夹。"
   }

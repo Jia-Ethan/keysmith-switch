@@ -968,3 +968,35 @@ async fn a_full_cleanup_of_zcode_leaves_its_workspace_and_projects_alone() {
     );
     assert!(kept.contains("command") && kept.contains("role"));
 }
+
+#[tokio::test]
+async fn zcode_is_not_cleaned_while_its_app_is_still_patched_and_not_deployed() {
+    if !python3_available() {
+        return;
+    }
+    let world = world("zcode/zcode-keysmith.py");
+    let home = world.home.clone();
+    write(
+        home.join(".zcode-keysmith/config.json"),
+        r#"{"app_bundle_modified": true}"#,
+    );
+    write(
+        home.join(".zcode-keysmith/backups/zcode.cjs.1.original"),
+        "original app\n",
+    );
+    write(home.join(".zcode/v2/credentials.json"), "{}");
+
+    let plan = plan_cleanup(&world.store, ToolKind::Zcode, &world.opts)
+        .await
+        .unwrap();
+    assert!(!plan.blockers.is_empty(), "{plan:?}");
+    let refused = confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts).await;
+    assert!(refused.is_err(), "{refused:?}");
+    assert!(
+        home.join(".zcode-keysmith/backups/zcode.cjs.1.original")
+            .exists(),
+        "the only copy of the original app is kept"
+    );
+    assert!(home.join(".zcode/v2/credentials.json").exists());
+    assert!(list_snapshots(&world.store).is_empty());
+}

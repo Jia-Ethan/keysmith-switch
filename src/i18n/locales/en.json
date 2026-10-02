@@ -497,7 +497,7 @@
     "doneNothing": "Nothing needed cleaning.",
     "openVersions": "View versions",
     "repair": "This agent's setup changed after the last deploy; repair it before cleaning.",
-    "drifted": "This agent's config was changed by hand after the last deploy. That config is left as it is; everything else listed here is still cleaned.",
+    "drifted": "This agent's config was changed by hand after the last deploy. The deployed prompt is left for a repair; everything listed here is still cleaned.",
     "memoriesOption": "Save and move out the memories folder ({{files}} files, {{size}})",
     "agentRunning": "{{tool}} is running. Quit it first: its sessions, memories and login are in use."
   },
@@ -533,6 +533,9 @@
     "untitled": "(untitled prompt)",
     "memories": "Memories folder, {{files}} files, {{size}}",
     "willRestoreMemories": "Put the memories folder back as it was ({{files}} files, {{size}})",
+    "willRestoreExtra": "Put {{name}} back as it was",
+    "willRestoreExtraWithoutLogin": "Put {{name}} back, without its login (only if there is none now)",
+    "noLoginBack": "Logins and session history were deleted by the cleanup and do not come back: sign in again after rolling back.",
     "currentMemories": "The memories folder has {{files}} files now; it is saved as a version first.",
     "memoriesRunning": "Codex is running. Quit it to restore its memories folder."
   }

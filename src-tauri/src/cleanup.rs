@@ -688,7 +688,11 @@ fn agent_running(tool: ToolKind, opts: &AdapterOptions) -> bool {
             let base = base.trim_end_matches(".exe");
             match tool {
                 ToolKind::Codex => base == "codex",
-                ToolKind::Claude => base == "claude",
+                // The Claude desktop app (`Claude.app`) is another program with its own data.
+                ToolKind::Claude => {
+                    !name.contains(".app/")
+                        && (base == "claude" || name.contains("/claude/versions/"))
+                }
                 ToolKind::Grok => base == "grok",
                 // The app, its helpers and its command line all hold the data.
                 ToolKind::Zcode => base.starts_with("zcode"),
@@ -1030,20 +1034,27 @@ fn strip_json(value: &mut serde_json::Value) {
     }
 }
 
-/// A TOML line carries a login when its key names one or its value looks like one.
+/// A TOML line carries a login when its key names one or its value looks like one. A number or
+/// a switch is never a login (`model_max_output_tokens = 8000`).
+fn toml_line_holds_login(line: &str) -> bool {
+    let trimmed = line.trim_start();
+    let Some((key, value)) = line.split_once('=').filter(|_| !trimmed.starts_with('[')) else {
+        return crate::redact::redact_text(line) != line;
+    };
+    let key = key.trim().trim_matches('"');
+    if secret_key(key) {
+        return true;
+    }
+    let value = value.trim();
+    if value.parse::<f64>().is_ok() || value == "true" || value == "false" {
+        return false;
+    }
+    crate::redact::redact_text(line) != line
+}
+
 fn strip_toml(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
-    for line in text.lines() {
-        let key = line
-            .split('=')
-            .next()
-            .unwrap_or("")
-            .trim()
-            .trim_matches('"');
-        let is_value_line = line.contains('=') && !line.trim_start().starts_with('[');
-        if (is_value_line && secret_key(key)) || crate::redact::redact_text(line) != line {
-            continue;
-        }
+    for line in text.lines().filter(|line| !toml_line_holds_login(line)) {
         out.push_str(line);
         out.push('\n');
     }
@@ -1072,7 +1083,12 @@ fn sanitized_copy(path: &Path, name: &str) -> Result<Vec<u8>> {
         pretty.push('\n');
         pretty
     };
-    if crate::redact::redact_text(&cleaned) != cleaned {
+    let still_holds_login = if name.ends_with(".toml") {
+        cleaned.lines().any(toml_line_holds_login)
+    } else {
+        crate::redact::redact_text(&cleaned) != cleaned
+    };
+    if still_holds_login {
         return Err(Error::command_failed(format!(
             "{name} still holds a login after removing the keys; nothing was changed"
         )));
@@ -1503,6 +1519,25 @@ fn preview_envelope(from: &Envelope, command: &str) -> Envelope {
     envelope
 }
 
+/// Whether Switch's ZCode adapter still has the ZCode app itself patched. Its only copy of the
+/// original is in `~/.zcode-keysmith/backups`, so nothing may be erased while this is true.
+fn zcode_app_patched(tool: ToolKind, opts: &AdapterOptions) -> Result<bool> {
+    if tool != ToolKind::Zcode {
+        return Ok(false);
+    }
+    let path = home_dir(opts)?.join(".zcode-keysmith").join("config.json");
+    let Ok(bytes) = std::fs::read(path) else {
+        return Ok(false);
+    };
+    Ok(serde_json::from_slice::<serde_json::Value>(&bytes)
+        .ok()
+        .and_then(|value| value.get("app_bundle_modified").and_then(|v| v.as_bool()))
+        .unwrap_or(false))
+}
+
+const ZCODE_PATCHED: &str =
+    "the ZCode app is still patched by Switch and its original would be lost; repair it first";
+
 pub async fn plan_cleanup(
     store: &Store,
     tool: ToolKind,
@@ -1521,6 +1556,11 @@ pub async fn plan_cleanup(
         blockers.push(
             "the agent's setup was changed after the last deploy; repair it first".to_string(),
         );
+    }
+    // Only the adapter's own uninstall puts the original app back, and it only runs for an
+    // active deployment.
+    if !deployment.present && zcode_app_patched(tool, opts)? {
+        blockers.push(ZCODE_PATCHED.to_string());
     }
     let memory_meta = memory.as_ref().map(|(info, _)| info.clone());
     let memories = current_memories(tool, opts)?;
@@ -1667,6 +1707,9 @@ async fn run_cleanup(
         ));
     }
     check_extras_volume(store, &extras)?;
+    if !deployment.present && zcode_app_patched(tool, opts)? {
+        return Err(Error::command_failed(ZCODE_PATCHED));
+    }
     let to_keep = kept(&extras);
     let to_erase: Vec<ExtraMeta> = extras
         .iter()
@@ -1741,6 +1784,11 @@ async fn run_cleanup(
             ));
         }
         deactivated = true;
+        // The uninstall must have put the original ZCode app back before its copy is erased.
+        // The snapshot stays: the deployment is already gone and can be rolled back.
+        if zcode_app_patched(tool, opts)? {
+            return Err(Error::command_failed(ZCODE_PATCHED));
+        }
     }
 
     let mut memory_cleared = false;
@@ -2273,8 +2321,9 @@ mod tests {
         );
 
         let toml = tmp.path().join("config.toml");
-        std::fs::write(&toml, "model = \"gpt\"\nexperimental_bearer_token = \"abc123\"\n[mcp_servers.x]\ncommand = \"npx\"\n").unwrap();
+        std::fs::write(&toml, "model = \"gpt\"\nmodel_max_output_tokens = 8000\nexperimental_bearer_token = \"abc123\"\n[mcp_servers.x]\ncommand = \"npx\"\n").unwrap();
         let out = String::from_utf8(sanitized_copy(&toml, "config.toml").unwrap()).unwrap();
+        assert!(out.contains("model_max_output_tokens = 8000"), "{out}");
         assert!(
             out.contains("model") && out.contains("mcp_servers") && !out.contains("abc123"),
             "{out}"

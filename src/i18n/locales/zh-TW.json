@@ -497,7 +497,7 @@
     "doneNothing": "沒有需要清理的內容。",
     "openVersions": "查看版本",
     "repair": "這個 Agent 的設定在上次部署之後被改過，需要先整理才能清理。",
-    "drifted": "這個 Agent 的設定在上次部署之後被手動改過。這份設定保持原樣，這裡列出的其他內容照常清理。",
+    "drifted": "這個 Agent 的設定在上次部署之後被手動改過。部署的提示詞留待整理，這裡列出的內容照常清理。",
     "memoriesOption": "儲存並移走 memories 資料夾（{{files}} 個檔案，{{size}}）",
     "agentRunning": "{{tool}} 正在執行。請先結束：它的工作階段、記憶和登入正在使用中。"
   },
@@ -533,6 +533,9 @@
     "untitled": "（未命名的提示詞）",
     "memories": "記憶資料夾 {{files}} 個檔案，{{size}}",
     "willRestoreMemories": "把記憶資料夾恢復成當時的樣子（{{files}} 個檔案，{{size}}）",
+    "willRestoreExtra": "把 {{name}} 恢復原樣",
+    "willRestoreExtraWithoutLogin": "恢復 {{name}}，不含登入資訊（僅在現在沒有這個檔案時）",
+    "noLoginBack": "登入和工作階段歷史在清理時已刪除，不會恢復：回滾後需要重新登入。",
     "currentMemories": "現在的記憶資料夾有 {{files}} 個檔案，回滾前會先把它另存為一個版本。",
     "memoriesRunning": "Codex 正在執行，先結束它才能恢復記憶資料夾。"
   }

@@ -186,7 +186,14 @@ async function handle(cmd: string, args: Record<string, any> = {}): Promise<unkn
       // ?codexrunning=1 pretends Codex is open, which keeps its memories folder out of reach.
       const memories = tool === "codex" && !codexMemoriesGone ? { path: "/Users/you/.codex/memories", files: 2778, bytes: 41_943_040 } : null;
       const agentRunning = tool === "codex" && new URLSearchParams(window.location.search).has("codexrunning");
-      return delay({ operationId: `cleanup-${tool}`, tool, deployment: { present: Boolean(live), title: live?.title || null, restorable: Boolean(live) }, memory, memories, agentRunning, nothingToDo: !live && !memory && !memories, blockers: [] }, 450);
+      const root = tool === "zcode" ? ".zcode" : `.${tool}`;
+      const extras = [
+        { name: `${root}/rules`, path: `/Users/you/${root}/rules`, files: 4, bytes: 6_144, kind: "saved" },
+        { name: `${root}/${tool === "claude" ? "settings.json" : "config.toml"}`, path: `/Users/you/${root}/config`, files: 1, bytes: 1_180, kind: "saved-without-login" },
+        { name: `${root}/sessions`, path: `/Users/you/${root}/sessions`, files: 312, bytes: 12_582_912, kind: "erased" },
+      ];
+      const loginInKeychain = tool === "claude";
+      return delay({ operationId: `cleanup-${tool}`, tool, deployment: { present: Boolean(live), title: live?.title || null, restorable: Boolean(live) }, memory, memories, extras, loginInKeychain, agentRunning, nothingToDo: false, blockers: [] }, 450);
     }
     case "confirm_cleanup": {
       const tool = String(args.operationId).replace("cleanup-", "") as ToolId;
