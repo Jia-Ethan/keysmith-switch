@@ -1,1 +1,1 @@
-Keysmith Switch v0.2.9：检查更新时不再闪烁；Codex 的“清理”现在能清空 AGENTS.md，也可以勾选清理记忆文件夹。
+Keysmith Switch v0.3.0：“清理”现在能把 Claude Code、Codex、Grok 和 ZCode 清回刚安装的样子，包括登录和会话历史；配置先存一份不含登录的版本，可以回滚。
