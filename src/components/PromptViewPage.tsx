@@ -5,7 +5,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 import { ErrorBanner } from "./ErrorBanner";
 import { FullScreenPanel } from "./FullScreenPanel";
 import { Button, Field, Textarea, Disclosure, SectionLabel, cx } from "./ui";
-import { IconPencil, IconPower, IconCopy, IconMore, IconTrash } from "./icons";
+import { IconPencil, IconPower, IconCopy, IconLock, IconMore, IconTrash } from "./icons";
 import type { ToastApi } from "../hooks/useToasts";
 import type { PromptDetail, PromptVersion, ToolId } from "../types";
 import { TOOL_IDS } from "../types";
@@ -217,6 +217,22 @@ export function PromptViewPage({
             retryLabel={t("common.retry")}
             onRetry={() => setLoadEpoch((value) => value + 1)}
           />
+        </div>
+      </FullScreenPanel>
+    );
+  }
+
+  if (detail.locked) {
+    return (
+      <FullScreenPanel isOpen title={detail.title} onClose={onClose}>
+        <div className="mx-auto w-full max-w-3xl">
+          <p
+            className="flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-3 text-[13.5px] text-muted-foreground"
+            data-testid="prompt-locked-notice"
+          >
+            <IconLock size={15} className="shrink-0" />
+            {t("prompts.lockedDetail")}
+          </p>
         </div>
       </FullScreenPanel>
     );

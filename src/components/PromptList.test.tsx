@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { PromptList } from "./PromptList";
 import type { PromptSummary } from "../types";
 
@@ -147,5 +147,35 @@ describe("PromptList card and deploy button", () => {
     expect(screen.getByTestId("prompt-deploy-a").className.split(/\s+/)).toContain("opacity-100");
     expect(screen.getByTestId("prompt-deploy-a").className).not.toContain("sm:opacity-0");
     expect(screen.getByTestId("prompt-deploy-b").className).toContain("sm:opacity-0");
+  });
+});
+
+describe("PromptList extension-pack prompts", () => {
+  it("shows the title but never the text, and does not open", () => {
+    const onSelect = vi.fn();
+    const onDeploy = vi.fn();
+    render(
+      <PromptList
+        prompts={[prompt({ id: "x", title: "Pack prompt", excerpt: "secret first line", locked: true })]}
+        selectedId={null}
+        onSelect={onSelect}
+        onDeploy={onDeploy}
+      />,
+    );
+    expect(screen.getByText("Pack prompt")).toBeInTheDocument();
+    expect(screen.queryByText("secret first line")).not.toBeInTheDocument();
+    expect(screen.getByTestId("prompt-locked-x")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("prompt-item-x"));
+    expect(onSelect).not.toHaveBeenCalled();
+    // Deploying it is still allowed.
+    fireEvent.click(screen.getByTestId("prompt-deploy-x"));
+    expect(onDeploy).toHaveBeenCalledWith("x");
+  });
+
+  it("still opens the person's own prompts", () => {
+    const onSelect = vi.fn();
+    render(<PromptList prompts={[prompt({ id: "m", title: "Mine" })]} selectedId={null} onSelect={onSelect} />);
+    fireEvent.click(screen.getByTestId("prompt-item-m"));
+    expect(onSelect).toHaveBeenCalledWith("m");
   });
 });

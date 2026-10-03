@@ -121,7 +121,11 @@ pub async fn harness_state(
         Ok(envelope) => {
             // Drift means the config was edited by hand after the deploy; the prompt is still
             // live, so it counts as deployed and is flagged instead of shown as nothing.
-            let drifted = envelope.status == ToolStatus::Drift;
+            // Codex reports a hand-edited prompt (or a manifest that no longer matches it) as
+            // `conflict`, not `drift`; while its config still loads a prompt file that is there,
+            // the prompt is just as live.
+            let drifted =
+                envelope.status == ToolStatus::Drift || codex_prompt_in_use(tool, &envelope);
             let deployed = envelope.status == ToolStatus::Active || drifted;
             let prompt = if deployed {
                 deployed_prompt(store, tool, live_fingerprint(tool, &envelope).as_deref())
@@ -207,6 +211,19 @@ pub fn store_restored_prompt(
     body: &str,
 ) -> Result<String> {
     store_prompt_body(store, tool, title, body, vec!["restored".to_string()])
+}
+
+/// Codex: the adapter found a conflict, but the config still names a prompt file inside the
+/// Codex directory and that file exists, so the machine is running it. A conflict with nothing
+/// loaded (config edited to point elsewhere, file gone) is not a deployment.
+fn codex_prompt_in_use(tool: ToolKind, envelope: &crate::adapter::Envelope) -> bool {
+    tool == ToolKind::Codex
+        && envelope.status == ToolStatus::Conflict
+        && envelope.target_paths.iter().any(|target| {
+            target.exists
+                && target.role == "instruction"
+                && is_inside_codex_dir(envelope, &target.path)
+        })
 }
 
 /// The content fingerprint of the live prompt. Adapters report it; Codex does not,

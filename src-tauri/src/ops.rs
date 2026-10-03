@@ -54,8 +54,20 @@ pub fn create_prompt(store: &Store, input: CreatePromptInput) -> Result<PromptDe
     )
 }
 
+/// A prompt an extension pack wrote has no readable text in the app, so what would show or
+/// carry that text (edit, copy, diff, restoring a version) is refused for it.
+fn refuse_hidden(store: &Store, id: &str) -> Result<()> {
+    if crate::extensions::is_hidden_prompt(store, id) {
+        return Err(Error::invalid(
+            "prompt text from an extension pack is not shown or edited in the app",
+        ));
+    }
+    Ok(())
+}
+
 pub fn update_prompt(store: &Store, input: UpdatePromptInput) -> Result<PromptDetail> {
     let _lock = HomeLock::acquire(store.paths())?;
+    refuse_hidden(store, &input.id)?;
     store.update_prompt(
         &input.id,
         input.title.as_deref(),
@@ -71,6 +83,7 @@ pub fn delete_prompt(store: &Store, id: &str) -> Result<()> {
 
 pub fn copy_prompt(store: &Store, id: &str, target_tool: ToolKind) -> Result<PromptDetail> {
     let _lock = HomeLock::acquire(store.paths())?;
+    refuse_hidden(store, id)?;
     let source = store.get_prompt(id)?;
     if source.deleted_at.is_some() {
         return Err(Error::invalid("cannot copy a deleted prompt"));
@@ -88,6 +101,7 @@ pub fn copy_prompt(store: &Store, id: &str, target_tool: ToolKind) -> Result<Pro
 
 pub fn restore_prompt_version(store: &Store, id: &str, version: i64) -> Result<PromptDetail> {
     let _lock = HomeLock::acquire(store.paths())?;
+    refuse_hidden(store, id)?;
     store.restore_version(id, version)
 }
 
@@ -106,6 +120,7 @@ pub fn prompt_diff(
     from_version: i64,
     to_version: i64,
 ) -> Result<DiffResult> {
+    refuse_hidden(store, id)?;
     let from = store
         .get_version(id, from_version)?
         .ok_or_else(|| Error::invalid(format!("version {from_version} not found")))?;
@@ -123,6 +138,31 @@ pub fn prompt_diff(
     })
 }
 
+/// Codex refuses to deploy without a `config.toml`, but a cleanup takes the file away (a copy
+/// without its login is kept in the snapshot). An empty file is a valid config, and the
+/// adapter's uninstall puts it back exactly, so a missing one is recreated for the deploy.
+fn ensure_codex_config(tool: ToolKind, opts: &AdapterOptions) {
+    if tool != ToolKind::Codex {
+        return;
+    }
+    let Some(home) = opts.home.clone().or_else(dirs::home_dir) else {
+        return;
+    };
+    let dir = home.join(".codex");
+    // No `.codex` folder means Codex is not installed; that is reported as it is.
+    if !dir.is_dir() {
+        return;
+    }
+    let path = dir.join("config.toml");
+    if std::fs::symlink_metadata(&path).is_ok() {
+        return;
+    }
+    let _ = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path);
+}
+
 pub async fn plan_activate(
     store: &Store,
     input: PlanActivateInput,
@@ -135,6 +175,7 @@ pub async fn plan_activate(
     }
     validate_scope(prompt.tool, input.scope, input.project_dir.as_deref())?;
     let name = cli_name(&prompt);
+    ensure_codex_config(prompt.tool, opts);
     let adapter_file = write_adapter_prompt(&prompt)?;
     let command = AdapterCommand::PlanActivate {
         file: adapter_file.0.clone(),
@@ -243,6 +284,7 @@ pub async fn confirm_activate(
         .and_then(|value| value.as_str())
         .map(str::to_string)
         .unwrap_or_else(|| cli_name(&prompt));
+    ensure_codex_config(prompt.tool, opts);
     let adapter_file = write_adapter_prompt(&prompt)?;
     let command = AdapterCommand::Activate {
         file: adapter_file.0.clone(),

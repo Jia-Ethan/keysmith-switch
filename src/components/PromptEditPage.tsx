@@ -4,6 +4,7 @@ import type { ToastApi } from "../hooks/useToasts";
 import type { PromptDetail, ToolId } from "../types";
 import { ErrorBanner } from "./ErrorBanner";
 import { FullScreenPanel } from "./FullScreenPanel";
+import { IconLock } from "./icons";
 import { MarkdownEditor } from "./MarkdownEditor";
 import { Button, Field, Input } from "./ui";
 import * as api from "../api";
@@ -148,6 +149,23 @@ export function PromptEditPage({
       <FullScreenPanel isOpen title={t("prompts.edit")} onClose={handleClose}>
         <div className="flex min-h-[240px] items-center justify-center text-sm text-muted-foreground" role="status">
           {t("common.loading")}
+        </div>
+      </FullScreenPanel>
+    );
+  }
+
+  // The text of a pack prompt never reaches the editor, whichever route led here.
+  if (!creating && loadedDetail?.locked) {
+    return (
+      <FullScreenPanel isOpen title={loadedDetail.title} onClose={leavePage}>
+        <div className="mx-auto w-full max-w-3xl">
+          <p
+            className="flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-3 text-[13.5px] text-muted-foreground"
+            data-testid="prompt-locked-notice"
+          >
+            <IconLock size={15} className="shrink-0" />
+            {t("prompts.lockedDetail")}
+          </p>
         </div>
       </FullScreenPanel>
     );

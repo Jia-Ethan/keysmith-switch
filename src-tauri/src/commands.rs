@@ -217,6 +217,8 @@ pub struct UiPromptSummary {
     pub updated_at: String,
     pub created_at: String,
     pub excerpt: Option<String>,
+    /// The text came with an extension pack: the app shows the title and tags, never the text.
+    pub locked: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -325,6 +327,7 @@ fn summarize_prompt(
     store: &Store,
     prompt: &crate::models::PromptSummary,
     content: Option<&str>,
+    locked: bool,
 ) -> Result<UiPromptSummary> {
     let activations = store.list_activations(prompt.tool)?;
     let hit = activations.iter().find(|item| {
@@ -339,7 +342,12 @@ fn summarize_prompt(
         last_used_at: hit.map(|item| item.updated_at.clone()),
         updated_at: prompt.updated_at.clone(),
         created_at: prompt.created_at.clone(),
-        excerpt: content.and_then(excerpt),
+        excerpt: if locked {
+            None
+        } else {
+            content.and_then(excerpt)
+        },
+        locked,
     })
 }
 
@@ -355,9 +363,15 @@ fn detail_from_store(store: &Store, id: &str) -> Result<UiPromptDetail> {
         updated_at: prompt.updated_at.clone(),
         created_at: prompt.created_at.clone(),
     };
+    let locked = crate::extensions::is_hidden_prompt(store, id);
     Ok(UiPromptDetail {
-        summary: summarize_prompt(store, &summary, Some(&prompt.content))?,
-        content: prompt.content,
+        summary: summarize_prompt(store, &summary, Some(&prompt.content), locked)?,
+        // The text of a pack prompt stays in the backend; it is what gets deployed, not shown.
+        content: if locked {
+            String::new()
+        } else {
+            prompt.content
+        },
     })
 }
 
@@ -399,14 +413,26 @@ pub fn list_prompts(
     let items = state
         .store
         .list_prompts(tool, query.as_deref(), tag.as_deref(), sort)?;
+    let hidden = crate::extensions::hidden_prompt_ids(&state.store);
     let mut prompts = Vec::new();
     for item in items {
-        let content = state
-            .store
-            .get_prompt(&item.id)
-            .ok()
-            .map(|detail| detail.content);
-        prompts.push(summarize_prompt(&state.store, &item, content.as_deref())?);
+        let locked = hidden.contains(&item.id);
+        // The text of a locked prompt is not even read here.
+        let content = if locked {
+            None
+        } else {
+            state
+                .store
+                .get_prompt(&item.id)
+                .ok()
+                .map(|detail| detail.content)
+        };
+        prompts.push(summarize_prompt(
+            &state.store,
+            &item,
+            content.as_deref(),
+            locked,
+        )?);
     }
     Ok(serde_json::json!({ "prompts": prompts }))
 }
@@ -486,13 +512,14 @@ pub fn copy_prompt(
 
 #[tauri::command(rename_all = "camelCase")]
 pub fn prompt_history(state: State<'_, AppState>, id: String) -> Result<serde_json::Value> {
+    let locked = crate::extensions::is_hidden_prompt(&state.store, &id);
     let versions = ops::prompt_history(&state.store, &id)?
         .into_iter()
         .map(|item| UiPromptVersion {
             version: item.version,
             created_at: item.created_at,
             title: item.title,
-            summary: excerpt(&item.content),
+            summary: if locked { None } else { excerpt(&item.content) },
         })
         .collect::<Vec<_>>();
     Ok(serde_json::json!({ "versions": versions }))
