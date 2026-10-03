@@ -425,6 +425,38 @@ async fn codex_live_prompt_is_read_from_the_file_its_config_loads() {
     assert_eq!(after.prompt_id.as_deref(), Some(id.as_str()));
 }
 
+#[tokio::test]
+async fn codex_prompt_edited_by_hand_still_reads_as_deployed_and_says_it_drifted() {
+    let (_tmp, store, opts) = setup(ToolKind::Codex);
+    let outcome = deploy_harness_with(&store, ToolKind::Codex, &opts, Some("managed\n".into()))
+        .await
+        .unwrap();
+    assert!(outcome.ok, "{outcome:?}");
+    let before = harness_state(&store, ToolKind::Codex, &opts).await.unwrap();
+    assert!(before.deployed && !before.drifted, "{before:?}");
+
+    // The person edits the deployed prompt file: Codex's adapter reports a conflict (its
+    // managed prompt no longer matches the manifest), not "drift". The config still loads
+    // the file, so a prompt is still on the machine.
+    let file = opts.home.as_ref().unwrap().join(".codex").join(
+        std::fs::read_dir(opts.home.as_ref().unwrap().join(".codex"))
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .find(|n| n.ends_with(".md") && !n.contains(".bak"))
+            .expect("the deployed prompt file"),
+    );
+    std::fs::write(&file, "edited by hand\n").unwrap();
+
+    let after = harness_state(&store, ToolKind::Codex, &opts).await.unwrap();
+    assert!(
+        after.deployed,
+        "the agent page must not say there is no prompt while the config loads one: {after:?}"
+    );
+    assert!(after.drifted, "{after:?}");
+    assert!(after.error.is_none());
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn codex_prompt_outside_the_codex_directory_is_never_read() {
