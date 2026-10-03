@@ -5,10 +5,12 @@ use std::path::PathBuf;
 
 use keysmith_switch_lib::db::Store;
 use keysmith_switch_lib::extensions::{
-    check_archive, clear_state, hidden_prompt_ids, install, is_hidden_prompt, refresh, state_view, uninstall, ExtError, Fetch,
-    IndexPack, Source, OFFICIAL_URL_PREFIX, PACK_TAG,
+    check_archive, clear_state, hidden_prompt_ids, install, is_hidden_prompt, refresh, state_view,
+    uninstall, ExtError, Fetch, IndexPack, Source, OFFICIAL_URL_PREFIX, PACK_TAG,
 };
-use keysmith_switch_lib::models::{Activation, UpdatePromptInput, PromptSort, Scope, ToolKind, ToolStatus};
+use keysmith_switch_lib::models::{
+    Activation, PromptSort, Scope, ToolKind, ToolStatus, UpdatePromptInput,
+};
 use keysmith_switch_lib::paths::AppPaths;
 use sha2::{Digest, Sha256};
 
@@ -398,10 +400,16 @@ fn what_a_pack_wrote_is_locked_but_the_persons_own_text_is_not() {
         .unwrap();
     let fetch = Fixture::with(&["v1"]);
     install(&store, &fetch, &source("v1"), "fixture.pack", "en").unwrap();
-    assert!(!is_hidden_prompt(&store, "mine"), "linked text is the person's");
+    assert!(
+        !is_hidden_prompt(&store, "mine"),
+        "linked text is the person's"
+    );
     let codex = prompts(&store, ToolKind::Codex);
     assert_eq!(codex.len(), 1);
-    assert!(is_hidden_prompt(&store, &codex[0].id), "a pack-added prompt is locked");
+    assert!(
+        is_hidden_prompt(&store, &codex[0].id),
+        "a pack-added prompt is locked"
+    );
     assert_eq!(hidden_prompt_ids(&store).len(), 1);
 
     // Dropping the tag changes nothing: the lock does not come from the tag.

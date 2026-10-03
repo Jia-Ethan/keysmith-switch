@@ -342,7 +342,11 @@ fn summarize_prompt(
         last_used_at: hit.map(|item| item.updated_at.clone()),
         updated_at: prompt.updated_at.clone(),
         created_at: prompt.created_at.clone(),
-        excerpt: if locked { None } else { content.and_then(excerpt) },
+        excerpt: if locked {
+            None
+        } else {
+            content.and_then(excerpt)
+        },
         locked,
     })
 }
@@ -363,7 +367,11 @@ fn detail_from_store(store: &Store, id: &str) -> Result<UiPromptDetail> {
     Ok(UiPromptDetail {
         summary: summarize_prompt(store, &summary, Some(&prompt.content), locked)?,
         // The text of a pack prompt stays in the backend; it is what gets deployed, not shown.
-        content: if locked { String::new() } else { prompt.content },
+        content: if locked {
+            String::new()
+        } else {
+            prompt.content
+        },
     })
 }
 
