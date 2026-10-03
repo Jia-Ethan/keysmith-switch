@@ -453,7 +453,6 @@
     "checking": "正在检查…",
     "lastChecked": "上次检查 {{time}}",
     "official": "官方",
-    "unofficial": "非官方",
     "installed": "已安装 v{{version}}",
     "updateAvailable": "可更新到 v{{version}}",
     "needsApp": "需要 App {{version}} 或更高版本",

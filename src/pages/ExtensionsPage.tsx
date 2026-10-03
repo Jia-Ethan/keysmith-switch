@@ -208,9 +208,7 @@ function PackCard({
                 <IconShield size={11} />
                 {t("extensions.official")}
               </span>
-            ) : (
-              <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-semibold text-muted-foreground">{t("extensions.unofficial")}</span>
-            )}
+            ) : null}
           </div>
           <p className="mt-1 line-clamp-2 text-[12.5px] leading-relaxed text-muted-foreground">{pack.description}</p>
         </div>

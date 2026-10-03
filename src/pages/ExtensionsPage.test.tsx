@@ -78,7 +78,8 @@ describe("ExtensionsPage", () => {
     renderPage(true);
     expect(await screen.findByTestId("extension-official-keysmith.example")).toHaveTextContent("官方");
     expect(screen.queryByTestId("extension-official-third.party")).not.toBeInTheDocument();
-    expect(screen.getByTestId("extension-third.party")).toHaveTextContent("非官方");
+    // A pack from elsewhere carries no mark at all, rather than a "not official" one.
+    expect(screen.getByTestId("extension-third.party")).not.toHaveTextContent("官方");
   });
 
   it("installs a pack and says nothing was deployed", async () => {
