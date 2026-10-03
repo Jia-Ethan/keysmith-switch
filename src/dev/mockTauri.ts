@@ -82,7 +82,11 @@ const settings: Record<string, unknown> = { language: "zh-CN", updateChannel: "s
 // ?ext=1 starts with extensions on; ?ext=update also pretends one pack has a newer version.
 const extUpdate = new URLSearchParams(window.location.search).get("ext") === "update";
 const extPacks = [
-  { id: "keysmith.example", version: extUpdate ? "0.2.0" : "0.1.0", minAppVersion: "0.2.5", name: "示例包", description: "用来演示拓展包格式的示例，不建议长期使用；正式内容会另外发布。", tools: ["claude", "codex"], itemCount: 2, size: 1312, official: true, compatible: true, installedVersion: extUpdate ? "0.1.0" : (null as string | null), updateAvailable: false },
+  { id: "keysmith.claude", version: "0.2.0", minAppVersion: "0.2.5", name: "Claude Keysmith", description: "Claude Keysmith 项目的主提示词：主规则与 append 合成正文。", tools: ["claude"], itemCount: 1, size: 6200, official: true, compatible: true, installedVersion: extUpdate ? "0.1.0" : "0.2.0", updateAvailable: extUpdate },
+  { id: "keysmith.codex", version: "0.2.0", minAppVersion: "0.2.5", name: "Codex Keysmith", description: "Codex Keysmith 项目的主提示词（默认的 GPT overlay）。", tools: ["codex"], itemCount: 1, size: 4300, official: true, compatible: true, installedVersion: null as string | null, updateAvailable: false },
+  { id: "keysmith.grok", version: "0.2.0", minAppVersion: "0.2.5", name: "Grok Keysmith", description: "Grok Keysmith 项目的主提示词（默认的 Grok 提示词）。", tools: ["grok"], itemCount: 1, size: 4100, official: true, compatible: true, installedVersion: null as string | null, updateAvailable: false },
+  { id: "keysmith.zcode", version: "0.2.0", minAppVersion: "0.2.5", name: "ZCode Keysmith", description: "ZCode Keysmith 项目的主提示词（system role）。", tools: ["zcode"], itemCount: 1, size: 4800, official: true, compatible: true, installedVersion: null as string | null, updateAvailable: false },
+  { id: "third.party", version: "0.2.0", minAppVersion: "0.2.5", name: "第三方提示词", description: "非官方来源的包，只用来预览没有角标的样子。", tools: ["claude"], itemCount: 1, size: 900, official: false, compatible: true, installedVersion: null as string | null, updateAvailable: false },
   { id: "keysmith.future", version: "1.0.0", minAppVersion: "9.0.0", name: "需要新版 App 的包", description: "这个包要求比现在更新的 App。", tools: ["claude"], itemCount: 5, size: 8800, official: true, compatible: false, installedVersion: null as string | null, updateAvailable: false },
 ];
 const annMarks = { read: new Set<string>(), dismissed: new Set<string>() };

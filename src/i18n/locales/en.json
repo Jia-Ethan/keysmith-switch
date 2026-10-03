@@ -453,7 +453,6 @@
     "checking": "Checking…",
     "lastChecked": "Last checked {{time}}",
     "official": "Official",
-    "unofficial": "Unofficial",
     "installed": "Installed v{{version}}",
     "updateAvailable": "Update to v{{version}}",
     "needsApp": "Needs app {{version}} or newer",
