@@ -133,7 +133,10 @@ const CODEX: Table = Table {
         ".codex/hooks.json",
         ".codex/.codex-keysmith-manifest.json",
     ],
-    without_login: &[".codex/config.toml"],
+    // Codex's config.toml is left where it is: it holds the person's models, providers, plugins
+    // and trusted projects, and the agent will not deploy without one. The adapter's uninstall
+    // has already taken the managed line out of it; the login is in auth.json, erased below.
+    without_login: &[],
     erased: &[
         ".codex/auth.json",
         ".codex/plugins",

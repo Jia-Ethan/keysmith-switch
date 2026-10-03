@@ -551,24 +551,60 @@ async fn cleaning_codex_empties_agents_md_but_leaves_the_memories_folder_unless_
 }
 
 #[tokio::test]
-async fn codex_can_be_deployed_again_after_a_cleanup_took_config_toml_away() {
+async fn cleaning_codex_leaves_config_toml_alone_so_it_can_be_deployed_again() {
     if !python3_available() {
         return;
     }
     let world = codex_with_memories(false).await;
     let root = world.home.join(".codex");
+    // Deployed, with the managed line in config.toml; the person's own settings are around it.
+    let managed = std::fs::read_to_string(root.join("config.toml")).unwrap();
+    assert!(managed.contains("model_instructions_file"), "{managed}");
 
     let plan = plan_cleanup(&world.store, ToolKind::Codex, &world.opts)
         .await
         .unwrap();
+    assert!(
+        !plan.extras.iter().any(|e| e.name == ".codex/config.toml"),
+        "config.toml is not part of the cleanup: {:?}",
+        plan.extras
+    );
     confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
         .await
         .unwrap();
     assert!(
-        !root.join("config.toml").exists(),
-        "the cleanup moves config.toml into the snapshot"
+        root.join("config.toml").is_file(),
+        "the cleanup does not take config.toml away"
+    );
+    assert!(
+        !std::fs::read_to_string(root.join("config.toml"))
+            .unwrap()
+            .contains("model_instructions_file"),
+        "the adapter's uninstall took its own line out"
     );
 
+    let outcome = deploy_harness_with(
+        &world.store,
+        ToolKind::Codex,
+        &world.opts,
+        Some("# Codex rules\nBe careful.\n".into()),
+    )
+    .await
+    .unwrap();
+    assert!(outcome.ok, "{outcome:?}");
+    assert!(deployed(&world, ToolKind::Codex).await);
+}
+
+#[tokio::test]
+async fn codex_is_deployed_again_even_when_config_toml_is_already_gone() {
+    if !python3_available() {
+        return;
+    }
+    // Machines cleaned by an earlier version have no config.toml at all.
+    let world = codex_world(false);
+    let root = world.home.join(".codex");
+    std::fs::create_dir_all(&root).unwrap();
+    assert!(!root.join("config.toml").exists());
     let outcome = deploy_harness_with(
         &world.store,
         ToolKind::Codex,
