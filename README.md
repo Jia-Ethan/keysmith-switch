@@ -261,6 +261,7 @@ npx tauri build --target aarch64-apple-darwin --config src-tauri/tauri.preview.m
 
 | 版本 | 更新内容 |
 | --- | --- |
+| [`v0.3.2`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.3.2) | 修复配置被手动改过后，顶部显示“还没有部署提示词”、列表却显示“部署中”的问题。[#67](https://github.com/Jia-Ethan/keysmith-switch/pull/67) |
 | [`v0.3.1`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.3.1) | 新增“公告”：左侧栏的铃铛显示 Keysmith 的公告，重要公告会置顶在 Agent 页面。[#64](https://github.com/Jia-Ethan/keysmith-switch/pull/64) |
 | [`v0.3.0`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.3.0) | “清理”能把 Claude Code、Codex、Grok 和 ZCode 清回刚安装的样子，包括登录和会话历史；配置先存一份不含登录的版本，可以回滚。[#61](https://github.com/Jia-Ethan/keysmith-switch/pull/61) |
 | [`v0.2.9`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.2.9) | 检查更新时不再闪烁；Codex 的“清理”可以清空 `AGENTS.md`，也可以勾选清理记忆文件夹。[#57](https://github.com/Jia-Ethan/keysmith-switch/pull/57)、[#58](https://github.com/Jia-Ethan/keysmith-switch/pull/58) |
