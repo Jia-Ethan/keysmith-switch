@@ -569,3 +569,53 @@ fn codex_status_reports_the_instruction_file_it_loads() {
         .iter()
         .any(|target| target.role == "instruction"));
 }
+
+/// A dry run prints a refused step as `→ [Blocked] reason`; the reason must reach the person,
+/// not just `ok=false` / `exit 1`.
+#[test]
+fn codex_dry_run_blocker_behind_an_arrow_is_reported() {
+    use keysmith_switch_lib::adapter::normalize::normalize;
+    use keysmith_switch_lib::adapter::process::Captured;
+    use keysmith_switch_lib::adapter::Envelope;
+
+    let stdout = "\
+[DRY RUN] Preview mode; no files will be changed.
+
+  Target: /home/u/.codex
+    → Write MD: /home/u/.codex/gpt-unrestricted.md
+    → [Blocked] config.toml not found: /home/u/.codex/config.toml
+
+[Error] dry-run found 1 confirmed blocker(s); no files were changed.
+";
+    let captured = Captured {
+        stdout: stdout.into(),
+        stderr: String::new(),
+        exit_code: 1,
+        timed_out: false,
+        truncated: false,
+        argv: vec!["--dry-run".into()],
+    };
+    let envelope = normalize(
+        ToolKind::Codex,
+        &AdapterCommand::PlanActivate {
+            file: "p.md".into(),
+            scope: Scope::User,
+            project_dir: None,
+            name: None,
+            runtime: false,
+            append_file: None,
+            max_tokens: None,
+        },
+        &captured,
+        Envelope::new(ToolKind::Codex, "plan-activate"),
+    );
+    assert!(!envelope.ok);
+    assert!(
+        envelope
+            .blockers
+            .iter()
+            .any(|item| item.starts_with("config.toml not found")),
+        "{:?}",
+        envelope.blockers
+    );
+}

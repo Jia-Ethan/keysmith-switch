@@ -123,6 +123,31 @@ pub fn prompt_diff(
     })
 }
 
+/// Codex refuses to deploy without a `config.toml`, but a cleanup takes the file away (a copy
+/// without its login is kept in the snapshot). An empty file is a valid config, and the
+/// adapter's uninstall puts it back exactly, so a missing one is recreated for the deploy.
+fn ensure_codex_config(tool: ToolKind, opts: &AdapterOptions) {
+    if tool != ToolKind::Codex {
+        return;
+    }
+    let Some(home) = opts.home.clone().or_else(dirs::home_dir) else {
+        return;
+    };
+    let dir = home.join(".codex");
+    // No `.codex` folder means Codex is not installed; that is reported as it is.
+    if !dir.is_dir() {
+        return;
+    }
+    let path = dir.join("config.toml");
+    if std::fs::symlink_metadata(&path).is_ok() {
+        return;
+    }
+    let _ = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path);
+}
+
 pub async fn plan_activate(
     store: &Store,
     input: PlanActivateInput,
@@ -135,6 +160,7 @@ pub async fn plan_activate(
     }
     validate_scope(prompt.tool, input.scope, input.project_dir.as_deref())?;
     let name = cli_name(&prompt);
+    ensure_codex_config(prompt.tool, opts);
     let adapter_file = write_adapter_prompt(&prompt)?;
     let command = AdapterCommand::PlanActivate {
         file: adapter_file.0.clone(),
@@ -243,6 +269,7 @@ pub async fn confirm_activate(
         .and_then(|value| value.as_str())
         .map(str::to_string)
         .unwrap_or_else(|| cli_name(&prompt));
+    ensure_codex_config(prompt.tool, opts);
     let adapter_file = write_adapter_prompt(&prompt)?;
     let command = AdapterCommand::Activate {
         file: adapter_file.0.clone(),

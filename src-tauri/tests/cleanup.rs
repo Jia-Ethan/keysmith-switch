@@ -551,6 +551,38 @@ async fn cleaning_codex_empties_agents_md_but_leaves_the_memories_folder_unless_
 }
 
 #[tokio::test]
+async fn codex_can_be_deployed_again_after_a_cleanup_took_config_toml_away() {
+    if !python3_available() {
+        return;
+    }
+    let world = codex_with_memories(false).await;
+    let root = world.home.join(".codex");
+
+    let plan = plan_cleanup(&world.store, ToolKind::Codex, &world.opts)
+        .await
+        .unwrap();
+    confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
+        .await
+        .unwrap();
+    assert!(
+        !root.join("config.toml").exists(),
+        "the cleanup moves config.toml into the snapshot"
+    );
+
+    let outcome = deploy_harness_with(
+        &world.store,
+        ToolKind::Codex,
+        &world.opts,
+        Some("# Codex rules\nBe careful.\n".into()),
+    )
+    .await
+    .unwrap();
+    assert!(outcome.ok, "{outcome:?}");
+    assert!(deployed(&world, ToolKind::Codex).await);
+    assert!(root.join("config.toml").is_file());
+}
+
+#[tokio::test]
 async fn clearing_the_codex_memories_folder_moves_it_into_the_snapshot_and_rollback_brings_it_back()
 {
     if !python3_available() {

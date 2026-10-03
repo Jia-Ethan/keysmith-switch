@@ -329,7 +329,12 @@ fn normalize_codex(
         if let Some(rest) = line.strip_prefix("[Error]") {
             envelope.blockers.push(rest.trim().to_string());
         }
-        if let Some(rest) = line.strip_prefix("[Blocked]") {
+        // A dry run reports a refused step as `→ [Blocked] …`, with a leading arrow.
+        if let Some(rest) = line
+            .trim_start_matches('→')
+            .trim_start()
+            .strip_prefix("[Blocked]")
+        {
             envelope.blockers.push(rest.trim().to_string());
         }
         if let Some(rest) = line.strip_prefix("Target:") {
