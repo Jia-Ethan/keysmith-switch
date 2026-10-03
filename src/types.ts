@@ -113,6 +113,8 @@ export interface PromptSummary {
   updatedAt: string;
   createdAt: string;
   excerpt: string | null;
+  /** The text came with an extension pack: its title and tags show, its text never does. */
+  locked?: boolean;
 }
 
 export interface PromptDetail extends PromptSummary {

@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { relativeTime } from "../lib/format";
 import type { PromptSummary } from "../types";
 import { EmptyState } from "./EmptyState";
-import { IconChevronRight, IconLibrary, IconPencil, IconRocket } from "./icons";
+import { IconChevronRight, IconLibrary, IconLock, IconPencil, IconRocket } from "./icons";
 import { Button, cx, Tag } from "./ui";
 
 export interface PromptListProps {
@@ -216,13 +216,15 @@ function Group({
               >
                 <button
                   type="button"
-                  onClick={() => onSelect(item.id)}
+                  onClick={item.locked ? undefined : () => onSelect(item.id)}
+                  aria-disabled={item.locked ? "true" : undefined}
                   aria-current={selected ? "true" : undefined}
                   data-testid={`prompt-item-${item.id}`}
                   className={cx(
                     "card-spotlight flex h-full w-full flex-col rounded-2xl border p-4 text-left",
                     "transition-[border-color,box-shadow,transform,background-color] duration-200",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    item.locked && "cursor-default",
                     activeGroup
                       ? "border-primary/40 bg-[linear-gradient(135deg,rgb(var(--primary)/0.10),rgb(var(--primary)/0.02)_55%,transparent)] bg-card shadow-glow"
                       : cx(
@@ -261,7 +263,14 @@ function Group({
                       activeGroup ? "line-clamp-3" : "line-clamp-2 min-h-[2.6em]",
                     )}
                   >
-                    {item.excerpt || t("prompts.noExcerpt")}
+                    {item.locked ? (
+                      <span className="inline-flex items-center gap-1.5" data-testid={`prompt-locked-${item.id}`}>
+                        <IconLock size={12} className="shrink-0" />
+                        {t("prompts.locked")}
+                      </span>
+                    ) : (
+                      item.excerpt || t("prompts.noExcerpt")
+                    )}
                   </p>
                   <div className={cx("mt-3 flex min-w-0 items-center gap-1", onDeploy && !activeGroup && "pr-20")}>
                     {item.tags.slice(0, 3).map((tag) => (
@@ -273,7 +282,7 @@ function Group({
                     {activeGroup ? (
                       <span className="ml-auto inline-flex shrink-0 items-center gap-0.5 text-[12px] font-medium text-primary">
                         {relativeTime(item.lastUsedAt ?? item.updatedAt, i18n.language)}
-                        <IconChevronRight size={13} />
+                        {item.locked ? null : <IconChevronRight size={13} />}
                       </span>
                     ) : null}
                   </div>

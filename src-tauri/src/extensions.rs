@@ -529,6 +529,15 @@ struct InstalledItem {
     /// The hash of the text this app wrote. A prompt whose hash still equals this has not
     /// been edited by the person.
     sha256: String,
+    /// The pack wrote this prompt itself, so the app does not show its text. A prompt the
+    /// library already had (linked, not added) belongs to the person and stays open. Records
+    /// written before this field existed count as pack-added.
+    #[serde(default = "pack_added")]
+    hidden: bool,
+}
+
+fn pack_added() -> bool {
+    true
 }
 
 fn extensions_dir(store: &Store) -> PathBuf {
@@ -566,6 +575,22 @@ fn prune(store: &Store, state: &mut State) {
             .retain(|_, item| store.get_prompt(&item.prompt_id).is_ok());
     }
     state.packs.retain(|_, pack| !pack.items.is_empty());
+}
+
+/// The ids of the prompts a pack wrote itself. The app shows their title and tags, never their
+/// text, and does not edit, copy or diff them. The tag cannot decide this: the person can edit tags.
+pub fn hidden_prompt_ids(store: &Store) -> std::collections::HashSet<String> {
+    load_state(store)
+        .packs
+        .into_values()
+        .flat_map(|pack| pack.items.into_values())
+        .filter(|item| item.hidden)
+        .map(|item| item.prompt_id)
+        .collect()
+}
+
+pub fn is_hidden_prompt(store: &Store, id: &str) -> bool {
+    hidden_prompt_ids(store).contains(id)
 }
 
 /// What a clear of all data must also remove.
@@ -818,6 +843,7 @@ fn apply(
                         InstalledItem {
                             prompt_id: current.id,
                             sha256: sha,
+                            hidden: link.hidden,
                         }
                     } else if link.sha256 != sha {
                         // Edited by the person and changed upstream: keep theirs, add the new one.
@@ -835,6 +861,7 @@ fn apply(
                         InstalledItem {
                             prompt_id: id,
                             sha256: sha,
+                            hidden: true,
                         }
                     } else {
                         report.kept += 1;
@@ -881,6 +908,7 @@ fn install_item(
         return Ok(InstalledItem {
             prompt_id: existing.id,
             sha256: sha.to_string(),
+            hidden: false,
         });
     }
     let id = uuid::Uuid::new_v4().to_string();
@@ -889,6 +917,7 @@ fn install_item(
     Ok(InstalledItem {
         prompt_id: id,
         sha256: sha.to_string(),
+        hidden: true,
     })
 }
 

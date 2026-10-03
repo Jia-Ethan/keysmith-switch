@@ -292,6 +292,15 @@ export function IconEye(props: IconProps) {
   );
 }
 
+export function IconLock(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="3.4" y="7.2" width="9.2" height="6.4" rx="1.6" />
+      <path d="M5.4 7.2V5.2a2.6 2.6 0 0 1 5.2 0v2" />
+    </Svg>
+  );
+}
+
 export function IconSort(props: IconProps) {
   return (
     <Svg {...props}>

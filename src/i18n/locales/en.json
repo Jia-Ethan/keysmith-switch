@@ -124,6 +124,8 @@
     "allPrompts": "All prompts",
     "activationUnknown": "Activation state could not be read; Active / Inactive grouping is hidden.",
     "noExcerpt": "No summary",
+    "locked": "Text from an extension pack is not shown",
+    "lockedDetail": "The text of this prompt came with an extension pack, so it is not shown or edited here. You can still deploy it.",
     "deploy": "Deploy",
     "deployThis": "Deploy this prompt",
     "searchPlaceholder": "Search titles, content, or tags…",

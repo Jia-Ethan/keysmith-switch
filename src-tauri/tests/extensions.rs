@@ -5,10 +5,10 @@ use std::path::PathBuf;
 
 use keysmith_switch_lib::db::Store;
 use keysmith_switch_lib::extensions::{
-    check_archive, clear_state, install, refresh, state_view, uninstall, ExtError, Fetch,
+    check_archive, clear_state, hidden_prompt_ids, install, is_hidden_prompt, refresh, state_view, uninstall, ExtError, Fetch,
     IndexPack, Source, OFFICIAL_URL_PREFIX, PACK_TAG,
 };
-use keysmith_switch_lib::models::{Activation, PromptSort, Scope, ToolKind, ToolStatus};
+use keysmith_switch_lib::models::{Activation, UpdatePromptInput, PromptSort, Scope, ToolKind, ToolStatus};
 use keysmith_switch_lib::paths::AppPaths;
 use sha2::{Digest, Sha256};
 
@@ -380,6 +380,59 @@ fn installing_fills_the_library_and_deploys_nothing() {
             "nothing is deployed"
         );
     }
+}
+
+#[test]
+fn what_a_pack_wrote_is_locked_but_the_persons_own_text_is_not() {
+    let (_tmp, store) = store();
+    // The person already had the text of the first claude item: that one stays theirs.
+    store
+        .insert_prompt(
+            "mine",
+            ToolKind::Claude,
+            "My own",
+            "Alpha, first text.\n",
+            &[],
+            false,
+        )
+        .unwrap();
+    let fetch = Fixture::with(&["v1"]);
+    install(&store, &fetch, &source("v1"), "fixture.pack", "en").unwrap();
+    assert!(!is_hidden_prompt(&store, "mine"), "linked text is the person's");
+    let codex = prompts(&store, ToolKind::Codex);
+    assert_eq!(codex.len(), 1);
+    assert!(is_hidden_prompt(&store, &codex[0].id), "a pack-added prompt is locked");
+    assert_eq!(hidden_prompt_ids(&store).len(), 1);
+
+    // Dropping the tag changes nothing: the lock does not come from the tag.
+    store
+        .update_prompt(&codex[0].id, None, None, Some(&[]))
+        .unwrap();
+    assert!(is_hidden_prompt(&store, &codex[0].id));
+}
+
+#[test]
+fn a_locked_prompt_cannot_be_edited_copied_diffed_or_restored() {
+    use keysmith_switch_lib::ops;
+    let (_tmp, store) = store();
+    let fetch = Fixture::with(&["v1"]);
+    install(&store, &fetch, &source("v1"), "fixture.pack", "en").unwrap();
+    let id = prompts(&store, ToolKind::Codex)[0].id.clone();
+
+    let edit = ops::update_prompt(
+        &store,
+        UpdatePromptInput {
+            id: id.clone(),
+            title: None,
+            content: Some("changed".into()),
+            tags: None,
+        },
+    );
+    assert!(edit.is_err());
+    assert!(ops::copy_prompt(&store, &id, ToolKind::Claude).is_err());
+    assert!(ops::restore_prompt_version(&store, &id, 1).is_err());
+    assert!(ops::prompt_diff(&store, &id, 1, 1).is_err());
+    assert_ne!(store.get_prompt(&id).unwrap().content, "changed");
 }
 
 #[test]

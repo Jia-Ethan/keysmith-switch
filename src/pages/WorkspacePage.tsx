@@ -535,6 +535,9 @@ export function WorkspacePage({
     return [...set].sort();
   }, [prompts, tag]);
 
+  // What the machine runs came with an extension pack: its text is not shown, so it is not edited.
+  const liveLocked = Boolean(prompts.find((item) => activeIds?.includes(item.id))?.locked);
+
   const selectPrompt = (id: string) => {
     onNavigate?.({ kind: "prompt-view", tool, promptId: id, scope: "user", projectDir: "" });
   };
@@ -575,7 +578,7 @@ export function WorkspacePage({
           onRefresh={() => void refresh()}
           onRemove={() => void openRemovePlan()}
           removeDisabled={locked}
-          onEdit={() => void editLivePrompt()}
+          onEdit={liveLocked ? undefined : () => void editLivePrompt()}
           editing={pending === "adopt"}
           onCleanup={() => setCleanupOpen(true)}
         />

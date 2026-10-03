@@ -124,6 +124,8 @@
     "allPrompts": "全部提示词",
     "activationUnknown": "无法读取激活状态，暂不显示已激活 / 未激活分组。",
     "noExcerpt": "暂无摘要",
+    "locked": "拓展包提示词，内容不公开",
+    "lockedDetail": "这条提示词来自拓展包，内容不会显示，也不能编辑。仍可正常部署。",
     "deploy": "部署",
     "deployThis": "部署这条提示词",
     "searchPlaceholder": "搜索标题、内容或标签…",

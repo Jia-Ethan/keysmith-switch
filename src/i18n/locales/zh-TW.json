@@ -124,6 +124,8 @@
     "allPrompts": "全部提示詞",
     "activationUnknown": "無法讀取啟用狀態，暫不顯示已啟用 / 未啟用分組。",
     "noExcerpt": "暫無摘要",
+    "locked": "拓展包提示詞，內容不公開",
+    "lockedDetail": "這則提示詞來自拓展包，內容不會顯示，也不能編輯。仍可正常部署。",
     "deploy": "部署",
     "deployThis": "部署這條提示詞",
     "searchPlaceholder": "搜尋標題、內容或標籤…",
