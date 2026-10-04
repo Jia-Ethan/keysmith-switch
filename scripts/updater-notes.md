@@ -1,1 +1,1 @@
-Keysmith Switch v0.3.2：修复 Agent 配置被手动改过后，页面顶部显示“还没有部署提示词”、列表里却显示“部署中”的问题。
+Keysmith Switch v0.3.3：修复 Codex 清理后无法再部署的问题，清理不再带走 Codex 的 config.toml，并让扩展包里的提示词不公开明文。
