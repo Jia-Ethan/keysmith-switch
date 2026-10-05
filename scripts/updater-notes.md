@@ -1,1 +1,1 @@
-Keysmith Switch v0.3.5：Windows 版现在可以使用 ZCode，部署、查看状态和移除提示词都已可用。
+Keysmith Switch v0.3.6：拓展页的卡片不再显示包摘要，只保留名称、官方角标、条数、大小、版本和安装状态。
