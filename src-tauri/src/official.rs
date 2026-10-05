@@ -102,8 +102,7 @@ const GROK_SOURCE: &str = "https://x.ai/build";
 const ZCODE_SOURCE: &str = "https://zcode.z.ai/en/docs/install";
 const ZCODE_APP: &str = "/Applications/ZCode.app";
 const ZCODE_BIN: &str = "/Applications/ZCode.app/Contents/MacOS/ZCode";
-const ZCODE_WINDOWS_REASON: &str =
-    "ZCode is not available on Windows in Keysmith Switch; official desktop support is macOS-only";
+const ZCODE_WINDOWS_DEST: &str = "%LOCALAPPDATA%\\Programs\\ZCode";
 const ZCODE_NOT_INSTALLED_REASON: &str =
     "ZCode is not installed; install it from the official download page";
 const GROK_NO_FEED: &str =
@@ -141,7 +140,7 @@ pub fn plan_official_action_on(
         .cloned()
         .unwrap_or_else(|| default_dest(product, &os, &detected, npm_available));
     let (source, mut argv, mut blockers) = planned_command(product, action, &os);
-    if product == OfficialProduct::Zcode && os == "macos" {
+    if product == OfficialProduct::Zcode && matches!(os.as_str(), "macos" | "windows") {
         blockers.clear();
         if detected.executable_path.is_none() {
             blockers.push(ZCODE_NOT_INSTALLED_REASON.to_string());
@@ -152,10 +151,6 @@ pub fn plan_official_action_on(
     if matches!(product, OfficialProduct::Claude | OfficialProduct::Codex) && !npm_available {
         blockers.push("npm is required to install or update this official CLI".to_string());
         argv.clear();
-    }
-    if product == OfficialProduct::Zcode && os == "windows" {
-        blockers.clear();
-        blockers.push(ZCODE_WINDOWS_REASON.to_string());
     }
     if product == OfficialProduct::Zcode && os == "linux" {
         blockers.push("ZCode is not a first-ship target on Linux".to_string());
@@ -282,12 +277,17 @@ fn planned_command(
         OfficialProduct::Grok => (GROK_SOURCE, Vec::new(), Vec::new()),
         OfficialProduct::Zcode => {
             let mut blockers = Vec::new();
-            if os == "windows" {
-                blockers.push(ZCODE_WINDOWS_REASON.to_string());
-            } else if os != "macos" {
-                blockers.push("ZCode official app path is documented for macOS only".to_string());
-            } else {
-                blockers.push(format!("ZCode must be installed manually into {ZCODE_APP}"));
+            match os {
+                "macos" => {
+                    blockers.push(format!("ZCode must be installed manually into {ZCODE_APP}"))
+                }
+                "windows" => blockers.push(
+                    "ZCode must be installed manually with the official Windows installer"
+                        .to_string(),
+                ),
+                _ => blockers.push(
+                    "ZCode official app path is documented for macOS and Windows only".to_string(),
+                ),
             }
             (ZCODE_SOURCE, Vec::new(), blockers)
         }
@@ -332,7 +332,10 @@ fn default_dest(
             .unwrap_or_else(|| "PATH:grok".to_string()),
         OfficialProduct::Zcode => {
             if os == "windows" {
-                "unavailable-on-windows".to_string()
+                detected
+                    .executable_path
+                    .clone()
+                    .unwrap_or_else(|| ZCODE_WINDOWS_DEST.to_string())
             } else {
                 ZCODE_APP.to_string()
             }
@@ -386,7 +389,33 @@ fn detect_bin(name: &str, npm_package: Option<&str>, npm_available: bool) -> Det
     }
 }
 
+fn detect_zcode_windows() -> DetectedOfficial {
+    let mut roots = Vec::new();
+    if let Some(base) = std::env::var_os("LOCALAPPDATA").map(PathBuf::from) {
+        roots.push(base.join("Programs").join("ZCode"));
+        roots.push(base.join("ZCode"));
+    }
+    if let Some(base) = std::env::var_os("ProgramFiles").map(PathBuf::from) {
+        roots.push(base.join("ZCode"));
+    }
+    // ZCode is an Electron app: `ZCode.exe --version` would open a window, so only the
+    // install location is reported here.
+    roots
+        .into_iter()
+        .map(|root| root.join("ZCode.exe"))
+        .find(|exe| exe.is_file())
+        .map(|exe| DetectedOfficial {
+            executable_path: Some(exe.to_string_lossy().to_string()),
+            current_version: None,
+            latest_version: None,
+        })
+        .unwrap_or_default()
+}
+
 fn detect_zcode(os: &str) -> DetectedOfficial {
+    if os == "windows" {
+        return detect_zcode_windows();
+    }
     if os != "macos" {
         return DetectedOfficial::default();
     }

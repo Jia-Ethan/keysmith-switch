@@ -44,7 +44,7 @@ fn plan_official_npm_product_is_blocked_when_npm_is_missing() {
 }
 
 #[test]
-fn plan_official_zcode_windows_disabled() {
+fn plan_official_zcode_windows_is_manual_install_only() {
     let host = host_with(
         "windows",
         OfficialProduct::Zcode,
@@ -53,12 +53,12 @@ fn plan_official_zcode_windows_disabled() {
     let plan = plan_official_action_on(OfficialProduct::Zcode, OfficialAction::Install, &host);
     assert!(plan.argv.is_empty(), "{:?}", plan.argv);
     assert!(
-        plan.blockers.iter().any(|b| b.contains("Windows")),
+        plan.blockers.iter().any(|b| b.contains("not installed")),
         "{:?}",
         plan.blockers
     );
     assert_eq!(plan.source, "https://zcode.z.ai/en/docs/install");
-    assert_eq!(plan.dest, "unavailable-on-windows");
+    assert!(plan.dest.contains("ZCode"), "{}", plan.dest);
     assert!(!plan.installed);
     assert!(plan.latest_version.is_none());
 
@@ -68,12 +68,24 @@ fn plan_official_zcode_windows_disabled() {
         Ok(())
     });
     assert!(!result.ok);
-    assert!(!ran.get());
-    assert!(
-        result.error.as_deref().unwrap_or("").contains("Windows"),
-        "{:?}",
-        result.error
+    assert!(!ran.get(), "ZCode is never installed by Switch");
+}
+
+#[test]
+fn plan_official_zcode_windows_detected_install_is_reported() {
+    let host = host_with(
+        "windows",
+        OfficialProduct::Zcode,
+        DetectedOfficial {
+            executable_path: Some(r"C:\Users\u\AppData\Local\Programs\ZCode\ZCode.exe".into()),
+            current_version: None,
+            latest_version: None,
+        },
     );
+    let plan = plan_official_action_on(OfficialProduct::Zcode, OfficialAction::Install, &host);
+    assert!(plan.installed);
+    assert!(plan.argv.is_empty());
+    assert!(plan.dest.ends_with("ZCode.exe"), "{}", plan.dest);
 }
 
 #[test]

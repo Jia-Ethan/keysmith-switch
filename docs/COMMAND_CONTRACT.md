@@ -8,7 +8,7 @@
 
 - Claude Code scopes: `user` | `project` | `local`（project/local 必须有绝对 `projectDir`）
 - Codex / Grok scopes: 仅 `user`
-- ZCode scopes: 仅 `user`；仅 macOS。Windows 返回 `available: false`，原因明确，不执行安装命令
+- ZCode scopes: 仅 `user`；macOS 与 Windows 均可用。Switch 不安装 ZCode 本体：官方安装计划只给出手动安装说明，不执行安装命令
 
 ## Adapter envelope
 

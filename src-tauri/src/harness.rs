@@ -196,6 +196,7 @@ pub fn proven_live_body(tool: ToolKind, envelope: &crate::adapter::Envelope) -> 
         let Some(body) = read_prompt_file(std::path::Path::new(&target.path)) else {
             continue;
         };
+        let body = live_body_text(tool, body);
         if content_sha(&body) == fingerprint {
             return Some(body);
         }
@@ -231,6 +232,11 @@ fn codex_prompt_in_use(tool: ToolKind, envelope: &crate::adapter::Envelope) -> b
 /// inside the Codex directory (a config edited by hand to point elsewhere is not
 /// read as the prompt).
 fn live_fingerprint(tool: ToolKind, envelope: &crate::adapter::Envelope) -> Option<String> {
+    if tool == ToolKind::Zcode {
+        if let Some(sha) = zcode_text_fingerprint(envelope) {
+            return Some(sha);
+        }
+    }
     let reported = envelope
         .current_fingerprint
         .as_deref()
@@ -252,6 +258,26 @@ fn live_fingerprint(tool: ToolKind, envelope: &crate::adapter::Envelope) -> Opti
         })
         .and_then(|target| read_prompt_file(std::path::Path::new(&target.path)))
         .map(|body| content_sha(&body))
+}
+
+/// The ZCode adapter writes its system file with the platform's line endings (CRLF on Windows)
+/// and reports the hash of those bytes, while the library stores LF text. Hash the text with LF
+/// endings so the live prompt is still recognised as the library entry that was deployed.
+fn live_body_text(tool: ToolKind, body: String) -> String {
+    if tool == ToolKind::Zcode && body.contains("\r\n") {
+        body.replace("\r\n", "\n")
+    } else {
+        body
+    }
+}
+
+fn zcode_text_fingerprint(envelope: &crate::adapter::Envelope) -> Option<String> {
+    envelope
+        .target_paths
+        .iter()
+        .find(|target| target.exists && target.role == "system_file")
+        .and_then(|target| read_prompt_file(std::path::Path::new(&target.path)))
+        .map(|body| content_sha(&live_body_text(ToolKind::Zcode, body)))
 }
 
 /// Whether `path` resolves to somewhere under a Codex directory the adapter reported,
@@ -536,6 +562,49 @@ mod tests {
             created_at: "2026-01-01T00:00:00Z".into(),
             updated_at: "2026-01-01T00:00:00Z".into(),
         }
+    }
+
+    #[test]
+    fn zcode_crlf_system_file_still_matches_the_lf_library_text() {
+        let (tmp, store) = store();
+        store
+            .insert_prompt(
+                "p1",
+                ToolKind::Zcode,
+                "Role",
+                "line one\nline two\n",
+                &[],
+                false,
+            )
+            .unwrap();
+        let file = tmp.path().join("system-role.md");
+        std::fs::write(&file, "line one\r\nline two\r\n").unwrap();
+        let mut envelope = crate::adapter::Envelope::new(ToolKind::Zcode, "doctor");
+        // The adapter hashes the bytes on disk, which carry CRLF on Windows.
+        envelope.current_fingerprint = Some(crate::models::sha256_hex(
+            "line one\r\nline two\r\n".as_bytes(),
+        ));
+        envelope
+            .target_paths
+            .push(crate::adapter::envelope::TargetPath {
+                path: file.to_string_lossy().into_owned(),
+                role: "system_file".into(),
+                exists: true,
+            });
+
+        let fingerprint = live_fingerprint(ToolKind::Zcode, &envelope);
+        assert_eq!(
+            fingerprint.as_deref(),
+            Some(content_sha("line one\nline two\n").as_str())
+        );
+        assert_eq!(
+            deployed_prompt(&store, ToolKind::Zcode, fingerprint.as_deref()),
+            Some(("p1".to_string(), "Role".to_string()))
+        );
+        assert_eq!(
+            proven_live_body(ToolKind::Zcode, &envelope).as_deref(),
+            Some("line one\nline two\n")
+        );
     }
 
     #[test]
