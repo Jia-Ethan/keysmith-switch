@@ -300,6 +300,8 @@ npx tauri build --target aarch64-apple-darwin --config src-tauri/tauri.preview.m
 
 Bug、需求与破限建议统一提交到 [GitHub Discussions](https://github.com/Jia-Ethan/keysmith-switch/discussions/3)。
 
+社区：[LINUX DO](https://linux.do)
+
 > [!WARNING]
 > 请勿公开提交 token、完整配置、提示词正文或其他敏感信息。当前仓库尚未启用 Private Vulnerability Reporting，安全漏洞请勿在 Discussion 中公开披露。
 
