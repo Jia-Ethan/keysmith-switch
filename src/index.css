@@ -831,9 +831,19 @@ html[data-titlebar="overlay"] .titlebar-inset {
   }
 }
 
+/* The update-count badge: a small numeral that pops in like the dot. */
+.notice-count {
+  border-radius: 9999px;
+  background: hsl(var(--destructive));
+  color: hsl(var(--destructive-foreground));
+  box-shadow: 0 0 0 2px hsl(var(--background));
+  animation: notice-pop 520ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .notice-dot,
-  .notice-dot::after {
+  .notice-dot::after,
+  .notice-count {
     animation: none !important;
   }
 }

@@ -429,3 +429,20 @@ export function NoticeDot({ className }: { className?: string }) {
     />
   );
 }
+
+/** Like the dot, but carries a count; anything past 9 reads as "9+". Nothing shows at 0. */
+export function CountBadge({ count, className }: { count: number; className?: string }) {
+  if (count <= 0) return null;
+  return (
+    <span
+      aria-hidden="true"
+      data-testid="notice-count"
+      className={cx(
+        "notice-count pointer-events-none absolute -right-1 -top-1 flex h-[15px] min-w-[15px] items-center justify-center px-[3px] text-[9.5px] font-bold leading-none tabular-nums",
+        className,
+      )}
+    >
+      {count > 9 ? "9+" : count}
+    </span>
+  );
+}

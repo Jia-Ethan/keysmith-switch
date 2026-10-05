@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { ScopeId, ToolId } from "../types";
 import { TOOL_IDS } from "../types";
-import { NoticeDot, cx, useSlidingIndicator } from "./ui";
+import { CountBadge, NoticeDot, cx, useSlidingIndicator } from "./ui";
 import { IconBell, IconPuzzle, IconSearch, IconSettings, IconTerminal } from "./icons";
 import { paletteShortcutLabel } from "./CommandPalette";
 import { useAnnouncementsOptional } from "./AnnouncementsProvider";
@@ -103,8 +103,8 @@ export function AppShell({
             {extensions ? (
               <UtilityButton
                 testId="nav-extensions"
-                label={extensions.updates > 0 ? `${t("nav.extensions")} · ${t("nav.updateAvailable")}` : t("nav.extensions")}
-                badge={extensions.updates > 0}
+                label={extensions.updates > 0 ? `${t("nav.extensions")} · ${t("nav.extensionsUpdates", { count: extensions.updates })}` : t("nav.extensions")}
+                count={extensions.updates}
                 active={page.kind === "extensions"}
                 indicatorReady={Boolean(indicator)}
                 onClick={() => onNavigate({ kind: "extensions" })}
@@ -138,7 +138,7 @@ export function AppShell({
               <UtilityButton
                 testId="nav-announcements"
                 label={announcements.unread > 0 ? `${t("nav.announcements")} · ${t("nav.announcementsNew")}` : t("nav.announcements")}
-                badge={announcements.unread > 0}
+                count={announcements.unread}
                 active={page.kind === "announcements"}
                 indicatorReady={Boolean(indicator)}
                 onClick={() => onNavigate({ kind: "announcements" })}
@@ -220,6 +220,7 @@ function UtilityButton({
   testId,
   label,
   badge = false,
+  count = 0,
   active,
   indicatorReady,
   onClick,
@@ -229,6 +230,8 @@ function UtilityButton({
   label: string;
   /** A small red dot: something here wants a look. */
   badge?: boolean;
+  /** A numeric corner badge; it wins over `badge` whenever it is above zero. */
+  count?: number;
   active: boolean;
   indicatorReady: boolean;
   onClick: () => void;
@@ -251,7 +254,7 @@ function UtilityButton({
       )}
     >
       {children}
-      {badge ? <NoticeDot /> : null}
+      {count > 0 ? <CountBadge count={count} /> : badge ? <NoticeDot /> : null}
     </button>
   );
 }

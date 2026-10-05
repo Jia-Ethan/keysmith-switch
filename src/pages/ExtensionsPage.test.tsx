@@ -103,7 +103,7 @@ describe("ExtensionsPage", () => {
       report: { added: 1, updated: 0, copied: 1, linked: 0, kept: 1, removed: 0 },
     });
     renderPage(true);
-    expect(await screen.findByTestId("extension-status-keysmith.example")).toHaveTextContent("可更新到 v0.2.0");
+    expect(await screen.findByTestId("extension-status-keysmith.example")).toHaveTextContent("v0.1.0 → v0.2.0");
     fireEvent.click(screen.getByTestId("extension-install-keysmith.example"));
     await waitFor(() => expect(toast.ok).toHaveBeenCalledWith(expect.stringContaining("另存 1 条")));
   });
@@ -147,9 +147,91 @@ describe("ExtensionsPage", () => {
     expect(screen.getByTestId("extension-install-keysmith.example")).toBeInTheDocument();
   });
 
-  it("can be turned off again", async () => {
+  it("asks before turning off, and says installed prompts stay", async () => {
     const { onEnabledChange } = renderPage(true);
     fireEvent.click(await screen.findByTestId("extensions-disable"));
+    expect(screen.getByRole("dialog")).toHaveTextContent("已装入提示词库的提示词会保留");
+    expect(onEnabledChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("extensions-confirm-disable"));
     await waitFor(() => expect(onEnabledChange).toHaveBeenCalledWith(false));
+  });
+
+  it("says so when a manual check finds nothing new", async () => {
+    extensionsRefresh.mockResolvedValue(view([{ ...base, installedVersion: "0.1.0" }]));
+    renderPage(true);
+    fireEvent.click(await screen.findByTestId("extensions-refresh"));
+    await waitFor(() => expect(toast.ok).toHaveBeenCalledWith("拓展包已全部是最新版本"));
+  });
+
+  it("says how many updates a manual check found", async () => {
+    const one = { ...base, version: "0.2.0", installedVersion: "0.1.0", updateAvailable: true };
+    extensionsRefresh.mockResolvedValue(view([one, { ...one, id: "b" }]));
+    renderPage(true);
+    fireEvent.click(await screen.findByTestId("extensions-refresh"));
+    await waitFor(() => expect(toast.info).toHaveBeenCalledWith("发现 2 个拓展包可更新"));
+  });
+
+  it("stays quiet when a manual check fails, and shows the error instead", async () => {
+    extensionsRefresh.mockResolvedValue(view([base], { error: "offline" }));
+    renderPage(true);
+    fireEvent.click(await screen.findByTestId("extensions-refresh"));
+    expect(await screen.findByTestId("extensions-error")).toBeInTheDocument();
+    expect(toast.ok).not.toHaveBeenCalled();
+    expect(toast.info).not.toHaveBeenCalled();
+  });
+
+  it("shows when it last looked as a relative time, with the exact time on hover", async () => {
+    const checkedAt = new Date(Date.now() - 3 * 60 * 1000).toISOString();
+    extensionsState.mockResolvedValue(view([base], { checkedAt }));
+    renderPage(true);
+    const label = await screen.findByTestId("extensions-checked-at");
+    expect(label).toHaveTextContent("3分钟前");
+    expect(label.getAttribute("title")).toBeTruthy();
+  });
+
+  it("puts packs with an update first", async () => {
+    const plain = { ...base, id: "a.plain", installedVersion: "0.1.0" };
+    const newer = { ...base, id: "z.newer", version: "0.2.0", installedVersion: "0.1.0", updateAvailable: true };
+    extensionsState.mockResolvedValue(view([plain, newer]));
+    renderPage(true);
+    const list = await screen.findByTestId("extensions-list");
+    const ids = Array.from(list.children).map((item) => item.getAttribute("data-testid"));
+    expect(ids).toEqual(["extension-z.newer", "extension-a.plain"]);
+  });
+
+  it("offers Update all only for two or more, and updates them one by one", async () => {
+    const one = { ...base, id: "a", version: "0.2.0", installedVersion: "0.1.0", updateAvailable: true };
+    const two = { ...one, id: "b" };
+    extensionsState.mockResolvedValue(view([one]));
+    const first = renderPage(true);
+    await screen.findByTestId("extension-a");
+    expect(screen.queryByTestId("extensions-update-all")).not.toBeInTheDocument();
+    first.unmount();
+
+    extensionsState.mockResolvedValue(view([one, two]));
+    const report = { added: 1, updated: 2, copied: 0, linked: 0, kept: 0, removed: 0 };
+    installExtension
+      .mockResolvedValueOnce({ view: view([{ ...one, installedVersion: "0.2.0", updateAvailable: false }, two]), report })
+      .mockResolvedValueOnce({ view: view([{ ...one, installedVersion: "0.2.0", updateAvailable: false }, { ...two, installedVersion: "0.2.0", updateAvailable: false }]), report });
+    renderPage(true);
+    const button = await screen.findByTestId("extensions-update-all");
+    expect(button).toHaveTextContent("全部更新（2）");
+    fireEvent.click(button);
+    await waitFor(() => expect(installExtension).toHaveBeenCalledTimes(2));
+    expect(installExtension.mock.calls.map((call) => call[0])).toEqual(["a", "b"]);
+    await waitFor(() => expect(toast.ok).toHaveBeenCalledWith(expect.stringContaining("已更新 2 个包：更新 4 条，新增 2 条")));
+  });
+
+  it("reports a partial Update all when one pack fails", async () => {
+    const one = { ...base, id: "a", version: "0.2.0", installedVersion: "0.1.0", updateAvailable: true };
+    const two = { ...one, id: "b" };
+    extensionsState.mockResolvedValue(view([one, two]));
+    installExtension
+      .mockResolvedValueOnce({ view: view([{ ...one, installedVersion: "0.2.0", updateAvailable: false }, two]), report: { added: 0, updated: 1, copied: 0, linked: 0, kept: 0, removed: 0 } })
+      .mockRejectedValueOnce(new Error("extensions:invalid:bad"));
+    renderPage(true);
+    fireEvent.click(await screen.findByTestId("extensions-update-all"));
+    await waitFor(() => expect(toast.info).toHaveBeenCalledWith("已更新 1/2 个包，其余未更新"));
+    expect(toast.err).toHaveBeenCalledWith(expect.stringContaining("不合规"));
   });
 });

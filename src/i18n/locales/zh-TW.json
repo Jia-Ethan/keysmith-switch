@@ -14,6 +14,7 @@
     "toolsLabel": "工具導覽",
     "more": "更多",
     "updateAvailable": "有新版本",
+    "extensionsUpdates": "{{count}} 個可更新",
     "extensions": "拓展",
     "announcements": "公告",
     "announcementsNew": "有新公告"
@@ -450,7 +451,7 @@
     "offBody": "開啟後，Keysmith Switch 才會連網讀取官方拓展源。只讀取清單和你選擇安裝的包，不會上傳你的任何內容。",
     "notDeployed": "裝入的提示詞只會放進提示詞庫，不會自動部署。",
     "enable": "開啟拓展包",
-    "disable": "關閉",
+    "disable": "停用拓展包",
     "refresh": "檢查更新",
     "checking": "正在檢查…",
     "lastChecked": "上次檢查 {{time}}",
@@ -464,7 +465,7 @@
     "uninstallBody": "會移除這個包裡沒改過、也沒在使用的提示詞。你改過的和正在使用的會保留。",
     "items": "{{count}} 條提示詞",
     "empty": "官方還沒有發布拓展包",
-    "emptyHint": "有新的拓展包時，拓展按鈕會出現紅點。",
+    "emptyHint": "有新的拓展包時，側欄的拓展按鈕會顯示數字角標。",
     "installedToast": "已加入提示詞庫：新增 {{added}} 條，未部署",
     "updatedToast": "已更新：更新 {{updated}} 條，新增 {{added}} 條，另存 {{copied}} 條",
     "removedToast": "已解除安裝：移除 {{removed}} 條，保留 {{kept}} 條",
@@ -477,7 +478,16 @@
       "off": "拓展包還沒有開啟。",
       "store": "操作失敗，沒有做任何改動。",
       "default": "操作失敗，沒有做任何改動。"
-    }
+    },
+    "disableTitle": "停用拓展包？",
+    "disableBody": "停用後不再連網檢查拓展包更新，列表也會隱藏。已裝入提示詞庫的提示詞會保留，可以隨時重新開啟。",
+    "upToDate": "拓展包已全部是最新版本",
+    "foundUpdates": "發現 {{count}} 個拓展包可更新",
+    "updateFromTo": "v{{from}} → v{{to}}",
+    "updateAll": "全部更新（{{count}}）",
+    "updatedAllToast": "已更新 {{count}} 個包：更新 {{updated}} 條，新增 {{added}} 條，另存 {{copied}} 條",
+    "updatedSomeToast": "已更新 {{done}}/{{total}} 個包，其餘未更新",
+    "checkedJustNow": "剛剛檢查過"
   },
   "cleanup": {
     "button": "清理",
