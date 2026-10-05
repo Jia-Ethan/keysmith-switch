@@ -14,6 +14,7 @@
     "toolsLabel": "Tools",
     "more": "More",
     "updateAvailable": "Update available",
+    "extensionsUpdates": "{{count}} updates",
     "extensions": "Extensions",
     "announcements": "Announcements",
     "announcementsNew": "New announcement"
@@ -464,7 +465,7 @@
     "uninstallBody": "This removes the prompts from this pack that you have not edited and that no agent is using. Edited or running ones stay.",
     "items": "{{count}} prompts",
     "empty": "No extension packs yet",
-    "emptyHint": "When something new is published, the Extensions button gets a dot.",
+    "emptyHint": "When something new is published, the Extensions button shows a count.",
     "installedToast": "Added to your library: {{added}} new, not deployed",
     "updatedToast": "Updated: {{updated}} changed, {{added}} new, {{copied}} saved beside your edits",
     "removedToast": "Uninstalled: {{removed}} removed, {{kept}} kept",
@@ -477,7 +478,16 @@
       "off": "Extension packs are off.",
       "store": "That failed and nothing was changed.",
       "default": "That failed and nothing was changed."
-    }
+    },
+    "disableTitle": "Turn off extension packs?",
+    "disableBody": "The app stops checking the source and hides this list. Prompts already in your library stay, and you can turn this back on any time.",
+    "upToDate": "All extension packs are up to date",
+    "foundUpdates": "{{count}} extension pack updates found",
+    "updateFromTo": "v{{from}} → v{{to}}",
+    "updateAll": "Update all ({{count}})",
+    "updatedAllToast": "Updated {{count}} packs: {{updated}} changed, {{added}} new, {{copied}} saved beside your edits",
+    "updatedSomeToast": "Updated {{done}} of {{total}} packs; the rest were left as they were",
+    "checkedJustNow": "Checked just now"
   },
   "cleanup": {
     "button": "Clean up",

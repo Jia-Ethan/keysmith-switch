@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { extensionErrorCode, useExtensions } from "../components/ExtensionsProvider";
@@ -7,7 +7,7 @@ import { IconAlert, IconCheck, IconDownload, IconPuzzle, IconRefresh, IconShield
 import { ToolLogo } from "../components/ToolLogos";
 import { Button, cx } from "../components/ui";
 import type { ToastApi } from "../hooks/useToasts";
-import { formatBytes } from "../lib/format";
+import { formatBytes, relativeTime } from "../lib/format";
 import type { ExtensionPack, ExtensionReport } from "../types";
 
 /**
@@ -19,8 +19,24 @@ export function ExtensionsPage({ toast }: { toast: ToastApi }) {
   const { t, i18n } = useTranslation();
   const ext = useExtensions();
   const [enabling, setEnabling] = useState(false);
+  const [disabling, setDisabling] = useState(false);
   const [removing, setRemoving] = useState<ExtensionPack | null>(null);
+  const [updatingAll, setUpdatingAll] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
   const view = ext.view;
+
+  // "3 minutes ago" has to move on by itself while the page stays open.
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  // Packs with an update lead, so the rail's count points at the first cards.
+  const packs = useMemo(() => {
+    const list = view?.packs ?? [];
+    return [...list.filter((pack) => pack.updateAvailable), ...list.filter((pack) => !pack.updateAvailable)];
+  }, [view]);
+  const pending = packs.filter((pack) => pack.updateAvailable);
 
   const say = (report: ExtensionReport, kind: "install" | "update" | "remove") => {
     if (kind === "remove") toast.ok(t("extensions.removedToast", { ...report }));
@@ -39,6 +55,34 @@ export function ExtensionsPage({ toast }: { toast: ToastApi }) {
       fail(error);
     } finally {
       setEnabling(false);
+      setDisabling(false);
+    }
+  };
+
+  const check = async () => {
+    const fresh = await ext.refresh();
+    if (!fresh || fresh.error) return;
+    if (fresh.updates > 0) toast.info(t("extensions.foundUpdates", { count: fresh.updates }));
+    else if (fresh.packs.length > 0) toast.ok(t("extensions.upToDate"));
+  };
+
+  const updateAll = async () => {
+    setUpdatingAll(true);
+    const total = { added: 0, updated: 0, copied: 0, linked: 0, kept: 0, removed: 0 };
+    let done = 0;
+    try {
+      // One at a time: the backend writes to the same library for each pack.
+      for (const pack of pending) {
+        const report = await ext.install(pack.id);
+        for (const key of Object.keys(total) as (keyof ExtensionReport)[]) total[key] += report[key];
+        done += 1;
+      }
+      toast.ok(t("extensions.updatedAllToast", { count: done, ...total }));
+    } catch (error) {
+      if (done > 0) toast.info(t("extensions.updatedSomeToast", { done, total: pending.length }));
+      fail(error);
+    } finally {
+      setUpdatingAll(false);
     }
   };
 
@@ -60,9 +104,16 @@ export function ExtensionsPage({ toast }: { toast: ToastApi }) {
     }
   };
 
-  const checkedAt = view?.checkedAt
-    ? new Intl.DateTimeFormat(i18n.language, { hour: "2-digit", minute: "2-digit" }).format(new Date(view.checkedAt))
-    : null;
+  const checkedMs = view?.checkedAt ? new Date(view.checkedAt).getTime() : NaN;
+  const checkedAt = Number.isNaN(checkedMs)
+    ? null
+    : now - checkedMs < 45_000
+      ? t("extensions.checkedJustNow")
+      : t("extensions.lastChecked", { time: relativeTime(view?.checkedAt, i18n.language, now) });
+  const checkedAtExact = view?.checkedAt
+    ? new Intl.DateTimeFormat(i18n.language, { dateStyle: "medium", timeStyle: "short" }).format(new Date(view.checkedAt))
+    : undefined;
+  const locked = ext.busyId !== null || updatingAll;
 
   return (
     <section className="h-full min-h-0 w-full overflow-y-auto" data-testid="extensions-page" data-enabled={ext.enabled || undefined}>
@@ -77,12 +128,22 @@ export function ExtensionsPage({ toast }: { toast: ToastApi }) {
           </div>
           {ext.enabled ? (
             <div className="flex shrink-0 items-center gap-2">
-              {checkedAt ? <span className="hidden text-[12px] text-muted-foreground sm:inline">{t("extensions.lastChecked", { time: checkedAt })}</span> : null}
-              <Button size="sm" variant="outline" loading={ext.refreshing} disabled={ext.refreshing || ext.busyId !== null} data-testid="extensions-refresh" onClick={() => void ext.refresh()}>
+              {checkedAt ? (
+                <span className="hidden text-[12px] text-muted-foreground sm:inline" title={checkedAtExact} data-testid="extensions-checked-at">
+                  {checkedAt}
+                </span>
+              ) : null}
+              {pending.length >= 2 ? (
+                <Button size="sm" variant="primary" loading={updatingAll} disabled={locked || ext.refreshing} data-testid="extensions-update-all" onClick={() => void updateAll()}>
+                  <IconDownload size={13} />
+                  {t("extensions.updateAll", { count: pending.length })}
+                </Button>
+              ) : null}
+              <Button size="sm" variant="outline" loading={ext.refreshing} disabled={ext.refreshing || locked} data-testid="extensions-refresh" onClick={() => void check()}>
                 <IconRefresh />
                 {ext.refreshing ? t("extensions.checking") : t("extensions.refresh")}
               </Button>
-              <Button size="sm" variant="ghost" disabled={enabling} data-testid="extensions-disable" onClick={() => void enable(false)}>
+              <Button size="sm" variant="ghost" disabled={enabling || locked} data-testid="extensions-disable" onClick={() => setDisabling(true)}>
                 {t("extensions.disable")}
               </Button>
             </div>
@@ -130,15 +191,15 @@ export function ExtensionsPage({ toast }: { toast: ToastApi }) {
           </div>
         ) : null}
 
-        {ext.enabled && view && view.packs.length > 0 ? (
+        {ext.enabled && view && packs.length > 0 ? (
           <ul className="grid grid-cols-1 gap-3 md:grid-cols-2" data-testid="extensions-list">
-            {view.packs.map((pack, index) => (
+            {packs.map((pack, index) => (
               <PackCard
                 key={pack.id}
                 pack={pack}
                 index={index}
                 busy={ext.busyId === pack.id}
-                locked={ext.busyId !== null}
+                locked={locked}
                 onInstall={() => void install(pack)}
                 onRemove={() => setRemoving(pack)}
               />
@@ -160,6 +221,20 @@ export function ExtensionsPage({ toast }: { toast: ToastApi }) {
         onConfirm={() => removing && void remove(removing)}
       >
         <p className="text-[13.5px] text-muted-foreground">{t("extensions.uninstallBody")}</p>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={disabling}
+        title={t("extensions.disableTitle")}
+        confirmLabel={t("extensions.disable")}
+        cancelLabel={t("common.cancel")}
+        closeLabel={t("common.close")}
+        confirmTestId="extensions-confirm-disable"
+        busy={enabling}
+        onClose={() => setDisabling(false)}
+        onConfirm={() => void enable(false)}
+      >
+        <p className="text-[13.5px] text-muted-foreground">{t("extensions.disableBody")}</p>
       </ConfirmDialog>
     </section>
   );
@@ -185,7 +260,7 @@ function PackCard({
   const status = !pack.compatible
     ? { text: t("extensions.needsApp", { version: pack.minAppVersion }), tone: "warn" as const }
     : pack.updateAvailable
-      ? { text: t("extensions.updateAvailable", { version: pack.version }), tone: "primary" as const }
+      ? { text: t("extensions.updateFromTo", { from: pack.installedVersion, to: pack.version }), tone: "primary" as const }
       : installed
         ? { text: t("extensions.installed", { version: pack.installedVersion }), tone: "ok" as const }
         : null;

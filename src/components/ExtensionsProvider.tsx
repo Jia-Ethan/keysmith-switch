@@ -23,7 +23,8 @@ interface ExtensionsContextValue {
   /** The pack being installed or removed. */
   busyId: string | null;
   setEnabled: (next: boolean) => Promise<void>;
-  refresh: () => Promise<void>;
+  /** Resolves to the fresh view, or null when the look failed or one was already running. */
+  refresh: () => Promise<ExtensionsView | null>;
   install: (id: string) => Promise<ExtensionReport>;
   uninstall: (id: string) => Promise<ExtensionReport>;
 }
@@ -60,16 +61,19 @@ export function ExtensionsProvider({
   const lastLookRef = useRef<number | null>(null);
   const refreshingRef = useRef(false);
 
-  const look = useCallback(async (silent: boolean) => {
-    if (refreshingRef.current) return;
+  const look = useCallback(async (silent: boolean): Promise<ExtensionsView | null> => {
+    if (refreshingRef.current) return null;
     refreshingRef.current = true;
     if (!silent) setRefreshing(true);
     try {
-      setView(await api.extensionsRefresh());
+      const next = await api.extensionsRefresh();
+      setView(next);
       lastLookRef.current = Date.now();
+      return next;
     } catch (error) {
       // A person who asked sees the failure as an error state; a background look says nothing.
       if (!silent) setView((current) => (current ? { ...current, error: extensionErrorCode(error) } : current));
+      return null;
     } finally {
       refreshingRef.current = false;
       if (!silent) setRefreshing(false);

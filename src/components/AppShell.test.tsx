@@ -119,7 +119,7 @@ describe("AppShell tool navigation", () => {
     expect(screen.getByTestId("nav-settings")).toHaveAttribute("aria-label", "设置 · 有新版本");
   });
 
-  it("shows the Extensions button only where the provider is, with a dot for updates", async () => {
+  it("shows the Extensions button only where the provider is, with a count badge for updates", async () => {
     renderShell({ kind: "tool", tool: "claude" });
     expect(screen.queryByTestId("nav-extensions")).not.toBeInTheDocument();
 
@@ -133,7 +133,12 @@ describe("AppShell tool navigation", () => {
       </ExtensionsProvider>,
     );
     const button = await screen.findByTestId("nav-extensions");
-    await waitFor(() => expect(button.querySelector('[data-testid="notice-dot"]')).not.toBeNull());
+    await waitFor(() => {
+      const badge = button.querySelector('[data-testid="notice-count"]');
+      expect(badge).not.toBeNull();
+      expect(badge).toHaveTextContent("2");
+    });
+    expect(button).toHaveAttribute("aria-label", "拓展 · 2 个可更新");
     expect(button).toHaveAttribute("aria-current", "page");
     fireEvent.click(button);
     expect(onNavigate).toHaveBeenCalledWith({ kind: "extensions" });
