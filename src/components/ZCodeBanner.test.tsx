@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { isZcodeUnavailable, zcodeUnavailableReason, ZCODE_WINDOWS_REASON } from "../lib/zcode";
+import { isZcodeUnavailable, zcodeUnavailableReason, ZCODE_UNAVAILABLE_REASON } from "../lib/zcode";
 import { ZCodeBanner } from "./ZCodeBanner";
 
 describe("ZCode unavailable banner logic", () => {
@@ -19,12 +19,9 @@ describe("ZCode unavailable banner logic", () => {
       }),
     ).toBe("ZCode is macOS-only on this host.");
     expect(
-      zcodeUnavailableReason(
-        { id: "zcode", available: false, unavailableReason: null },
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-      ),
-    ).toBe(ZCODE_WINDOWS_REASON);
-    expect(ZCODE_WINDOWS_REASON.toLowerCase()).not.toMatch(/brew|winget|choco|install command/);
+      zcodeUnavailableReason({ id: "zcode", available: false, unavailableReason: null }),
+    ).toBe(ZCODE_UNAVAILABLE_REASON);
+    expect(ZCODE_UNAVAILABLE_REASON.toLowerCase()).not.toMatch(/brew|winget|choco|install command/);
   });
 
   it("renders the banner with the disabled reason", () => {

@@ -340,28 +340,17 @@ async fn deploy_does_not_execute_when_preview_is_blocked() {
 }
 
 #[tokio::test]
-async fn zcode_on_windows_fails_without_calling_the_sidecar() {
+async fn zcode_deploys_through_the_sidecar_on_every_platform() {
     let (_tmp, store, opts) = setup(ToolKind::Zcode);
-    if !cfg!(windows) {
-        let outcome =
-            deploy_harness_with(&store, ToolKind::Zcode, &opts, Some("system role\n".into()))
-                .await
-                .unwrap();
-        assert!(
-            outcome.ok,
-            "non-windows zcode deploy through the fixture should succeed: {outcome:?}"
-        );
-        return;
-    }
+    assert!(ToolKind::Zcode.available_on_this_os());
+    assert!(ToolKind::Zcode.unavailable_reason().is_none());
     let outcome = deploy_harness_with(&store, ToolKind::Zcode, &opts, Some("system role\n".into()))
         .await
         .unwrap();
-    assert!(!outcome.ok);
-    assert!(outcome.error.unwrap().contains("not available on Windows"));
-    assert!(store
-        .list_prompts(ToolKind::Zcode, None, None, PromptSort::Updated)
-        .unwrap()
-        .is_empty());
+    assert!(
+        outcome.ok,
+        "zcode deploy through the fixture should succeed: {outcome:?}"
+    );
 }
 
 #[tokio::test]

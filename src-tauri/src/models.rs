@@ -78,17 +78,13 @@ impl ToolKind {
         !matches!(self, Self::Zcode)
     }
 
+    /// Every tool runs on macOS and Windows. Kept as a method so a future platform gap has
+    /// one place to be declared.
     pub fn available_on_this_os(self) -> bool {
-        if matches!(self, Self::Zcode) && cfg!(windows) {
-            return false;
-        }
         true
     }
 
     pub fn unavailable_reason(self) -> Option<&'static str> {
-        if matches!(self, Self::Zcode) && cfg!(windows) {
-            return Some("ZCode Keysmith is not available on Windows.");
-        }
         None
     }
 
