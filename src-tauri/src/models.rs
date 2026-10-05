@@ -6,7 +6,7 @@ use std::str::FromStr;
 use crate::error::{Error, Result};
 
 pub const ADAPTER_SCHEMA: &str = "keysmith-switch/adapter-v1";
-pub const APP_VERSION: &str = "0.3.3";
+pub const APP_VERSION: &str = "0.3.4";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
