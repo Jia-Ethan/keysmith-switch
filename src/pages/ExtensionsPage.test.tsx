@@ -21,7 +21,7 @@ const base: ExtensionPack = {
   version: "0.1.0",
   minAppVersion: "0.2.5",
   name: "示例包",
-  description: "演示",
+  description: "这段摘要不该出现在卡片上",
   tools: ["claude", "codex"],
   itemCount: 2,
   size: 1312,
@@ -80,6 +80,26 @@ describe("ExtensionsPage", () => {
     expect(screen.queryByTestId("extension-official-third.party")).not.toBeInTheDocument();
     // A pack from elsewhere carries no mark at all, rather than a "not official" one.
     expect(screen.getByTestId("extension-third.party")).not.toHaveTextContent("官方");
+  });
+
+  it("never draws the pack description on a card, whatever the pack state", async () => {
+    extensionsState.mockResolvedValue(
+      view([
+        base,
+        { ...base, id: "installed.pack", name: "已装包", installedVersion: "0.1.0" },
+        { ...base, id: "update.pack", name: "可更新包", version: "0.2.0", installedVersion: "0.1.0", updateAvailable: true },
+        { ...base, id: "third.party", name: "别处的包", official: false },
+        { ...base, id: "future.pack", name: "新版包", compatible: false, minAppVersion: "9.0.0" },
+      ]),
+    );
+    renderPage(true);
+    const card = await screen.findByTestId("extension-keysmith.example");
+    expect(card).toHaveTextContent("示例包");
+    expect(card).toHaveTextContent("v0.1.0");
+    for (const id of ["keysmith.example", "installed.pack", "update.pack", "third.party", "future.pack"]) {
+      expect(screen.getByTestId(`extension-${id}`)).not.toHaveTextContent(base.description);
+    }
+    expect(screen.queryByText(base.description)).not.toBeInTheDocument();
   });
 
   it("installs a pack and says nothing was deployed", async () => {

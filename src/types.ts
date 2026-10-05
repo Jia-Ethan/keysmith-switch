@@ -387,6 +387,7 @@ export interface ExtensionPack {
   version: string;
   minAppVersion: string;
   name: string;
+  /** Carried from the manifest; the Extensions page never renders it (see extensions SPEC.md). */
   description: string;
   tools: ToolId[];
   itemCount: number;

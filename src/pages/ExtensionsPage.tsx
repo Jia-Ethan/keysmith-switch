@@ -285,7 +285,6 @@ function PackCard({
               </span>
             ) : null}
           </div>
-          <p className="mt-1 line-clamp-2 text-[12.5px] leading-relaxed text-muted-foreground">{pack.description}</p>
         </div>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12px] text-muted-foreground">
