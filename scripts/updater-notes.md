@@ -1,1 +1,1 @@
-Keysmith Switch v0.3.3：修复 Codex 清理后无法再部署的问题，清理不再带走 Codex 的 config.toml，并让扩展包里的提示词不公开明文。
+Keysmith Switch v0.3.4：拓展包有更新时侧栏显示可更新数量，可以一键全部更新；手动检查会提示结果，「停用拓展包」前会先确认。

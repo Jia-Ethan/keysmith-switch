@@ -261,6 +261,7 @@ npx tauri build --target aarch64-apple-darwin --config src-tauri/tauri.preview.m
 
 | 版本 | 更新内容 |
 | --- | --- |
+| [`v0.3.4`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.3.4) | 拓展包有更新时，侧栏按钮显示可更新的数量；拓展包页面可以一键全部更新，手动检查后会提示结果，「停用」前会先确认。[#73](https://github.com/Jia-Ethan/keysmith-switch/pull/73) |
 | [`v0.3.3`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.3.3) | 修复 Codex 清理后无法再部署的问题，清理不再带走 Codex 的 `config.toml`；扩展包里的提示词不再公开明文。[#71](https://github.com/Jia-Ethan/keysmith-switch/pull/71) |
 | [`v0.3.2`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.3.2) | 修复配置被手动改过后，顶部显示“还没有部署提示词”、列表却显示“部署中”的问题。[#67](https://github.com/Jia-Ethan/keysmith-switch/pull/67) |
 | [`v0.3.1`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.3.1) | 新增“公告”：左侧栏的铃铛显示 Keysmith 的公告，重要公告会置顶在 Agent 页面。[#64](https://github.com/Jia-Ethan/keysmith-switch/pull/64) |
