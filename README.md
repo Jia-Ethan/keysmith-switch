@@ -262,6 +262,7 @@ npx tauri build --target aarch64-apple-darwin --config src-tauri/tauri.preview.m
 
 | 版本 | 更新内容 |
 | --- | --- |
+| [`v0.3.9`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.3.9) | Codex 部署被拦截时，引导点「清理」的提示现在写明：清理会永久删除会话历史和登录，想保留聊天记录请先备份 `.codex` 文件夹。[#92](https://github.com/Jia-Ethan/keysmith-switch/pull/92) |
 | [`v0.3.8`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.3.8) | 部署被拦截时，提示改用你选的界面语言说明原因，并告诉你下一步点哪里（例如 Codex 的配置被改过时，引导点「清理」）。[#89](https://github.com/Jia-Ethan/keysmith-switch/pull/89) |
 | [`v0.3.7`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.3.7) | 修复 Windows 上反复弹出命令行窗口；检查更新时会使用 Windows 系统代理，不再因为代理导致超时。[#86](https://github.com/Jia-Ethan/keysmith-switch/pull/86) |
 | [`v0.3.6`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.3.6) | 拓展页的卡片不再显示包摘要，只保留名称、官方角标、条数、大小、版本和安装状态。[#81](https://github.com/Jia-Ethan/keysmith-switch/pull/81) |
