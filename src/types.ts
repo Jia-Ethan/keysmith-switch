@@ -612,6 +612,17 @@ export interface ClaudeRewriteView {
   settingsPath: string | null;
 }
 
+export interface ZcodeRewriteView {
+  /** `unrouted`: personal providers added since connecting that do not go through the relay. */
+  link: { state: "linked"; unrouted: number } | { state: "bypassed" } | { state: "unlinked" };
+  service: { installed: boolean; running: boolean };
+  /** Personal providers connecting routes, with the host each really talks to. */
+  providers: Array<{ name: string; host: string | null }>;
+  /** "no-config", "bad-config" or "no-provider" (only account / Coding Plan providers). */
+  unsupported: string | null;
+  configPath: string | null;
+}
+
 export interface RewriteView {
   enabled: boolean;
   codexEnabled: boolean;
@@ -621,4 +632,5 @@ export interface RewriteView {
   tables: RuleTable[];
   codex: CodexRewriteView;
   claude: ClaudeRewriteView;
+  zcode: ZcodeRewriteView;
 }

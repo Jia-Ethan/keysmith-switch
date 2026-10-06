@@ -73,6 +73,13 @@ const view = (over: Partial<RewriteView> = {}): RewriteView => ({
     unsupported: null,
     settingsPath: "/home/.claude/settings.json",
   },
+  zcode: {
+    link: { state: "unlinked" },
+    service: { installed: false, running: false },
+    providers: [{ name: "Gateway", host: "gateway.example" }],
+    unsupported: null,
+    configPath: "/home/.zcode/v2/provider_config.json",
+  },
   ...over,
 });
 

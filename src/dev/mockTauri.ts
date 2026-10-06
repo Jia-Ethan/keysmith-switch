@@ -134,6 +134,7 @@ const rewrite = {
   ] as any[],
   link: { state: "unlinked" } as any,
   claudeLink: { state: "unlinked" } as any,
+  zcodeLink: { state: "unlinked" } as any,
   running: false,
 };
 
@@ -151,6 +152,13 @@ function rewriteView() {
       upstreamHost: "api.anthropic.com",
       unsupported: null,
       settingsPath: "~/.claude/settings.json",
+    },
+    zcode: {
+      link: rewrite.zcodeLink,
+      service: { installed: rewrite.running, running: rewrite.running },
+      providers: [{ name: "Gateway", host: "gateway.example" }, { name: "Other", host: "other.example" }],
+      unsupported: null,
+      configPath: "~/.zcode/v2/provider_config.json",
     },
     codex: {
       link: rewrite.link,
@@ -226,6 +234,13 @@ async function handle(cmd: string, args: Record<string, any> = {}): Promise<unkn
       return delay(rewriteView(), 700);
     case "rewrite_disconnect_claude":
       rewrite.claudeLink = { state: "unlinked" };
+      return delay(rewriteView(), 500);
+    case "rewrite_connect_zcode":
+      rewrite.zcodeLink = { state: "linked", unrouted: 0 };
+      rewrite.running = true;
+      return delay(rewriteView(), 700);
+    case "rewrite_disconnect_zcode":
+      rewrite.zcodeLink = { state: "unlinked" };
       return delay(rewriteView(), 500);
     case "rewrite_set_table_tools":
       rewrite.tables = rewrite.tables.map((t) => (t.id === args.id ? { ...t, tools: args.tools } : t));

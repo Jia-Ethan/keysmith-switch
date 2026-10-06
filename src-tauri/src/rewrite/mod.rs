@@ -9,6 +9,7 @@
 pub mod claude;
 pub mod link;
 pub mod service;
+pub mod zcode;
 
 use std::path::{Path, PathBuf};
 
@@ -75,6 +76,25 @@ pub struct RewriteView {
     pub tables: Vec<RuleTable>,
     pub codex: CodexView,
     pub claude: ClaudeView,
+    pub zcode: ZcodeView,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ZcodeView {
+    pub link: zcode::ZcodeLinkState,
+    pub service: service::ServiceStatus,
+    /// The personal providers connecting would route, with their own hosts only.
+    pub providers: Vec<ZcodeProviderView>,
+    pub unsupported: Option<String>,
+    pub config_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ZcodeProviderView {
+    pub name: String,
+    pub host: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -116,6 +136,7 @@ pub fn view_with(store: &Store, home: Option<&Path>) -> Result<RewriteView> {
         tables: store.list_rule_tables()?,
         codex: codex_view(store.paths(), home),
         claude: claude_view(store.paths(), home),
+        zcode: zcode_view(store.paths(), home),
     })
 }
 
@@ -208,7 +229,10 @@ pub fn disconnect_codex(paths: &AppPaths) -> Result<link::UnlinkReport> {
 
 /// The relay keeps running while any agent has a link record.
 fn stop_service_if_unused(paths: &AppPaths) -> Result<()> {
-    if read_link_record(paths).is_none() && read_claude_record(paths).is_none() {
+    if read_link_record(paths).is_none()
+        && read_claude_record(paths).is_none()
+        && read_zcode_record(paths).is_none()
+    {
         service::uninstall(paths)?;
     }
     Ok(())
@@ -315,6 +339,131 @@ pub fn disconnect_claude(paths: &AppPaths) -> Result<claude::ClaudeUnlinkReport>
     Ok(report)
 }
 
+// ----- ZCode ------------------------------------------------------------------------
+
+fn zcode_record_path(paths: &AppPaths) -> PathBuf {
+    rewrite_dir(paths).join("zcode-link.json")
+}
+
+pub fn read_zcode_record(paths: &AppPaths) -> Option<zcode::ZcodeLinkRecord> {
+    std::fs::read(zcode_record_path(paths))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+}
+
+fn zcode_view(paths: &AppPaths, home: Option<&Path>) -> ZcodeView {
+    let record = read_zcode_record(paths);
+    let dir = record
+        .as_ref()
+        .map(|record| record.zcode_dir.clone())
+        .or_else(|| zcode::zcode_dir(home));
+    let Some(dir) = dir else {
+        return ZcodeView {
+            link: zcode::ZcodeLinkState::Unlinked,
+            service: service::status(paths),
+            providers: Vec::new(),
+            unsupported: Some("no-config".into()),
+            config_path: None,
+        };
+    };
+    let link = zcode::state(record.as_ref(), &dir);
+    let host = |url: &str| claude::upstream_host(url);
+    let (providers, unsupported) = match zcode::providers(&dir) {
+        Ok(found) => (
+            found
+                .into_iter()
+                .map(|provider| {
+                    // A linked provider shows the address it forwards to, not the relay.
+                    let real = record
+                        .as_ref()
+                        .and_then(|record| {
+                            record
+                                .providers
+                                .iter()
+                                .find(|linked| linked.provider_id == provider.id)
+                        })
+                        .filter(|linked| linked.relay_base_url == provider.base_url)
+                        .map(|linked| linked.previous.clone())
+                        .unwrap_or(provider.base_url);
+                    ZcodeProviderView {
+                        name: provider.name,
+                        host: host(&real),
+                    }
+                })
+                .collect(),
+            None,
+        ),
+        Err(reason) => (Vec::new(), Some(reason.code().to_string())),
+    };
+    ZcodeView {
+        link,
+        service: service::status(paths),
+        providers,
+        unsupported,
+        config_path: Some(dir.join("provider_config.json").display().to_string()),
+    }
+}
+
+/// Start the relay and aim every personal ZCode provider at it.
+pub fn connect_zcode(paths: &AppPaths, home: Option<&Path>) -> Result<()> {
+    let record = read_zcode_record(paths);
+    let dir = record
+        .as_ref()
+        .map(|record| record.zcode_dir.clone())
+        .or_else(|| zcode::zcode_dir(home))
+        .ok_or_else(|| Error::unavailable("no-config: cannot find the ZCode folder"))?;
+    // Nothing changes when ZCode cannot be linked.
+    zcode::providers(&dir).map_err(|reason| {
+        Error::unavailable(format!("{}: ZCode cannot be linked", reason.code()))
+    })?;
+    // ZCode re-reads its file every second, so the relay must know each route before any
+    // provider points at it. Routes for providers already on the relay keep their address.
+    let mut config = service::ensure_config(paths)?;
+    for provider in zcode::providers(&dir).unwrap_or_default() {
+        let key = format!("zcode/{}", provider.id);
+        let still_linked = record.as_ref().and_then(|record| {
+            record.providers.iter().find(|linked| {
+                linked.provider_id == provider.id && linked.relay_base_url == provider.base_url
+            })
+        });
+        let upstream = match still_linked {
+            Some(linked) => linked.previous.clone(),
+            None => provider.base_url,
+        };
+        config.routes.insert(key, upstream);
+    }
+    service::write_config(paths, &config)?;
+    service::install(paths)?;
+    let new_record = zcode::link(&dir, record.as_ref(), |id| {
+        service::route_url(&config, "zcode", id)
+    })?;
+    // Drop routes for providers that are no longer linked.
+    config.routes.retain(|key, _| {
+        key.strip_prefix("zcode/").is_none_or(|id| {
+            new_record
+                .providers
+                .iter()
+                .any(|linked| linked.provider_id == id)
+        })
+    });
+    service::write_config(paths, &config)?;
+    atomic_write(
+        &zcode_record_path(paths),
+        &serde_json::to_string_pretty(&new_record)?,
+    )
+}
+
+/// Put every ZCode provider's address back. Rules stay; the relay stops when no agent uses it.
+pub fn disconnect_zcode(paths: &AppPaths) -> Result<zcode::ZcodeUnlinkReport> {
+    let report = match read_zcode_record(paths) {
+        Some(record) => zcode::unlink(&record)?,
+        None => zcode::ZcodeUnlinkReport::default(),
+    };
+    let _ = std::fs::remove_file(zcode_record_path(paths));
+    stop_service_if_unused(paths)?;
+    Ok(report)
+}
+
 /// Disconnect one agent if it is connected; true when it was. Cleanup calls this before it
 /// saves that agent's settings, so a rollback never brings back an address pointing at a
 /// relay that is gone.
@@ -327,6 +476,10 @@ pub fn disconnect_tool(paths: &AppPaths, tool: crate::models::ToolKind) -> Resul
         }
         ToolKind::Claude if read_claude_record(paths).is_some() => {
             disconnect_claude(paths)?;
+            Ok(true)
+        }
+        ToolKind::Zcode if read_zcode_record(paths).is_some() => {
+            disconnect_zcode(paths)?;
             Ok(true)
         }
         _ => Ok(false),
