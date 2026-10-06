@@ -9,6 +9,7 @@
 //! via `KEYSMITH_SWITCH_UPDATER_PUBKEY` or a rebuilt `tauri.conf.json`.
 //! The matching private key must never be committed or uploaded to GitHub Releases.
 
+use crate::nowindow::NoWindow;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
@@ -1011,14 +1012,13 @@ fn curl_get(url: &str) -> Result<HttpResponse, FetchError> {
     let header_path = dir.path().join("headers");
     let body_path = dir.path().join("body");
     let output = Command::new("curl")
+        .args(crate::netproxy::curl_proxy_args())
         .args([
             "-sS",
             "-L",
-            "--noproxy",
-            "*",
             "--http1.1",
             "--max-time",
-            "20",
+            "30",
             "-D",
             header_path.to_str().unwrap_or("headers"),
             "-o",
@@ -1027,6 +1027,7 @@ fn curl_get(url: &str) -> Result<HttpResponse, FetchError> {
             "%{http_code}",
             url,
         ])
+        .no_window()
         .output()
         .map_err(|e| FetchError::Offline(e.to_string()))?;
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -1092,12 +1093,11 @@ fn is_offline_error(stderr: &str) -> bool {
 
 fn head_size(url: &str) -> Option<u64> {
     let output = Command::new("curl")
+        .args(crate::netproxy::curl_proxy_args())
         .args([
             "-sS",
             "-I",
             "-L",
-            "--noproxy",
-            "*",
             "--http1.1",
             "--max-time",
             "10",
@@ -1105,6 +1105,7 @@ fn head_size(url: &str) -> Option<u64> {
             "\n%{http_code}",
             url,
         ])
+        .no_window()
         .output()
         .ok()?;
     if !output.status.success() {

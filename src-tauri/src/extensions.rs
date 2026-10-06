@@ -11,6 +11,7 @@
 //! Packs only ever write to the prompt library. They never deploy anything, and a prompt
 //! the person has edited is never overwritten.
 
+use crate::nowindow::NoWindow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read;
 use std::path::PathBuf;
@@ -81,6 +82,7 @@ impl Fetch for CurlFetch {
         let dir = tempfile::tempdir().map_err(|error| error.to_string())?;
         let body = dir.path().join("body");
         let output = Command::new("curl")
+            .args(crate::netproxy::curl_proxy_args())
             .args([
                 "-sS",
                 "-L",
@@ -97,6 +99,7 @@ impl Fetch for CurlFetch {
                 body.to_str().unwrap_or("body"),
                 url,
             ])
+            .no_window()
             .output()
             .map_err(|error| error.to_string())?;
         if !output.status.success() {
