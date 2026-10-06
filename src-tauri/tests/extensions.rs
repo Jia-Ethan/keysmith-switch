@@ -718,11 +718,22 @@ fn packs_hosted_outside_the_sources_own_address_are_ignored() {
 
 /// A release with one rule pack at `version`, served at test-`release`.
 fn rule_release(fetch: &Fixture, release: &str, version: &str, rules: serde_json::Value) {
+    rule_release_for(fetch, release, version, rules, &["codex"], "0.2.5");
+}
+
+fn rule_release_for(
+    fetch: &Fixture,
+    release: &str,
+    version: &str,
+    rules: serde_json::Value,
+    tools: &[&str],
+    min_app: &str,
+) {
     let rules_bytes = serde_json::to_vec(&serde_json::json!({ "rules": rules })).unwrap();
     let manifest = serde_json::json!({
-        "schema": 1, "id": "fixture.rules", "version": version, "min_app_version": "0.2.5",
+        "schema": 1, "id": "fixture.rules", "version": version, "min_app_version": min_app,
         "kind": "rules", "name": {"en": "Fixture rules", "zh-CN": "测试规则"},
-        "description": {"en": "Rules for tests"}, "tools": ["codex"],
+        "description": {"en": "Rules for tests"}, "tools": tools,
         "rules": {"file": "rules.json", "sha256": sha(&rules_bytes)}
     })
     .to_string();
@@ -734,9 +745,9 @@ fn rule_release(fetch: &Fixture, release: &str, version: &str, rules: serde_json
     let index = serde_json::json!({
         "schema": 1,
         "packs": [{
-            "id": "fixture.rules", "kind": "rules", "version": version, "min_app_version": "0.2.5",
+            "id": "fixture.rules", "kind": "rules", "version": version, "min_app_version": min_app,
             "name": {"en": "Fixture rules", "zh-CN": "测试规则"}, "description": {"en": "Rules"},
-            "tools": ["codex"], "item_count": 0, "url": url, "sha256": sha(&archive),
+            "tools": tools, "item_count": 0, "url": url, "sha256": sha(&archive),
             "size": archive.len()
         }]
     });
@@ -877,7 +888,10 @@ fn uninstalling_a_rule_pack_removes_its_table() {
     assert_eq!(report.removed, 1);
     assert!(view.packs[0].installed_version.is_none());
     assert!(pack_table(&store).is_none());
-    assert!(store.active_rules().unwrap().is_empty());
+    assert!(store
+        .active_rules(keysmith_rewrite::Tool::Codex)
+        .unwrap()
+        .is_empty());
 }
 
 #[test]
@@ -901,8 +915,100 @@ fn hostile_rule_packs_are_rejected() {
     }
 }
 
+/// Rule packs for other agents need 0.5.0, the first app that rewrites for them.
+const NEXT_MINOR: &str = "0.5.0";
+
+/// Until the release raises the app version, such a pack is listed but not installable.
+fn installs_next_minor(result: Result<impl std::fmt::Debug, ExtError>) -> bool {
+    let app: Vec<u64> = keysmith_switch_lib::models::APP_VERSION
+        .split('.')
+        .map(|part| part.parse().unwrap())
+        .collect();
+    if app < vec![0, 5, 0] {
+        assert!(
+            matches!(result, Err(ExtError::Incompatible(_))),
+            "{result:?}"
+        );
+        return false;
+    }
+    result.unwrap();
+    true
+}
+
 #[test]
-fn a_rule_pack_for_another_tool_is_not_listed() {
+fn a_rule_pack_for_other_agents_installs_scoped_to_them() {
+    let (_tmp, store) = store();
+    let fetch = Fixture::with(&[]);
+    rule_release_for(
+        &fetch,
+        "rcl",
+        "0.1.0",
+        serde_json::json!([{"from": "a", "to": "1"}]),
+        &["claude", "zcode"],
+        NEXT_MINOR,
+    );
+    if !installs_next_minor(install(
+        &store,
+        &fetch,
+        &source("rcl"),
+        "fixture.rules",
+        "en",
+        true,
+    )) {
+        return;
+    }
+    let table = pack_table(&store).unwrap();
+    use keysmith_rewrite::Tool;
+    assert_eq!(table.tools, Some(vec![Tool::Claude, Tool::Zcode]));
+    assert!(store.active_rules(Tool::Codex).unwrap().is_empty());
+    assert_eq!(store.active_rules(Tool::Claude).unwrap().len(), 1);
+}
+
+#[test]
+fn a_rule_pack_for_every_agent_applies_everywhere() {
+    let (_tmp, store) = store();
+    let fetch = Fixture::with(&[]);
+    rule_release_for(
+        &fetch,
+        "rall",
+        "0.1.0",
+        serde_json::json!([{"from": "a", "to": "1"}]),
+        &["claude", "codex", "grok", "zcode"],
+        NEXT_MINOR,
+    );
+    if !installs_next_minor(install(
+        &store,
+        &fetch,
+        &source("rall"),
+        "fixture.rules",
+        "en",
+        true,
+    )) {
+        return;
+    }
+    assert_eq!(pack_table(&store).unwrap().tools, None);
+}
+
+#[test]
+fn a_rule_pack_for_other_agents_must_require_this_app() {
+    // A v0.4.0 app only lists packs for exactly ["codex"]; anything else must say 0.5.0.
+    let (_tmp, store) = store();
+    let fetch = Fixture::with(&[]);
+    rule_release_for(
+        &fetch,
+        "rold",
+        "0.1.0",
+        serde_json::json!([{"from": "a", "to": "1"}]),
+        &["claude"],
+        "0.4.0",
+    );
+    assert!(refresh(&store, &fetch, &source("rold"), "en")
+        .packs
+        .is_empty());
+}
+
+#[test]
+fn a_rule_pack_with_an_old_min_app_version_for_another_tool_is_not_listed() {
     let (_tmp, store) = store();
     let fetch = Fixture::with(&[]);
     let index = serde_json::json!({

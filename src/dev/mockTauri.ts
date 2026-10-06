@@ -127,9 +127,9 @@ const rewrite = {
   enabled: true,
   codexEnabled: true,
   tables: [
-    { id: "user", kind: "user", title: "", enabled: true, priority: 0, packId: null, packVersion: null, rules: [{ from: "提示词", to: "指令" }], pending: null },
+    { id: "user", kind: "user", title: "", enabled: true, priority: 0, packId: null, packVersion: null, tools: null, rules: [{ from: "提示词", to: "指令" }], pending: null },
     ...(new URLSearchParams(window.location.search).get("rewrite") === "pending"
-      ? [{ id: "pack:example.rules", kind: "pack", title: "示例规则包", enabled: true, priority: 1, packId: "example.rules", packVersion: "0.1.0", rules: [{ from: "foo", to: "bar" }], pending: { version: "0.2.0", title: "示例规则包", rules: [{ from: "foo", to: "baz" }, { from: "qux", to: "" }] } }]
+      ? [{ id: "pack:example.rules", kind: "pack", title: "示例规则包", enabled: true, priority: 1, packId: "example.rules", packVersion: "0.1.0", tools: ["codex", "claude"], rules: [{ from: "foo", to: "bar" }], pending: { version: "0.2.0", title: "示例规则包", rules: [{ from: "foo", to: "baz" }, { from: "qux", to: "" }] } }]
       : []),
   ] as any[],
   link: { state: "unlinked" } as any,
@@ -209,6 +209,9 @@ async function handle(cmd: string, args: Record<string, any> = {}): Promise<unkn
     case "rewrite_save_user_rules":
       rewrite.tables[0] = { ...rewrite.tables[0], rules: args.rules };
       return delay(rewriteView());
+    case "rewrite_set_table_tools":
+      rewrite.tables = rewrite.tables.map((t) => (t.id === args.id ? { ...t, tools: args.tools } : t));
+      return rewriteView();
     case "rewrite_set_table_enabled":
       rewrite.tables = rewrite.tables.map((t) => (t.id === args.id ? { ...t, enabled: args.enabled } : t));
       return rewriteView();

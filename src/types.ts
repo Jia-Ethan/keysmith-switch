@@ -171,7 +171,11 @@ export interface Settings {
   extensionsEnabled: boolean;
   /** Input rewrite master switch. Off keeps the rules but rewrites nothing. */
   rewriteEnabled: boolean;
+  /** Input rewrite per agent, under the master switch. */
   rewriteCodexEnabled: boolean;
+  rewriteClaudeEnabled: boolean;
+  rewriteGrokEnabled: boolean;
+  rewriteZcodeEnabled: boolean;
 }
 
 export type SettingsPatch = Partial<Settings>;
@@ -382,6 +386,9 @@ export const DEFAULT_SETTINGS: Settings = {
   extensionsEnabled: false,
   rewriteEnabled: false,
   rewriteCodexEnabled: true,
+  rewriteClaudeEnabled: true,
+  rewriteGrokEnabled: true,
+  rewriteZcodeEnabled: true,
 };
 
 export const TOOL_IDS: ToolId[] = ["claude", "codex", "grok", "zcode"];
@@ -572,6 +579,8 @@ export interface RuleTable {
   priority: number;
   packId: string | null;
   packVersion: string | null;
+  /** The agents this table applies to; null means every agent. */
+  tools: ToolId[] | null;
   rules: RewriteRule[];
   /** An update to an enabled pack table that waits for the person to accept it. */
   pending: RulePendingUpdate | null;

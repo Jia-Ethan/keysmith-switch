@@ -6,7 +6,7 @@ use crate::error::{Error, Result};
 use crate::models::now_rfc3339;
 use crate::paths::AppPaths;
 
-pub const SCHEMA_VERSION: i64 = 2;
+pub const SCHEMA_VERSION: i64 = 3;
 /// The oldest schema a backup may carry. Restoring one migrates it forward.
 pub const MIN_RESTORABLE_SCHEMA: i64 = 1;
 
@@ -117,6 +117,11 @@ CREATE TABLE IF NOT EXISTS rules (
 CREATE INDEX IF NOT EXISTS idx_rules_table ON rules(table_id, position);
 "#;
 
+/// Which agents a rule table applies to: a JSON array of tool ids, or NULL for every agent.
+const MIGRATION_3: &str = r#"
+ALTER TABLE rule_tables ADD COLUMN tools_json TEXT;
+"#;
+
 pub fn configure(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "PRAGMA foreign_keys = ON;
@@ -176,6 +181,11 @@ pub fn apply_pending(conn: &Connection, paths: &AppPaths) -> Result<Vec<i64>> {
         conn.execute_batch(MIGRATION_2)?;
         record_version(conn, 2)?;
         applied.push(2);
+    }
+    if current < 3 {
+        conn.execute_batch(MIGRATION_3)?;
+        record_version(conn, 3)?;
+        applied.push(3);
     }
     Ok(applied)
 }

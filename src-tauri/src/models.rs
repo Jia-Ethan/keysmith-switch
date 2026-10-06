@@ -433,9 +433,16 @@ pub struct Settings {
     /// Input rewrite master switch. Off keeps the rules but rewrites nothing.
     #[serde(default)]
     pub rewrite_enabled: bool,
-    /// Input rewrite for Codex, under the master switch.
+    /// Input rewrite per agent, under the master switch. An agent rewrites only once it is
+    /// also connected, so these default on.
     #[serde(default = "enabled_by_default")]
     pub rewrite_codex_enabled: bool,
+    #[serde(default = "enabled_by_default")]
+    pub rewrite_claude_enabled: bool,
+    #[serde(default = "enabled_by_default")]
+    pub rewrite_grok_enabled: bool,
+    #[serde(default = "enabled_by_default")]
+    pub rewrite_zcode_enabled: bool,
 }
 
 fn enabled_by_default() -> bool {
@@ -457,6 +464,9 @@ impl Default for Settings {
             extensions_enabled: false,
             rewrite_enabled: false,
             rewrite_codex_enabled: true,
+            rewrite_claude_enabled: true,
+            rewrite_grok_enabled: true,
+            rewrite_zcode_enabled: true,
         }
     }
 }
@@ -476,6 +486,9 @@ pub struct SettingsPatch {
     pub extensions_enabled: Option<bool>,
     pub rewrite_enabled: Option<bool>,
     pub rewrite_codex_enabled: Option<bool>,
+    pub rewrite_claude_enabled: Option<bool>,
+    pub rewrite_grok_enabled: Option<bool>,
+    pub rewrite_zcode_enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

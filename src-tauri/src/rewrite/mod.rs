@@ -13,7 +13,9 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-use keysmith_rewrite::{Snapshot, ToolSwitches, SNAPSHOT_SCHEMA};
+use std::collections::BTreeMap;
+
+use keysmith_rewrite::{Snapshot, Tool, ToolSwitches, SNAPSHOT_SCHEMA};
 
 use crate::db::rules::RuleTable;
 use crate::db::Store;
@@ -28,17 +30,27 @@ pub fn snapshot_path(paths: &AppPaths) -> PathBuf {
     rewrite_dir(paths).join("rules.json")
 }
 
+/// The snapshot the relay reads. `rules` is Codex's list, the one a v0.4.0 relay reads;
+/// `byTool` is written only when some agent's list differs from it.
 pub fn build_snapshot(store: &Store) -> Result<Snapshot> {
     let settings = store.get_settings()?;
+    let codex = store.active_rules(Tool::Codex)?;
+    let mut by_tool = BTreeMap::new();
+    for tool in Tool::ALL {
+        by_tool.insert(tool, store.active_rules(tool)?);
+    }
+    let uniform = by_tool.values().all(|rules| *rules == codex);
     Ok(Snapshot {
         schema: SNAPSHOT_SCHEMA,
         enabled: settings.rewrite_enabled,
         tools: ToolSwitches {
             codex: settings.rewrite_codex_enabled,
-            ..Default::default()
+            claude: settings.rewrite_claude_enabled,
+            grok: settings.rewrite_grok_enabled,
+            zcode: settings.rewrite_zcode_enabled,
         },
-        rules: store.active_rules()?,
-        by_tool: None,
+        rules: codex,
+        by_tool: (!uniform).then_some(by_tool),
     })
 }
 

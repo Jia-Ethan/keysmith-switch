@@ -33,6 +33,7 @@ const mine: RuleTable = {
   priority: 0,
   packId: null,
   packVersion: null,
+  tools: null,
   rules: [],
   pending: null,
 };
@@ -45,6 +46,7 @@ const pack = (over: Partial<RuleTable> = {}): RuleTable => ({
   priority: 1,
   packId: "p.one",
   packVersion: "1.0.0",
+  tools: ["codex"],
   rules: [{ from: "a", to: "1" }],
   pending: null,
   ...over,

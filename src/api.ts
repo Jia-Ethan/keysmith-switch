@@ -427,8 +427,19 @@ export function rewriteState(): Promise<RewriteView> {
   return call("rewrite_state", {});
 }
 
-export function rewriteSetSwitches(input: { enabled?: boolean; codexEnabled?: boolean }): Promise<RewriteView> {
+export function rewriteSetSwitches(input: {
+  enabled?: boolean;
+  codexEnabled?: boolean;
+  claudeEnabled?: boolean;
+  grokEnabled?: boolean;
+  zcodeEnabled?: boolean;
+}): Promise<RewriteView> {
   return call("rewrite_set_switches", input);
+}
+
+/** Narrow a rule table to some agents, or null for every agent. */
+export function rewriteSetTableTools(id: string, tools: ToolId[] | null): Promise<RewriteView> {
+  return call("rewrite_set_table_tools", { id, tools });
 }
 
 export function rewriteSaveUserRules(rules: RewriteRule[]): Promise<RewriteView> {
