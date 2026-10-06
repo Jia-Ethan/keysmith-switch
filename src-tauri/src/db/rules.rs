@@ -4,7 +4,7 @@
 use rusqlite::{params, OptionalExtension, Transaction};
 use serde::{Deserialize, Serialize};
 
-use keysmith_rewrite::{validate_table, Rule};
+use keysmith_rewrite::{validate_table, Rule, Tool};
 
 use super::Store;
 use crate::error::{Error, Result};
@@ -38,6 +38,8 @@ pub struct RuleTable {
     pub priority: i64,
     pub pack_id: Option<String>,
     pub pack_version: Option<String>,
+    /// The agents this table applies to; `None` means every agent.
+    pub tools: Option<Vec<Tool>>,
     pub rules: Vec<Rule>,
     /// A pack update that waits for the person to accept it.
     pub pending: Option<PendingUpdate>,
@@ -51,6 +53,33 @@ pub struct PendingUpdate {
     pub rules: Vec<Rule>,
 }
 
+impl RuleTable {
+    pub fn applies_to(&self, tool: Tool) -> bool {
+        self.tools
+            .as_ref()
+            .is_none_or(|tools| tools.contains(&tool))
+    }
+}
+
+fn parse_tools(text: &str) -> Option<Vec<Tool>> {
+    let tools: Vec<Tool> = serde_json::from_str(text).ok()?;
+    (!tools.is_empty()).then_some(tools)
+}
+
+/// Tools in a fixed order, so the stored text only changes when the set does.
+fn tools_json(tools: &[Tool]) -> String {
+    let mut sorted = tools.to_vec();
+    sorted.sort();
+    sorted.dedup();
+    serde_json::to_string(&sorted).unwrap_or_else(|_| "[]".into())
+}
+
+/// A pack naming every agent applies to every agent, including ones added later.
+fn pack_tools_json(tools: &[Tool]) -> Option<String> {
+    let all = Tool::ALL.iter().all(|tool| tools.contains(tool));
+    (!all && !tools.is_empty()).then(|| tools_json(tools))
+}
+
 fn invalid_rules(error: keysmith_rewrite::RuleError) -> Error {
     Error::invalid(error.to_string())
 }
@@ -60,7 +89,7 @@ impl Store {
     pub fn list_rule_tables(&self) -> Result<Vec<RuleTable>> {
         let conn = self.conn()?;
         let mut stmt = conn.prepare(
-            "SELECT id, kind, title, enabled, priority, pack_id, pack_version, pending_json
+            "SELECT id, kind, title, enabled, priority, pack_id, pack_version, pending_json, tools_json
              FROM rule_tables
              ORDER BY CASE kind WHEN 'user' THEN 0 ELSE 1 END, priority, created_at",
         )?;
@@ -68,6 +97,7 @@ impl Store {
             .query_map([], |row| {
                 let kind: String = row.get(1)?;
                 let pending: Option<String> = row.get(7)?;
+                let tools: Option<String> = row.get(8)?;
                 Ok(RuleTable {
                     id: row.get(0)?,
                     kind: if kind == "user" {
@@ -80,6 +110,7 @@ impl Store {
                     priority: row.get(4)?,
                     pack_id: row.get(5)?,
                     pack_version: row.get(6)?,
+                    tools: tools.as_deref().and_then(parse_tools),
                     rules: Vec::new(),
                     pending: pending.and_then(|text| serde_json::from_str(&text).ok()),
                 })
@@ -109,6 +140,7 @@ impl Store {
                     priority: 0,
                     pack_id: None,
                     pack_version: None,
+                    tools: None,
                     rules: Vec::new(),
                     pending: None,
                 },
@@ -117,14 +149,40 @@ impl Store {
         Ok(tables)
     }
 
-    /// The rules of every enabled table, highest priority first.
-    pub fn active_rules(&self) -> Result<Vec<Rule>> {
+    /// The rules of every enabled table that applies to `tool`, highest priority first.
+    pub fn active_rules(&self, tool: Tool) -> Result<Vec<Rule>> {
         Ok(self
             .list_rule_tables()?
             .into_iter()
-            .filter(|table| table.enabled)
+            .filter(|table| table.enabled && table.applies_to(tool))
             .flat_map(|table| table.rules)
             .collect())
+    }
+
+    /// Narrow a table to some agents, or `None` for every agent. An empty list is refused:
+    /// turn the table off instead.
+    pub fn set_rule_table_tools(&self, id: &str, tools: Option<&[Tool]>) -> Result<Vec<RuleTable>> {
+        if tools.is_some_and(<[Tool]>::is_empty) {
+            return Err(Error::invalid(
+                "a rule table must apply to at least one agent",
+            ));
+        }
+        {
+            let mut conn = self.conn()?;
+            let tx = conn.transaction()?;
+            if id == USER_TABLE_ID {
+                ensure_user_table(&tx)?;
+            }
+            let changed = tx.execute(
+                "UPDATE rule_tables SET tools_json = ?2, updated_at = ?3 WHERE id = ?1",
+                params![id, tools.map(tools_json), now_rfc3339()],
+            )?;
+            if changed == 0 {
+                return Err(Error::invalid("rule table not found"));
+            }
+            tx.commit()?;
+        }
+        self.list_rule_tables()
     }
 
     /// Replace "My rules" with these, in this order.
@@ -198,13 +256,15 @@ impl Store {
 
     /// Install a pack table or update one that is not enabled. An enabled table keeps its
     /// rules and holds the new version as pending until [`Store::accept_pack_update`].
-    /// Returns true when the update is pending.
+    /// A new table applies to the agents the pack names; after that the person's choice of
+    /// agents stays. Returns true when the update is pending.
     pub fn upsert_pack_rules(
         &self,
         pack_id: &str,
         version: &str,
         title: &str,
         rules: &[Rule],
+        tools: &[Tool],
         enable: bool,
     ) -> Result<bool> {
         validate_table(rules).map_err(invalid_rules)?;
@@ -228,8 +288,9 @@ impl Store {
                 let now = now_rfc3339();
                 tx.execute(
                     "INSERT INTO rule_tables
-                     (id, kind, title, enabled, priority, pack_id, pack_version, created_at, updated_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
+                     (id, kind, title, enabled, priority, pack_id, pack_version, tools_json,
+                      created_at, updated_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
                     params![
                         id,
                         TableKind::Pack.as_str(),
@@ -238,6 +299,7 @@ impl Store {
                         priority,
                         pack_id,
                         version,
+                        pack_tools_json(tools),
                         now
                     ],
                 )?;

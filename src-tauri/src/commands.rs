@@ -822,6 +822,9 @@ pub fn update_settings(
     extensions_enabled: Option<bool>,
     rewrite_enabled: Option<bool>,
     rewrite_codex_enabled: Option<bool>,
+    rewrite_claude_enabled: Option<bool>,
+    rewrite_grok_enabled: Option<bool>,
+    rewrite_zcode_enabled: Option<bool>,
 ) -> Result<Settings> {
     let settings = state.store.update_settings(SettingsPatch {
         language,
@@ -836,8 +839,16 @@ pub fn update_settings(
         extensions_enabled,
         rewrite_enabled,
         rewrite_codex_enabled,
+        rewrite_claude_enabled,
+        rewrite_grok_enabled,
+        rewrite_zcode_enabled,
     })?;
-    if rewrite_enabled.is_some() || rewrite_codex_enabled.is_some() {
+    if rewrite_enabled.is_some()
+        || rewrite_codex_enabled.is_some()
+        || rewrite_claude_enabled.is_some()
+        || rewrite_grok_enabled.is_some()
+        || rewrite_zcode_enabled.is_some()
+    {
         crate::rewrite::publish(&state.store)?;
     }
     Ok(settings)
@@ -2121,13 +2132,31 @@ pub fn rewrite_set_switches(
     state: State<'_, AppState>,
     enabled: Option<bool>,
     codex_enabled: Option<bool>,
+    claude_enabled: Option<bool>,
+    grok_enabled: Option<bool>,
+    zcode_enabled: Option<bool>,
 ) -> Result<crate::rewrite::RewriteView> {
     crate::rewrite::change(&state.store, |store| {
         store.update_settings(SettingsPatch {
             rewrite_enabled: enabled,
             rewrite_codex_enabled: codex_enabled,
+            rewrite_claude_enabled: claude_enabled,
+            rewrite_grok_enabled: grok_enabled,
+            rewrite_zcode_enabled: zcode_enabled,
             ..Default::default()
         })?;
+        Ok(())
+    })
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn rewrite_set_table_tools(
+    state: State<'_, AppState>,
+    id: String,
+    tools: Option<Vec<keysmith_rewrite::Tool>>,
+) -> Result<crate::rewrite::RewriteView> {
+    crate::rewrite::change(&state.store, |store| {
+        store.set_rule_table_tools(&id, tools.as_deref())?;
         Ok(())
     })
 }

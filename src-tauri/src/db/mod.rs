@@ -773,6 +773,15 @@ impl Store {
         if let Some(value) = patch.rewrite_codex_enabled {
             settings.rewrite_codex_enabled = value;
         }
+        if let Some(value) = patch.rewrite_claude_enabled {
+            settings.rewrite_claude_enabled = value;
+        }
+        if let Some(value) = patch.rewrite_grok_enabled {
+            settings.rewrite_grok_enabled = value;
+        }
+        if let Some(value) = patch.rewrite_zcode_enabled {
+            settings.rewrite_zcode_enabled = value;
+        }
         let conn = self.conn()?;
         write_settings(&conn, &settings)?;
         Ok(settings)
@@ -1111,6 +1120,18 @@ fn write_settings(conn: &Connection, settings: &Settings) -> Result<()> {
             "rewriteCodexEnabled",
             settings.rewrite_codex_enabled.to_string(),
         ),
+        (
+            "rewriteClaudeEnabled",
+            settings.rewrite_claude_enabled.to_string(),
+        ),
+        (
+            "rewriteGrokEnabled",
+            settings.rewrite_grok_enabled.to_string(),
+        ),
+        (
+            "rewriteZcodeEnabled",
+            settings.rewrite_zcode_enabled.to_string(),
+        ),
     ];
     for (key, value) in pairs {
         conn.execute(
@@ -1156,6 +1177,9 @@ fn apply_setting(settings: &mut Settings, key: &str, value: &str) {
         "extensionsEnabled" => settings.extensions_enabled = truthy(value),
         "rewriteEnabled" => settings.rewrite_enabled = truthy(value),
         "rewriteCodexEnabled" => settings.rewrite_codex_enabled = truthy(value),
+        "rewriteClaudeEnabled" => settings.rewrite_claude_enabled = truthy(value),
+        "rewriteGrokEnabled" => settings.rewrite_grok_enabled = truthy(value),
+        "rewriteZcodeEnabled" => settings.rewrite_zcode_enabled = truthy(value),
         _ => {}
     }
 }

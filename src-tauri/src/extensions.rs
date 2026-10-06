@@ -49,8 +49,16 @@ const MAX_TAGS: usize = 8;
 const MAX_TAG_LEN: usize = 24;
 const LOCALES: [&str; 3] = ["zh-CN", "zh-TW", "en"];
 const TOOLS: [&str; 4] = ["claude", "codex", "grok", "zcode"];
-/// Input rewrite runs for Codex only, so a rule pack names exactly that tool.
-const RULE_TOOL: &str = "codex";
+/// A rule pack for any agent other than Codex alone needs the app that rewrites for it.
+/// v0.4.0 only listed rule packs for exactly `["codex"]`.
+const RULE_CODEX_ONLY: &str = "codex";
+const RULES_ANY_AGENT_MIN_APP: (u64, u64, u64) = (0, 5, 0);
+
+/// True when a rule pack's agents and minimum app version agree.
+fn rule_tools_ok(tools: &[&str], min_app_version: &str) -> bool {
+    tools == [RULE_CODEX_ONLY]
+        || semver(min_app_version).is_some_and(|needs| needs >= RULES_ANY_AGENT_MIN_APP)
+}
 /// Every prompt a pack adds carries this tag, so they can be found in the library.
 pub const PACK_TAG: &str = "extension";
 
@@ -273,8 +281,11 @@ fn parse_index_pack(value: &Value, source: &Source) -> Option<IndexPack> {
         .filter_map(|tool| tool.as_str().map(str::to_string))
         .filter(|tool| TOOLS.contains(&tool.as_str()))
         .collect();
-    if kind == PackKind::Rules && tools != [RULE_TOOL] {
-        return None;
+    if kind == PackKind::Rules {
+        let names: Vec<&str> = tools.iter().map(String::as_str).collect();
+        if names.is_empty() || !rule_tools_ok(&names, &min_app_version) {
+            return None;
+        }
     }
     Some(IndexPack {
         id,
@@ -353,6 +364,8 @@ pub struct LoadedPack {
     pub items: Vec<PackItem>,
     /// Set for a rule pack, in the pack's order.
     pub rules: Vec<keysmith_rewrite::Rule>,
+    /// The agents a rule pack is for.
+    pub tools: Vec<keysmith_rewrite::Tool>,
 }
 
 fn safe_name(name: &str) -> bool {
@@ -469,8 +482,8 @@ fn load_manifest(
     }
     let name = loc(manifest.get("name").unwrap_or(&Value::Null)).unwrap_or_default();
     if expected.kind == PackKind::Rules {
-        if tools != [RULE_TOOL] {
-            return invalid("pack.json: a rule pack is for codex only");
+        if !rule_tools_ok(&tools, text("min_app_version").unwrap_or("")) {
+            return invalid("pack.json: a rule pack for other agents needs min_app_version 0.5.0");
         }
         let rules = load_rules(manifest, files)?;
         return Ok(LoadedPack {
@@ -480,6 +493,10 @@ fn load_manifest(
             name,
             items: Vec::new(),
             rules,
+            tools: tools
+                .iter()
+                .filter_map(|tool| keysmith_rewrite::Tool::parse(tool))
+                .collect(),
         });
     }
     let entries = manifest
@@ -557,6 +574,7 @@ fn load_manifest(
         name,
         items,
         rules: Vec::new(),
+        tools: Vec::new(),
     })
 }
 
@@ -1015,7 +1033,14 @@ fn apply_rules(
 ) -> std::result::Result<Report, ExtError> {
     let previous = state.packs.get(&pack.id).cloned();
     let title = pick(&pack.name, language);
-    let pending = store.upsert_pack_rules(&pack.id, &pack.version, &title, &pack.rules, enable)?;
+    let pending = store.upsert_pack_rules(
+        &pack.id,
+        &pack.version,
+        &title,
+        &pack.rules,
+        &pack.tools,
+        enable,
+    )?;
     crate::rewrite::publish(store)?;
     let mut report = Report::default();
     if previous.is_none() {

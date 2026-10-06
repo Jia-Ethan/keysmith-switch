@@ -136,6 +136,7 @@ pub fn run() {
             commands::mark_first_run_done,
             commands::rewrite_state,
             commands::rewrite_set_switches,
+            commands::rewrite_set_table_tools,
             commands::rewrite_save_user_rules,
             commands::rewrite_set_table_enabled,
             commands::rewrite_reorder_tables,
