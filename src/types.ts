@@ -507,6 +507,8 @@ export interface CleanupResult {
   extrasCleared?: number;
   erased?: number;
   keychainCleared?: boolean;
+  /** Input rewrite was connected for this agent and was disconnected before the snapshot. */
+  rewriteDisconnected?: boolean;
 }
 
 export interface RollbackPlan {
@@ -600,9 +602,23 @@ export interface CodexRewriteView {
   codexDir: string | null;
 }
 
+export interface ClaudeRewriteView {
+  link: { state: "linked" | "bypassed" | "unlinked" };
+  service: { installed: boolean; running: boolean };
+  /** The host Claude Code reaches without the relay; restored on disconnect. */
+  upstreamHost: string | null;
+  /** Why Claude Code cannot be linked: "bedrock", "vertex", "bad-settings", "not-http", "no-config". */
+  unsupported: string | null;
+  settingsPath: string | null;
+}
+
 export interface RewriteView {
   enabled: boolean;
   codexEnabled: boolean;
+  claudeEnabled: boolean;
+  grokEnabled: boolean;
+  zcodeEnabled: boolean;
   tables: RuleTable[];
   codex: CodexRewriteView;
+  claude: ClaudeRewriteView;
 }

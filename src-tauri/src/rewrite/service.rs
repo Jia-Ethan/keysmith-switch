@@ -99,6 +99,14 @@ pub fn base_url(config: &RelayConfig, provider: &str) -> String {
     )
 }
 
+/// The relay address for one agent's upstream: `/t/<token>/<tool>/<upstream>`.
+pub fn route_url(config: &RelayConfig, tool: &str, upstream: &str) -> String {
+    format!(
+        "http://127.0.0.1:{}/t/{}/{tool}/{upstream}",
+        config.port, config.token
+    )
+}
+
 /// True when the relay answers on its port within a short wait.
 pub fn healthy(config: &RelayConfig) -> bool {
     let address = SocketAddr::from((Ipv4Addr::LOCALHOST, config.port));

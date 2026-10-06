@@ -438,6 +438,14 @@ export function rewriteSetSwitches(input: {
 }
 
 /** Narrow a rule table to some agents, or null for every agent. */
+export function rewriteConnectClaude(): Promise<RewriteView> {
+  return call("rewrite_connect_claude", {});
+}
+
+export function rewriteDisconnectClaude(): Promise<RewriteView> {
+  return call("rewrite_disconnect_claude", {});
+}
+
 export function rewriteSetTableTools(id: string, tools: ToolId[] | null): Promise<RewriteView> {
   return call("rewrite_set_table_tools", { id, tools });
 }
