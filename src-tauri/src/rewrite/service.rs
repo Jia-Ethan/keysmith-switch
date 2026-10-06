@@ -127,8 +127,10 @@ pub fn healthy(config: &RelayConfig) -> bool {
         .is_ok_and(|n| head[..n].starts_with(b"HTTP/1.1 200"))
 }
 
+/// Up to about ten seconds: macOS checks a newly placed binary on its first launch, which
+/// can hold the relay back for several seconds after an app update.
 pub fn wait_healthy(config: &RelayConfig) -> bool {
-    for _ in 0..20 {
+    for _ in 0..65 {
         if healthy(config) {
             return true;
         }

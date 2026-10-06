@@ -81,6 +81,13 @@ fn connect_send_disconnect() {
     );
     std::fs::write(claude.join("settings.json"), &claude_settings).unwrap();
 
+    let zcode = home.join(".zcode").join("v2");
+    std::fs::create_dir_all(&zcode).unwrap();
+    let zcode_config = format!(
+        "{{\n  \"schemaVersion\": 1,\n  \"config\": {{\n    \"providerConfigRules\": {{\n      \"providerRules\": [\n        {{\n          \"providerId\": \"p1\",\n          \"config\": {{\n            \"group\": \"standard-personal\",\n            \"api\": {{\n              \"type\": \"openai-chat-completions\",\n              \"baseUrl\": \"http://127.0.0.1:{up_port}/v1\"\n            }}\n          }}\n        }}\n      ]\n    }}\n  }}\n}}\n"
+    );
+    std::fs::write(zcode.join("provider_config.json"), &zcode_config).unwrap();
+
     let paths = AppPaths::from_home(tmp.path().join(".keysmith-switch"));
     let store = Store::open(&paths).unwrap();
     rewrite::change(&store, |store| {
@@ -146,6 +153,43 @@ fn connect_send_disconnect() {
         assert!(
             body.contains("<system-reminder>提示词</system-reminder>") && body.contains("改指令"),
             "{body}"
+        );
+
+        // ZCode: every personal provider goes through the relay; subagent requests do not.
+        rewrite::connect_zcode(&paths, Some(&home)).unwrap();
+        let view = rewrite::view_with(&store, Some(&home)).unwrap();
+        assert_eq!(
+            view.zcode.link,
+            keysmith_switch_lib::rewrite::zcode::ZcodeLinkState::Linked { unrouted: 0 }
+        );
+        let zconfig: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(zcode.join("provider_config.json")).unwrap(),
+        )
+        .unwrap();
+        let zbase = zconfig["config"]["providerConfigRules"]["providerRules"][0]["config"]["api"]
+            ["baseUrl"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        for (kind, expect) in [("main", "改指令"), ("subagent", "改提示词")] {
+            let out = std::process::Command::new("curl")
+                .args(["-sS", "-X", "POST", &format!("{zbase}/chat/completions")])
+                .args(["-H", "content-type: application/json"])
+                .args([
+                    "-H",
+                    &format!("x-zcode-session-type: {kind}"),
+                    "--data-binary",
+                ])
+                .arg(r#"{"messages":[{"role":"user","content":"改提示词"}]}"#)
+                .output()
+                .unwrap();
+            assert_eq!(String::from_utf8_lossy(&out.stdout), "data: ok\n\n");
+            assert!(received.lock().unwrap().contains(expect), "{kind}");
+        }
+        rewrite::disconnect_zcode(&paths).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(zcode.join("provider_config.json")).unwrap(),
+            zcode_config
         );
 
         // Disconnecting Codex leaves the relay running for Claude Code.
