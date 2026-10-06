@@ -144,6 +144,8 @@ pub fn run() {
             commands::rewrite_accept_update,
             commands::rewrite_connect_codex,
             commands::rewrite_disconnect_codex,
+            commands::rewrite_connect_claude,
+            commands::rewrite_disconnect_claude,
         ]);
 
     builder

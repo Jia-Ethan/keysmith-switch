@@ -1,5 +1,5 @@
-//! Installs the relay as a LaunchAgent under a throwaway label and folder, connects a
-//! temporary Codex config to it, and sends a request through. macOS only, and only when
+//! Installs the relay as a LaunchAgent under a throwaway label and folder, connects
+//! temporary Codex and Claude Code configs to it, and sends a request through. macOS only, and only when
 //! KEYSMITH_SWITCH_LAUNCHD_TEST=1, because it talks to the real launchd.
 
 #![cfg(target_os = "macos")]
@@ -10,7 +10,7 @@ use std::net::TcpListener;
 use keysmith_switch_lib::db::Store;
 use keysmith_switch_lib::models::SettingsPatch;
 use keysmith_switch_lib::paths::AppPaths;
-use keysmith_switch_lib::rewrite::{self, link::LinkState, service};
+use keysmith_switch_lib::rewrite::{self, claude::ClaudeLinkState, link::LinkState, service};
 
 #[test]
 fn connect_send_disconnect() {
@@ -74,6 +74,13 @@ fn connect_send_disconnect() {
     )
     .unwrap();
 
+    let claude = home.join(".claude");
+    std::fs::create_dir_all(&claude).unwrap();
+    let claude_settings = format!(
+        "{{\n  \"env\": {{\n    \"ANTHROPIC_BASE_URL\": \"http://127.0.0.1:{up_port}\"\n  }}\n}}\n"
+    );
+    std::fs::write(claude.join("settings.json"), &claude_settings).unwrap();
+
     let paths = AppPaths::from_home(tmp.path().join(".keysmith-switch"));
     let store = Store::open(&paths).unwrap();
     rewrite::change(&store, |store| {
@@ -86,6 +93,7 @@ fn connect_send_disconnect() {
     })
     .unwrap();
 
+    let log = paths.logs.join("relay.log");
     let result = std::panic::catch_unwind(|| {
         rewrite::connect_codex(&paths, Some(&home)).unwrap();
         let view = rewrite::view_with(&store, Some(&home)).unwrap();
@@ -114,12 +122,52 @@ fn connect_send_disconnect() {
             .unwrap();
         assert_eq!(String::from_utf8_lossy(&out.stdout), "data: ok\n\n");
         assert!(received.lock().unwrap().contains("改指令"));
+
+        // Claude Code shares the relay. Its settings point at the same echoing upstream.
+        rewrite::connect_claude(&paths, Some(&home)).unwrap();
+        let view = rewrite::view_with(&store, Some(&home)).unwrap();
+        assert_eq!(view.claude.link, ClaudeLinkState::Linked);
+        assert_eq!(view.claude.upstream_host.as_deref(), Some("127.0.0.1"));
+        let settings: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(claude.join("settings.json")).unwrap())
+                .unwrap();
+        let base = settings["env"]["ANTHROPIC_BASE_URL"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        let out = std::process::Command::new("curl")
+            .args(["-sS", "-X", "POST", &format!("{base}/v1/messages?beta=true")])
+            .args(["-H", "content-type: application/json", "--data-binary"])
+            .arg(r#"{"messages":[{"role":"user","content":[{"type":"text","text":"<system-reminder>提示词</system-reminder>"},{"type":"text","text":"改提示词"}]}]}"#)
+            .output()
+            .unwrap();
+        assert_eq!(String::from_utf8_lossy(&out.stdout), "data: ok\n\n");
+        let body = received.lock().unwrap().clone();
+        assert!(
+            body.contains("<system-reminder>提示词</system-reminder>") && body.contains("改指令"),
+            "{body}"
+        );
+
+        // Disconnecting Codex leaves the relay running for Claude Code.
+        rewrite::disconnect_codex(&paths).unwrap();
+        assert!(service::status(&paths).running);
     });
 
     rewrite::disconnect_codex(&paths).unwrap();
+    rewrite::disconnect_claude(&paths).unwrap();
     let after = std::fs::read_to_string(codex.join("config.toml")).unwrap();
     assert!(after.contains("model_provider = \"c\""));
     assert!(!after.contains("keysmith-relay"));
+    assert_eq!(
+        std::fs::read_to_string(claude.join("settings.json")).unwrap(),
+        claude_settings
+    );
     assert!(!service::status(&paths).running);
+    if result.is_err() {
+        eprintln!(
+            "relay.log:\n{}",
+            std::fs::read_to_string(&log).unwrap_or_default()
+        );
+    }
     result.unwrap();
 }

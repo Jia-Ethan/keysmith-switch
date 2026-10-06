@@ -55,6 +55,9 @@ const pack = (over: Partial<RuleTable> = {}): RuleTable => ({
 const view = (over: Partial<RewriteView> = {}): RewriteView => ({
   enabled: false,
   codexEnabled: true,
+  claudeEnabled: true,
+  grokEnabled: true,
+  zcodeEnabled: true,
   tables: [mine],
   codex: {
     link: { state: "unlinked" },
@@ -62,6 +65,13 @@ const view = (over: Partial<RewriteView> = {}): RewriteView => ({
     provider: { id: "custom", name: "custom", baseUrl: "https://x/v1" },
     unsupported: null,
     codexDir: "/home/.codex",
+  },
+  claude: {
+    link: { state: "unlinked" },
+    service: { installed: false, running: false },
+    upstreamHost: "api.anthropic.com",
+    unsupported: null,
+    settingsPath: "/home/.claude/settings.json",
   },
   ...over,
 });

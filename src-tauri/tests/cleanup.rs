@@ -1068,3 +1068,85 @@ async fn zcode_is_not_cleaned_while_its_app_is_still_patched_and_not_deployed() 
     assert!(home.join(".zcode/v2/credentials.json").exists());
     assert!(list_snapshots(&world.store).is_empty());
 }
+
+#[tokio::test]
+async fn cleaning_claude_disconnects_input_rewrite_before_saving_its_settings() {
+    if !python3_available() {
+        return;
+    }
+    // Never touch the real LaunchAgent: disconnecting stops the relay when nothing uses it.
+    std::env::set_var(
+        "KEYSMITH_SWITCH_RELAY_LABEL",
+        format!(
+            "com.jia-ethan.keysmith-switch.relay.cleanup-test-{}",
+            std::process::id()
+        ),
+    );
+    let (world, _) = claude_with_notes().await;
+    std::env::set_var(
+        "KEYSMITH_SWITCH_LAUNCH_AGENTS_DIR",
+        world.store.paths().home.join("LaunchAgents"),
+    );
+    let claude_dir = world.home.join(".claude");
+    let settings = claude_dir.join("settings.json");
+    let mut value: serde_json::Value = std::fs::read(&settings)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+        .unwrap_or_else(|| serde_json::json!({}));
+    value["env"] = serde_json::json!({"ANTHROPIC_BASE_URL": "https://gateway.example"});
+    std::fs::write(&settings, serde_json::to_string_pretty(&value).unwrap()).unwrap();
+
+    let relay = "http://127.0.0.1:4000/t/tok/claude/anthropic";
+    let record = keysmith_switch_lib::rewrite::claude::link(&claude_dir, None, relay).unwrap();
+    let rewrite_dir = world.store.paths().home.join("input-rewrite");
+    std::fs::create_dir_all(&rewrite_dir).unwrap();
+    std::fs::write(
+        rewrite_dir.join("claude-link.json"),
+        serde_json::to_string(&record).unwrap(),
+    )
+    .unwrap();
+
+    let plan = plan_cleanup(&world.store, ToolKind::Claude, &world.opts)
+        .await
+        .unwrap();
+    let done = confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
+        .await
+        .unwrap();
+    assert!(done.rewrite_disconnected);
+    assert!(keysmith_switch_lib::rewrite::read_claude_record(world.store.paths()).is_none());
+
+    // Whatever the snapshot kept of settings.json holds the person's own address.
+    let snapshot = world
+        .store
+        .paths()
+        .home
+        .join("snapshots")
+        .join(done.snapshot_id.unwrap());
+    let mut saw_settings = false;
+    for entry in walk(&snapshot) {
+        let text = std::fs::read_to_string(&entry).unwrap_or_default();
+        assert!(
+            !text.contains(relay),
+            "{} still points at the relay",
+            entry.display()
+        );
+        saw_settings |= text.contains("https://gateway.example");
+    }
+    assert!(
+        saw_settings,
+        "settings.json was saved with the original address"
+    );
+}
+
+fn walk(dir: &std::path::Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            out.extend(walk(&path));
+        } else {
+            out.push(path);
+        }
+    }
+    out
+}

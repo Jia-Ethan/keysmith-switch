@@ -402,6 +402,8 @@ pub struct CleanupResult {
     /// Logins, session history and caches that were deleted (they are not in the snapshot).
     pub erased: u64,
     pub keychain_cleared: bool,
+    /// Input rewrite was connected for this agent and has been disconnected.
+    pub rewrite_disconnected: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1729,6 +1731,10 @@ async fn run_cleanup(
         ));
     }
 
+    // Input rewrite points this agent at the local relay. Put its own address back first, so
+    // the snapshot (and any rollback) holds the agent's real settings.
+    let rewrite_disconnected = crate::rewrite::disconnect_tool(store.paths(), tool)?;
+
     let snapshot = if deployment.present
         || memory.as_ref().is_some_and(|(info, _)| info.bytes > 0)
         || memories.is_some()
@@ -1836,6 +1842,7 @@ async fn run_cleanup(
         extras_cleared,
         erased,
         keychain_cleared,
+        rewrite_disconnected,
     })
 }
 

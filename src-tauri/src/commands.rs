@@ -2241,3 +2241,28 @@ pub async fn rewrite_disconnect_codex(
         .map_err(|error| Error::message(error.to_string()))??;
     crate::rewrite::view_with(&state.store, opts().home.as_deref())
 }
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn rewrite_connect_claude(
+    state: State<'_, AppState>,
+) -> Result<crate::rewrite::RewriteView> {
+    let paths = state.store.paths().clone();
+    let home = opts().home;
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::rewrite::connect_claude(&paths, home.as_deref())
+    })
+    .await
+    .map_err(|error| Error::message(error.to_string()))??;
+    crate::rewrite::view_with(&state.store, opts().home.as_deref())
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn rewrite_disconnect_claude(
+    state: State<'_, AppState>,
+) -> Result<crate::rewrite::RewriteView> {
+    let paths = state.store.paths().clone();
+    tauri::async_runtime::spawn_blocking(move || crate::rewrite::disconnect_claude(&paths))
+        .await
+        .map_err(|error| Error::message(error.to_string()))??;
+    crate::rewrite::view_with(&state.store, opts().home.as_deref())
+}

@@ -232,6 +232,11 @@ export function CleanupDialog({
             <IconCheck size={14} />
             {result.snapshotId ? t("cleanup.done") : t("cleanup.doneNothing")}
           </p>
+          {result.rewriteDisconnected ? (
+            <p className="text-[12.5px] text-muted-foreground" data-testid="cleanup-rewrite-disconnected">
+              {t("cleanup.rewriteDisconnected")}
+            </p>
+          ) : null}
           {result.snapshotId ? (
             <Button size="sm" variant="outline" data-testid="cleanup-open-versions" onClick={onOpenVersions}>
               {t("cleanup.openVersions")}

@@ -133,6 +133,7 @@ const rewrite = {
       : []),
   ] as any[],
   link: { state: "unlinked" } as any,
+  claudeLink: { state: "unlinked" } as any,
   running: false,
 };
 
@@ -140,7 +141,17 @@ function rewriteView() {
   return {
     enabled: rewrite.enabled,
     codexEnabled: rewrite.codexEnabled,
+    claudeEnabled: true,
+    grokEnabled: true,
+    zcodeEnabled: true,
     tables: rewrite.tables,
+    claude: {
+      link: rewrite.claudeLink,
+      service: { installed: rewrite.running, running: rewrite.running },
+      upstreamHost: "api.anthropic.com",
+      unsupported: null,
+      settingsPath: "~/.claude/settings.json",
+    },
     codex: {
       link: rewrite.link,
       service: { installed: rewrite.running, running: rewrite.running },
@@ -209,6 +220,13 @@ async function handle(cmd: string, args: Record<string, any> = {}): Promise<unkn
     case "rewrite_save_user_rules":
       rewrite.tables[0] = { ...rewrite.tables[0], rules: args.rules };
       return delay(rewriteView());
+    case "rewrite_connect_claude":
+      rewrite.claudeLink = { state: "linked" };
+      rewrite.running = true;
+      return delay(rewriteView(), 700);
+    case "rewrite_disconnect_claude":
+      rewrite.claudeLink = { state: "unlinked" };
+      return delay(rewriteView(), 500);
     case "rewrite_set_table_tools":
       rewrite.tables = rewrite.tables.map((t) => (t.id === args.id ? { ...t, tools: args.tools } : t));
       return rewriteView();

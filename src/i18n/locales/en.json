@@ -528,6 +528,7 @@
     "working": "Cleaning…",
     "done": "Cleaned. A version was saved.",
     "doneNothing": "Nothing needed cleaning.",
+    "rewriteDisconnected": "Input rewrite was disconnected for this agent, so it connects directly again. Your rules are kept; reconnect it on the Input rewrite page.",
     "openVersions": "View versions",
     "repair": "This agent's setup changed after the last deploy; repair it before cleaning.",
     "drifted": "This agent's config was changed by hand after the last deploy. The deployed prompt is left for a repair; everything listed here is still cleaned.",
