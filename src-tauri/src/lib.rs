@@ -97,6 +97,7 @@ pub fn run() {
             commands::extensions_refresh,
             commands::extension_install,
             commands::extension_uninstall,
+            commands::extension_preview_rules,
             commands::adopt_live_prompt,
             commands::remove_harness,
             commands::recover_tool,

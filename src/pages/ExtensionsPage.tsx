@@ -3,12 +3,13 @@ import { useTranslation } from "react-i18next";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { extensionErrorCode, useExtensions } from "../components/ExtensionsProvider";
 import { Callout } from "../components/PlanPreview";
-import { IconAlert, IconCheck, IconDownload, IconPuzzle, IconRefresh, IconShield } from "../components/icons";
+import * as api from "../api";
+import { IconAlert, IconCheck, IconDownload, IconPuzzle, IconRefresh, IconShield, IconSwap } from "../components/icons";
 import { ToolLogo } from "../components/ToolLogos";
 import { Button, cx } from "../components/ui";
 import type { ToastApi } from "../hooks/useToasts";
 import { formatBytes, relativeTime } from "../lib/format";
-import type { ExtensionPack, ExtensionReport } from "../types";
+import type { ExtensionPack, ExtensionReport, RewriteRule } from "../types";
 
 /**
  * Extension packs: prompt bundles that the official source publishes and that update on
@@ -21,6 +22,8 @@ export function ExtensionsPage({ toast }: { toast: ToastApi }) {
   const [enabling, setEnabling] = useState(false);
   const [disabling, setDisabling] = useState(false);
   const [removing, setRemoving] = useState<ExtensionPack | null>(null);
+  // A rule pack is installed only after its rules have been shown.
+  const [previewing, setPreviewing] = useState<{ pack: ExtensionPack; rules: RewriteRule[] | null } | null>(null);
   const [updatingAll, setUpdatingAll] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const view = ext.view;
@@ -38,7 +41,11 @@ export function ExtensionsPage({ toast }: { toast: ToastApi }) {
   }, [view]);
   const pending = packs.filter((pack) => pack.updateAvailable);
 
-  const say = (report: ExtensionReport, kind: "install" | "update" | "remove") => {
+  const say = (report: ExtensionReport, kind: "install" | "update" | "remove", pack?: ExtensionPack) => {
+    if (pack?.kind === "rules") {
+      toast.ok(t(kind === "remove" ? "extensions.rules.removedToast" : kind === "update" ? "extensions.rules.updatedToast" : "extensions.rules.installedToast"));
+      return;
+    }
     if (kind === "remove") toast.ok(t("extensions.removedToast", { ...report }));
     else if (kind === "update") toast.ok(t("extensions.updatedToast", { ...report }));
     else toast.ok(t("extensions.installedToast", { ...report }));
@@ -86,11 +93,22 @@ export function ExtensionsPage({ toast }: { toast: ToastApi }) {
     }
   };
 
-  const install = async (pack: ExtensionPack) => {
+  const install = async (pack: ExtensionPack, enable = false) => {
     const update = pack.installedVersion !== null;
     try {
-      say(await ext.install(pack.id), update ? "update" : "install");
+      say(await ext.install(pack.id, enable), update ? "update" : "install", pack);
     } catch (error) {
+      fail(error);
+    }
+  };
+
+  const preview = async (pack: ExtensionPack) => {
+    setPreviewing({ pack, rules: null });
+    try {
+      const rules = await api.previewExtensionRules(pack.id);
+      setPreviewing((current) => (current?.pack.id === pack.id ? { pack, rules } : current));
+    } catch (error) {
+      setPreviewing(null);
       fail(error);
     }
   };
@@ -98,7 +116,7 @@ export function ExtensionsPage({ toast }: { toast: ToastApi }) {
   const remove = async (pack: ExtensionPack) => {
     setRemoving(null);
     try {
-      say(await ext.uninstall(pack.id), "remove");
+      say(await ext.uninstall(pack.id), "remove", pack);
     } catch (error) {
       fail(error);
     }
@@ -200,7 +218,7 @@ export function ExtensionsPage({ toast }: { toast: ToastApi }) {
                 index={index}
                 busy={ext.busyId === pack.id}
                 locked={locked}
-                onInstall={() => void install(pack)}
+                onInstall={() => void (pack.kind === "rules" && pack.installedVersion === null ? preview(pack) : install(pack))}
                 onRemove={() => setRemoving(pack)}
               />
             ))}
@@ -220,7 +238,60 @@ export function ExtensionsPage({ toast }: { toast: ToastApi }) {
         onClose={() => setRemoving(null)}
         onConfirm={() => removing && void remove(removing)}
       >
-        <p className="text-[13.5px] text-muted-foreground">{t("extensions.uninstallBody")}</p>
+        <p className="text-[13.5px] text-muted-foreground">
+          {removing?.kind === "rules" ? t("extensions.rules.uninstallBody") : t("extensions.uninstallBody")}
+        </p>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={previewing !== null}
+        wide
+        title={t("extensions.rules.previewTitle", { name: previewing?.pack.name ?? "" })}
+        confirmLabel={t("extensions.rules.installEnable")}
+        cancelLabel={t("common.cancel")}
+        closeLabel={t("common.close")}
+        confirmTestId="extensions-rules-install-enable"
+        confirmDisabled={!previewing?.rules}
+        busy={previewing ? ext.busyId === previewing.pack.id : false}
+        onClose={() => setPreviewing(null)}
+        onConfirm={() => {
+          const current = previewing;
+          if (!current) return;
+          void install(current.pack, true).then(() => setPreviewing(null));
+        }}
+        footerStart={
+          <Button
+            size="sm"
+            variant="ghost"
+            data-testid="extensions-rules-install-only"
+            disabled={!previewing?.rules || (previewing ? ext.busyId === previewing.pack.id : false)}
+            onClick={() => {
+              const current = previewing;
+              if (!current) return;
+              void install(current.pack, false).then(() => setPreviewing(null));
+            }}
+          >
+            {t("extensions.rules.installOnly")}
+          </Button>
+        }
+      >
+        <p className="mb-3 text-[13px] text-muted-foreground">{t("extensions.rules.previewBody")}</p>
+        {previewing?.rules ? (
+          <ul
+            className="grid max-h-[50vh] grid-cols-[minmax(0,max-content)_auto_minmax(0,1fr)] gap-x-2 gap-y-0.5 overflow-y-auto font-mono text-[12.5px]"
+            data-testid="extensions-rules-preview"
+          >
+            {previewing.rules.map((rule) => (
+              <li key={rule.from} className="contents">
+                <span className="truncate text-foreground">{rule.from}</span>
+                <span className="text-muted-foreground">→</span>
+                <span className="truncate text-foreground">{rule.to || "∅"}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <div className="skeleton h-16 w-full" aria-hidden="true" />
+        )}
       </ConfirmDialog>
 
       <ConfirmDialog
@@ -273,7 +344,7 @@ function PackCard({
     >
       <div className="flex items-start gap-3">
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 text-primary">
-          <IconPuzzle size={20} />
+          {pack.kind === "rules" ? <IconSwap size={20} /> : <IconPuzzle size={20} />}
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -293,7 +364,7 @@ function PackCard({
             <ToolLogo key={tool} tool={tool} size={14} />
           ))}
         </span>
-        <span>{t("extensions.items", { count: pack.itemCount })}</span>
+        <span>{pack.kind === "rules" ? t("extensions.rules.kind") : t("extensions.items", { count: pack.itemCount })}</span>
         <span>{formatBytes(pack.size)}</span>
         <span className="font-mono">v{pack.version}</span>
       </div>
@@ -321,7 +392,7 @@ function PackCard({
           {pack.compatible && (!installed || pack.updateAvailable) ? (
             <Button size="sm" variant="primary" loading={busy} disabled={locked && !busy} data-testid={`extension-install-${pack.id}`} onClick={onInstall}>
               <IconDownload size={13} />
-              {installed ? t("extensions.update") : t("extensions.install")}
+              {installed ? t("extensions.update") : pack.kind === "rules" ? t("extensions.rules.view") : t("extensions.install")}
             </Button>
           ) : null}
         </div>

@@ -493,7 +493,19 @@
     "updateAll": "Update all ({{count}})",
     "updatedAllToast": "Updated {{count}} packs: {{updated}} changed, {{added}} new, {{copied}} saved beside your edits",
     "updatedSomeToast": "Updated {{done}} of {{total}} packs; the rest were left as they were",
-    "checkedJustNow": "Checked just now"
+    "checkedJustNow": "Checked just now",
+    "rules": {
+      "kind": "Input rewrite rules",
+      "view": "View rules",
+      "previewTitle": "Rule pack: {{name}}",
+      "previewBody": "This pack adds a read-only table to Input rewrite. It replaces text you send to Codex using the rules below. Your prompt library is not touched.",
+      "installEnable": "Install and turn on",
+      "installOnly": "Install only",
+      "installedToast": "Added to Input rewrite",
+      "updatedToast": "Rule pack updated. A table that is on switches only after you accept it on the Rewrite page",
+      "removedToast": "Rule table removed",
+      "uninstallBody": "Removes this table from Input rewrite. Anything you copied to My rules stays."
+    }
   },
   "cleanup": {
     "button": "Clean up",

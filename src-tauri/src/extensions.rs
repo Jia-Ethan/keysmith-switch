@@ -8,8 +8,13 @@
 //! itself counts. There are no signatures: a compromised publisher account could publish
 //! prompts, which is why packs only ever reach the library and never deploy by themselves.
 //!
-//! Packs only ever write to the prompt library. They never deploy anything, and a prompt
-//! the person has edited is never overwritten.
+//! Prompt packs only ever write to the prompt library. They never deploy anything, and a
+//! prompt the person has edited is never overwritten.
+//!
+//! Rule packs (`kind: "rules"`) add a read-only input rewrite table. Installing one shows its
+//! rules first and is the person's explicit choice to switch it on. A newer version of a table
+//! that is on never applies by itself: it waits on the Rewrite page until the person accepts
+//! it. A table that is off follows the pack silently.
 
 use crate::nowindow::NoWindow;
 use std::collections::{BTreeMap, BTreeSet};
@@ -44,6 +49,8 @@ const MAX_TAGS: usize = 8;
 const MAX_TAG_LEN: usize = 24;
 const LOCALES: [&str; 3] = ["zh-CN", "zh-TW", "en"];
 const TOOLS: [&str; 4] = ["claude", "codex", "grok", "zcode"];
+/// Input rewrite runs for Codex only, so a rule pack names exactly that tool.
+const RULE_TOOL: &str = "codex";
 /// Every prompt a pack adds carries this tag, so they can be found in the library.
 pub const PACK_TAG: &str = "extension";
 
@@ -163,9 +170,28 @@ impl From<ExtError> for Error {
 
 type Loc = BTreeMap<String, String>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum PackKind {
+    #[default]
+    Prompts,
+    Rules,
+}
+
+impl PackKind {
+    fn parse(text: &str) -> Option<Self> {
+        match text {
+            "prompts" => Some(Self::Prompts),
+            "rules" => Some(Self::Rules),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct IndexPack {
     pub id: String,
+    pub kind: PackKind,
     pub version: String,
     pub min_app_version: String,
     pub name: Loc,
@@ -219,9 +245,7 @@ fn loc(value: &Value) -> Option<Loc> {
 /// has never heard of must not break the ones it can).
 fn parse_index_pack(value: &Value, source: &Source) -> Option<IndexPack> {
     let object = value.as_object()?;
-    if object.get("kind")?.as_str()? != "prompts" {
-        return None;
-    }
+    let kind = PackKind::parse(object.get("kind")?.as_str()?)?;
     let id = object.get("id")?.as_str()?.to_string();
     if !regex(r"^[a-z0-9]+([.-][a-z0-9]+)*$").is_match(&id) || id.len() > 64 {
         return None;
@@ -249,8 +273,12 @@ fn parse_index_pack(value: &Value, source: &Source) -> Option<IndexPack> {
         .filter_map(|tool| tool.as_str().map(str::to_string))
         .filter(|tool| TOOLS.contains(&tool.as_str()))
         .collect();
+    if kind == PackKind::Rules && tools != [RULE_TOOL] {
+        return None;
+    }
     Some(IndexPack {
         id,
+        kind,
         version,
         min_app_version,
         name: loc(object.get("name")?)?,
@@ -320,7 +348,11 @@ pub struct PackItem {
 pub struct LoadedPack {
     pub id: String,
     pub version: String,
+    pub kind: PackKind,
+    pub name: Loc,
     pub items: Vec<PackItem>,
+    /// Set for a rule pack, in the pack's order.
+    pub rules: Vec<keysmith_rewrite::Rule>,
 }
 
 fn safe_name(name: &str) -> bool {
@@ -416,8 +448,8 @@ fn load_manifest(
     {
         return invalid("pack.json does not match the index entry");
     }
-    if text("kind") != Some("prompts") {
-        return invalid("pack.json: unsupported kind");
+    if text("kind").and_then(PackKind::parse) != Some(expected.kind) {
+        return invalid("pack.json: kind does not match the index entry");
     }
     semver(text("min_app_version").unwrap_or(""))
         .ok_or_else(|| ExtError::Invalid("pack.json: bad min_app_version".into()))?;
@@ -434,6 +466,21 @@ fn load_manifest(
     let unique: BTreeSet<_> = tools.iter().collect();
     if tools.is_empty() || unique.len() != tools.len() || tools.iter().any(|t| !TOOLS.contains(t)) {
         return invalid("pack.json: bad tools");
+    }
+    let name = loc(manifest.get("name").unwrap_or(&Value::Null)).unwrap_or_default();
+    if expected.kind == PackKind::Rules {
+        if tools != [RULE_TOOL] {
+            return invalid("pack.json: a rule pack is for codex only");
+        }
+        let rules = load_rules(manifest, files)?;
+        return Ok(LoadedPack {
+            id: expected.id.clone(),
+            version: expected.version.clone(),
+            kind: PackKind::Rules,
+            name,
+            items: Vec::new(),
+            rules,
+        });
     }
     let entries = manifest
         .get("items")
@@ -506,8 +553,52 @@ fn load_manifest(
     Ok(LoadedPack {
         id: expected.id.clone(),
         version: expected.version.clone(),
+        kind: PackKind::Prompts,
+        name,
         items,
+        rules: Vec::new(),
     })
+}
+
+/// `pack.json` names one `rules` file with its hash; the file is `{"rules": [{from, to}]}`
+/// and must pass the same checks as rules the person types.
+fn load_rules(
+    manifest: &Value,
+    files: &mut BTreeMap<String, Vec<u8>>,
+) -> std::result::Result<Vec<keysmith_rewrite::Rule>, ExtError> {
+    if manifest.get("items").is_some() {
+        return invalid("pack.json: a rule pack has no items");
+    }
+    let entry = manifest
+        .get("rules")
+        .ok_or_else(|| ExtError::Invalid("pack.json: rules missing".into()))?;
+    let file = entry.get("file").and_then(Value::as_str).unwrap_or("");
+    if file != "rules.json" {
+        return invalid("pack.json: rules file must be rules.json");
+    }
+    let declared = entry.get("sha256").and_then(Value::as_str).unwrap_or("");
+    if !regex(r"^[0-9a-f]{64}$").is_match(declared) {
+        return invalid("pack.json: bad rules sha256");
+    }
+    let data = files
+        .remove(file)
+        .ok_or_else(|| ExtError::Invalid("rules.json is missing".into()))?;
+    if hex::encode(Sha256::digest(&data)) != declared {
+        return invalid("rules.json does not match its sha256");
+    }
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct RulesFile {
+        rules: Vec<keysmith_rewrite::Rule>,
+    }
+    let parsed: RulesFile = serde_json::from_slice(&data)
+        .map_err(|error| ExtError::Invalid(format!("rules.json: {error}")))?;
+    if parsed.rules.is_empty() {
+        return invalid("rules.json has no rules");
+    }
+    keysmith_rewrite::validate_table(&parsed.rules)
+        .map_err(|error| ExtError::Invalid(format!("rules.json: {error}")))?;
+    Ok(parsed.rules)
 }
 
 // ----- what is installed ------------------------------------------------------------
@@ -520,6 +611,8 @@ struct State {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct InstalledPack {
+    #[serde(default)]
+    kind: PackKind,
     version: String,
     source: String,
     installed_at: String,
@@ -573,11 +666,23 @@ fn save_state(store: &Store, state: &State) -> Result<()> {
 /// Forget links to prompts that no longer exist (data cleared, restored from an older
 /// backup), and packs left with nothing.
 fn prune(store: &Store, state: &mut State) {
+    let rule_tables: BTreeSet<String> = store
+        .list_rule_tables()
+        .map(|tables| {
+            tables
+                .into_iter()
+                .filter_map(|table| table.pack_id)
+                .collect()
+        })
+        .unwrap_or_default();
     for pack in state.packs.values_mut() {
         pack.items
             .retain(|_, item| store.get_prompt(&item.prompt_id).is_ok());
     }
-    state.packs.retain(|_, pack| !pack.items.is_empty());
+    state.packs.retain(|id, pack| match pack.kind {
+        PackKind::Prompts => !pack.items.is_empty(),
+        PackKind::Rules => rule_tables.contains(id),
+    });
 }
 
 /// The ids of the prompts a pack wrote itself. The app shows their title and tags, never their
@@ -607,6 +712,7 @@ pub fn clear_state(store: &Store) {
 #[serde(rename_all = "camelCase")]
 pub struct PackView {
     pub id: String,
+    pub kind: PackKind,
     pub version: String,
     pub min_app_version: String,
     pub name: String,
@@ -666,6 +772,7 @@ fn build_view(
         let ok = compatible(pack);
         packs.push(PackView {
             id: pack.id.clone(),
+            kind: pack.kind,
             version: pack.version.clone(),
             min_app_version: pack.min_app_version.clone(),
             name: pick(&pack.name, language),
@@ -771,13 +878,15 @@ pub struct Report {
     pub removed: u32,
 }
 
-/// Install a pack, or bring an installed one up to the indexed version.
+/// Install a pack, or bring an installed one up to the indexed version. `enable` switches a
+/// newly installed rule table on; prompt packs ignore it.
 pub fn install(
     store: &Store,
     fetch: &dyn Fetch,
     source: &Source,
     pack_id: &str,
     language: &str,
+    enable: bool,
 ) -> std::result::Result<(ExtensionsView, Report), ExtError> {
     let (index, bytes) = fetch_index(fetch, source)?;
     let entry = index
@@ -797,7 +906,10 @@ pub fn install(
     let _lock = HomeLock::acquire(store.paths())?;
     let mut state = load_state(store);
     prune(store, &mut state);
-    let report = apply(store, source, &loaded, &mut state, language)?;
+    let report = match loaded.kind {
+        PackKind::Prompts => apply(store, source, &loaded, &mut state, language)?,
+        PackKind::Rules => apply_rules(store, source, &loaded, &mut state, language, enable)?,
+    };
     save_state(store, &state)?;
     let view = build_view(
         store,
@@ -883,6 +995,7 @@ fn apply(
     state.packs.insert(
         pack.id.clone(),
         InstalledPack {
+            kind: PackKind::Prompts,
             version: pack.version.clone(),
             source: source.id.clone(),
             installed_at: previous.map(|p| p.installed_at).unwrap_or_else(now_rfc3339),
@@ -890,6 +1003,103 @@ fn apply(
         },
     );
     Ok(report)
+}
+
+fn apply_rules(
+    store: &Store,
+    source: &Source,
+    pack: &LoadedPack,
+    state: &mut State,
+    language: &str,
+    enable: bool,
+) -> std::result::Result<Report, ExtError> {
+    let previous = state.packs.get(&pack.id).cloned();
+    let title = pick(&pack.name, language);
+    let pending = store.upsert_pack_rules(&pack.id, &pack.version, &title, &pack.rules, enable)?;
+    crate::rewrite::publish(store)?;
+    let mut report = Report::default();
+    if previous.is_none() {
+        report.added = pack.rules.len() as u32;
+    } else if pending {
+        report.kept = pack.rules.len() as u32;
+    } else {
+        report.updated = pack.rules.len() as u32;
+    }
+    // A pending update stays recorded at the version in use until it is accepted.
+    let version = match (&previous, pending) {
+        (Some(previous), true) => previous.version.clone(),
+        _ => pack.version.clone(),
+    };
+    state.packs.insert(
+        pack.id.clone(),
+        InstalledPack {
+            kind: PackKind::Rules,
+            version,
+            source: source.id.clone(),
+            installed_at: previous.map(|p| p.installed_at).unwrap_or_else(now_rfc3339),
+            items: BTreeMap::new(),
+        },
+    );
+    Ok(report)
+}
+
+/// The rules a rule pack would add, read from the verified archive without installing it.
+pub fn preview_rules(
+    fetch: &dyn Fetch,
+    source: &Source,
+    pack_id: &str,
+) -> std::result::Result<Vec<keysmith_rewrite::Rule>, ExtError> {
+    let (index, _) = fetch_index(fetch, source)?;
+    let entry = index
+        .packs
+        .iter()
+        .find(|pack| pack.id == pack_id && pack.kind == PackKind::Rules)
+        .ok_or(ExtError::Unknown)?;
+    if !compatible(entry) {
+        return Err(ExtError::Incompatible(entry.min_app_version.clone()));
+    }
+    let archive = fetch
+        .get(&entry.url, MAX_ARCHIVE_BYTES)
+        .map_err(ExtError::Offline)?;
+    Ok(check_archive(&archive, entry)?.rules)
+}
+
+/// After a successful look at the index: bring installed rule packs up to date. A table
+/// that is off follows silently; one that is on gets the new version as pending. Failures
+/// leave things as they were and are only logged.
+pub fn follow_rule_packs(store: &Store, fetch: &dyn Fetch, source: &Source, language: &str) {
+    let Some((index, _)) = load_cached(store, source) else {
+        return;
+    };
+    let state = load_state(store);
+    let tables = store.list_rule_tables().unwrap_or_default();
+    for entry in index
+        .packs
+        .iter()
+        .filter(|pack| pack.kind == PackKind::Rules)
+    {
+        let Some(installed) = state.packs.get(&entry.id) else {
+            continue;
+        };
+        let newer = matches!(
+            (semver(&installed.version), semver(&entry.version)),
+            (Some(have), Some(offered)) if offered > have
+        );
+        let already_pending = tables.iter().any(|table| {
+            table.pack_id.as_deref() == Some(entry.id.as_str())
+                && table.pending.as_ref().map(|p| p.version.as_str())
+                    == Some(entry.version.as_str())
+        });
+        if !newer || already_pending || !compatible(entry) {
+            continue;
+        }
+        if let Err(error) = install(store, fetch, source, &entry.id, language, false) {
+            let _ = crate::logging::write_line(
+                "rule-pack-follow",
+                &format!("{}: {}", entry.id, error.code()),
+            );
+        }
+    }
 }
 
 fn install_item(
@@ -935,6 +1145,13 @@ pub fn uninstall(
     let mut state = load_state(store);
     let pack = state.packs.remove(pack_id).ok_or(ExtError::Unknown)?;
     let mut report = Report::default();
+    if pack.kind == PackKind::Rules {
+        store.remove_pack_rules(pack_id)?;
+        crate::rewrite::publish(store)?;
+        report.removed = 1;
+        save_state(store, &state)?;
+        return Ok((state_view(store, source, language), report));
+    }
     for link in pack.items.values() {
         let Ok(current) = store.get_prompt(&link.prompt_id) else {
             continue;

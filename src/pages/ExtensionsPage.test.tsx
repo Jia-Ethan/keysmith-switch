@@ -7,17 +7,20 @@ import { ExtensionsPage } from "./ExtensionsPage";
 const extensionsState = vi.fn();
 const extensionsRefresh = vi.fn();
 const installExtension = vi.fn();
+const previewExtensionRules = vi.fn();
 const uninstallExtension = vi.fn();
 
 vi.mock("../api", () => ({
   extensionsState: (...args: unknown[]) => extensionsState(...args),
   extensionsRefresh: (...args: unknown[]) => extensionsRefresh(...args),
   installExtension: (...args: unknown[]) => installExtension(...args),
+  previewExtensionRules: (...args: unknown[]) => previewExtensionRules(...args),
   uninstallExtension: (...args: unknown[]) => uninstallExtension(...args),
 }));
 
 const base: ExtensionPack = {
   id: "keysmith.example",
+  kind: "prompts",
   version: "0.1.0",
   minAppVersion: "0.2.5",
   name: "示例包",
@@ -109,7 +112,7 @@ describe("ExtensionsPage", () => {
     });
     renderPage(true);
     fireEvent.click(await screen.findByTestId("extension-install-keysmith.example"));
-    await waitFor(() => expect(installExtension).toHaveBeenCalledWith("keysmith.example"));
+    await waitFor(() => expect(installExtension).toHaveBeenCalledWith("keysmith.example", false));
     await waitFor(() => expect(toast.ok).toHaveBeenCalledWith(expect.stringContaining("未部署")));
     expect(await screen.findByTestId("extension-status-keysmith.example")).toHaveTextContent("已安装 v0.1.0");
     expect(screen.queryByTestId("extension-install-keysmith.example")).not.toBeInTheDocument();
@@ -253,5 +256,39 @@ describe("ExtensionsPage", () => {
     fireEvent.click(await screen.findByTestId("extensions-update-all"));
     await waitFor(() => expect(toast.info).toHaveBeenCalledWith("已更新 1/2 个包，其余未更新"));
     expect(toast.err).toHaveBeenCalledWith(expect.stringContaining("不合规"));
+  });
+
+  it("shows a rule pack's rules before installing, then installs and turns it on", async () => {
+    const rules = { ...base, id: "x.rules", kind: "rules" as const, name: "规则", tools: ["codex" as const] };
+    extensionsState.mockResolvedValue(view([rules]));
+    previewExtensionRules.mockResolvedValue([{ from: "foo", to: "bar" }]);
+    installExtension.mockResolvedValue({
+      view: view([{ ...rules, installedVersion: "0.1.0" }]),
+      report: { added: 1, updated: 0, copied: 0, linked: 0, kept: 0, removed: 0 },
+    });
+    renderPage(true);
+    const button = await screen.findByTestId("extension-install-x.rules");
+    expect(button).toHaveTextContent("查看规则");
+    fireEvent.click(button);
+    expect(await screen.findByTestId("extensions-rules-preview")).toHaveTextContent("foo");
+    expect(installExtension).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("extensions-rules-install-enable"));
+    await waitFor(() => expect(installExtension).toHaveBeenCalledWith("x.rules", true));
+    await waitFor(() => expect(toast.ok).toHaveBeenCalledWith(expect.stringContaining("输入替换")));
+  });
+
+  it("can install a rule pack without turning it on", async () => {
+    const rules = { ...base, id: "x.rules", kind: "rules" as const, tools: ["codex" as const] };
+    extensionsState.mockResolvedValue(view([rules]));
+    previewExtensionRules.mockResolvedValue([{ from: "foo", to: "" }]);
+    installExtension.mockResolvedValue({
+      view: view([{ ...rules, installedVersion: "0.1.0" }]),
+      report: { added: 1, updated: 0, copied: 0, linked: 0, kept: 0, removed: 0 },
+    });
+    renderPage(true);
+    fireEvent.click(await screen.findByTestId("extension-install-x.rules"));
+    await screen.findByTestId("extensions-rules-preview");
+    fireEvent.click(screen.getByTestId("extensions-rules-install-only"));
+    await waitFor(() => expect(installExtension).toHaveBeenCalledWith("x.rules", false));
   });
 });

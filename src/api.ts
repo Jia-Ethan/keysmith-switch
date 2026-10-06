@@ -382,8 +382,14 @@ export function markAnnouncements(ids: string[], dismiss = false): Promise<Annou
   return call("announcements_mark", { ids, dismiss });
 }
 
-export function installExtension(packId: string): Promise<ExtensionChange> {
-  return call("extension_install", { packId });
+/** `enable` switches a newly installed rule table on; prompt packs ignore it. */
+export function installExtension(packId: string, enable = false): Promise<ExtensionChange> {
+  return call("extension_install", { packId, enable });
+}
+
+/** The rules a rule pack would add, read from the verified archive; installs nothing. */
+export function previewExtensionRules(packId: string): Promise<RewriteRule[]> {
+  return call("extension_preview_rules", { packId });
 }
 
 export function uninstallExtension(packId: string): Promise<ExtensionChange> {

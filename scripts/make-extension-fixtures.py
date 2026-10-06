@@ -65,6 +65,27 @@ def main() -> int:
         },
         "v3": {"fixture.pack": ("0.1.0", "0.2.5", {"alpha": ("claude", "Alpha", "Alpha, first text.\n")})},
     }
+    # A rule pack built by the extensions repo's own tooling, so the app's checks and the
+    # publisher's checks are proven to agree.
+    target = OUT / "rules"
+    shutil.rmtree(target, ignore_errors=True)
+    with tempfile.TemporaryDirectory() as tmp:
+        packs = Path(tmp) / "packs"
+        directory = packs / "fixture.rules"
+        directory.mkdir(parents=True)
+        rules = json.dumps({"rules": [{"from": "提示词", "to": "指令"}, {"from": "um ", "to": ""}]}, ensure_ascii=False).encode("utf-8")
+        (directory / "rules.json").write_bytes(rules)
+        manifest = {
+            "schema": 1, "id": "fixture.rules", "version": "0.1.0", "min_app_version": "0.4.0",
+            "kind": "rules", "name": {"zh-CN": "测试规则", "en": "Fixture rules"},
+            "description": {"en": "Fixture rule pack for tests"}, "tools": ["codex"],
+            "rules": {"file": "rules.json", "sha256": packlib.sha256_hex(rules)},
+        }
+        (directory / "pack.json").write_bytes(packlib.canonical_json(manifest))
+        packlib.build_index(packs, target, f"{BASE}/test-rules", "2026-10-06T00:00:00Z")
+        packlib.verify_release(target)
+    print(f"built rules: {sorted(p.name for p in target.iterdir())}")
+
     for name, packs_spec in releases.items():
         target = OUT / name
         shutil.rmtree(target, ignore_errors=True)

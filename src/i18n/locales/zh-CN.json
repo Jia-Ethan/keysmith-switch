@@ -493,7 +493,19 @@
     "updateAll": "全部更新（{{count}}）",
     "updatedAllToast": "已更新 {{count}} 个包：更新 {{updated}} 条，新增 {{added}} 条，另存 {{copied}} 条",
     "updatedSomeToast": "已更新 {{done}}/{{total}} 个包，其余未更新",
-    "checkedJustNow": "刚刚检查过"
+    "checkedJustNow": "刚刚检查过",
+    "rules": {
+      "kind": "输入替换规则包",
+      "view": "查看规则",
+      "previewTitle": "规则包：{{name}}",
+      "previewBody": "这个包会在「输入替换」里新增一张只读规则表，按下面的规则替换你发给 Codex 的文字。不会改动提示词库。",
+      "installEnable": "安装并启用",
+      "installOnly": "只安装",
+      "installedToast": "已加入输入替换规则表",
+      "updatedToast": "规则包已更新；正在启用的表需要在输入替换页确认后才会切换",
+      "removedToast": "已移除这张规则表",
+      "uninstallBody": "会从输入替换里移除这张规则表。复制到「我的规则」的内容会保留。"
+    }
   },
   "cleanup": {
     "button": "清理",

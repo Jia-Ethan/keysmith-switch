@@ -2028,18 +2028,37 @@ pub async fn extensions_refresh(
 ) -> Result<crate::extensions::ExtensionsView> {
     blocking(app, |state| {
         let language = require_extensions(state)?;
-        Ok(crate::extensions::refresh(
+        let source = crate::extensions::Source::official();
+        let view = crate::extensions::refresh(
             &state.store,
             &crate::extensions::CurlFetch,
-            &crate::extensions::Source::official(),
+            &source,
             &language,
-        ))
+        );
+        if view.error.is_none() {
+            crate::extensions::follow_rule_packs(
+                &state.store,
+                &crate::extensions::CurlFetch,
+                &source,
+                &language,
+            );
+            return Ok(crate::extensions::state_view(
+                &state.store,
+                &source,
+                &language,
+            ));
+        }
+        Ok(view)
     })
     .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub async fn extension_install(app: tauri::AppHandle, pack_id: String) -> Result<ExtensionChange> {
+pub async fn extension_install(
+    app: tauri::AppHandle,
+    pack_id: String,
+    enable: Option<bool>,
+) -> Result<ExtensionChange> {
     blocking(app, move |state| {
         let language = require_extensions(state)?;
         let (view, report) = crate::extensions::install(
@@ -2048,6 +2067,7 @@ pub async fn extension_install(app: tauri::AppHandle, pack_id: String) -> Result
             &crate::extensions::Source::official(),
             &pack_id,
             &language,
+            enable.unwrap_or(false),
         )?;
         Ok(ExtensionChange { view, report })
     })
@@ -2068,6 +2088,23 @@ pub async fn extension_uninstall(
             &language,
         )?;
         Ok(ExtensionChange { view, report })
+    })
+    .await
+}
+
+/// The rules a rule pack would add, so the person can read them before installing.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn extension_preview_rules(
+    app: tauri::AppHandle,
+    pack_id: String,
+) -> Result<Vec<keysmith_rewrite::Rule>> {
+    blocking(app, move |state| {
+        require_extensions(state)?;
+        Ok(crate::extensions::preview_rules(
+            &crate::extensions::CurlFetch,
+            &crate::extensions::Source::official(),
+            &pack_id,
+        )?)
     })
     .await
 }

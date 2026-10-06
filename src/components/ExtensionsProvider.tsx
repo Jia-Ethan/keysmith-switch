@@ -25,7 +25,7 @@ interface ExtensionsContextValue {
   setEnabled: (next: boolean) => Promise<void>;
   /** Resolves to the fresh view, or null when the look failed or one was already running. */
   refresh: () => Promise<ExtensionsView | null>;
-  install: (id: string) => Promise<ExtensionReport>;
+  install: (id: string, enable?: boolean) => Promise<ExtensionReport>;
   uninstall: (id: string) => Promise<ExtensionReport>;
 }
 
@@ -127,7 +127,10 @@ export function ExtensionsProvider({
     }
   }, []);
 
-  const install = useCallback((id: string) => change(id, () => api.installExtension(id)), [change]);
+  const install = useCallback(
+    (id: string, enable = false) => change(id, () => api.installExtension(id, enable)),
+    [change],
+  );
   const uninstall = useCallback((id: string) => change(id, () => api.uninstallExtension(id)), [change]);
 
   const value = useMemo<ExtensionsContextValue>(
