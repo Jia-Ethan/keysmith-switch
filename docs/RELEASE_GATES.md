@@ -2,7 +2,7 @@
 
 本文件记录 `v0.1.4` 及后续版本的发布边界。应用安装包不使用 Apple Developer ID、公证或 Windows Authenticode；应用内更新仍使用独立生产密钥签名并在客户端安装前验证。
 
-当前公开稳定版为 `v0.3.9`。以下门槛是每次发布的要求，不代表下一版候选已通过。
+当前公开稳定版为 `v0.3.9`；下一版候选为 `v0.4.0`（准备中）。以下门槛是每次发布的要求，不代表下一版候选已通过。
 
 identifier：`com.jia-ethan.keysmith-switch`
 
@@ -10,7 +10,7 @@ identifier：`com.jia-ethan.keysmith-switch`
 
 | 平台 | 目标 | 发布要求 |
 | --- | --- | --- |
-| macOS Apple Silicon | `.app`、`.dmg`、`.app.tar.gz` | ad-hoc 签名，关闭 hardened runtime；app、DMG 和 updater archive 内 app 的四个 sidecar 均通过运行时 smoke |
+| macOS Apple Silicon | `.app`、`.dmg`、`.app.tar.gz` | ad-hoc 签名，关闭 hardened runtime；app、DMG 和 updater archive 内 app 的四个 sidecar 与 `keysmith-relay` 均通过运行时 smoke |
 | Windows x64 | NSIS `currentUser` `.exe` | 无 Authenticode；构建 runner 验证状态为 `NotSigned`，并产出 updater `.sig` |
 | Linux、Intel Mac、Windows ARM64 | 不发布 | 客户端显示 unsupported，不执行安装 |
 

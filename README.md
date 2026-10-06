@@ -71,6 +71,14 @@
 
 </td>
 </tr>
+<tr>
+<td valign="top" colspan="2">
+
+### ⇄ 输入替换（Codex）
+在 Codex 里照常打字，发给模型前按你的规则做字面替换；输入框和会话历史仍是原文。规则默认为空，可随时关闭或断开。详见[输入替换](#-输入替换)。
+
+</td>
+</tr>
 </table>
 
 <table>
@@ -194,6 +202,19 @@ flowchart LR
 - **卡片不显示包摘要。** 拓展页的每张卡片只有名称、官方角标、条数、大小、版本和安装状态；已上架、已安装和以后发布的包一律如此。
 - 有新版本时，“拓展”按钮上会显示可更新的包数；两个及以上时可以在拓展页一键全部更新。
 
+## ⇄ 输入替换
+
+在左侧栏的「输入替换」页编辑规则、连接 Codex。
+
+- **改写发生在本机。** 连接后，Switch 在本机启动 `keysmith-relay`，它只监听 `127.0.0.1`，并在 Codex 的 `config.toml` 里新增 `[model_providers.keysmith-relay]` 指向它（复制你原来的 provider，只改 `base_url`）。中转服务按规则改写你输入的文字后，再转发给原来的地址；响应原样流式返回。中转服务开机自启（macOS 用 LaunchAgent，Windows 用登录启动项），Switch 不打开也能工作。
+- **只改你打的字。** 只替换你自己输入的文字，包括历史里你之前说过的话。助手回复、工具输出、Codex 自带的上下文（环境、AGENTS.md、技能等）都不动；以 `/` 开头的消息整条跳过。
+- **匹配规则。** 字面匹配、区分大小写；同一位置取最长的一条；替换后的文字不会再被替换。「我的规则」排在最前，其余规则表按你排的顺序。
+- **不碰提示词部署。** 部署或撤销 Codex 提示词只动 `model_instructions_file`，不影响连接。
+- **可随时断开。** 「断开」只还原 Switch 自己写的两处（`model_provider` 和受管 provider 块），其他工具在此期间改过的值保持原样；规则保留。每次写 `config.toml` 前都会在旁边备份。
+- **不存会话。** 中转服务不保存、不记录请求内容、规则或鉴权信息。
+- **规则包。** 拓展仓库也可以发布规则包。安装前会先列出全部规则；已启用的规则包有更新时，需要你确认才会切换。
+- **目前的限制。** 只支持 Codex，并且 Codex 要使用自定义 provider（`wire_api = "responses"`）；Codex 内置的 OpenAI 登录暂不支持。
+
 ## 🗄️ 数据位置
 
 | 路径 | 内容 |
@@ -202,7 +223,8 @@ flowchart LR
 | `~/.keysmith-switch/prompts/<tool>/<prompt-id>.md` | 提示词正文 |
 | `~/.keysmith-switch/backups/<operation-id>/` | 部署前的备份 |
 | `~/.keysmith-switch/snapshots/` | 清理前保存的版本 |
-| `~/.keysmith-switch/logs/` | 日志 |
+| `~/.keysmith-switch/logs/` | 日志（中转服务日志为 `relay.log`） |
+| `~/.keysmith-switch/input-rewrite/` | 输入替换：中转服务读取的规则快照 `rules.json`、端口与转发地址 `relay.json`、Codex 连接记录、中转服务程序 |
 
 测试时可以用 `KEYSMITH_SWITCH_HOME` 覆盖数据根目录。
 
@@ -262,6 +284,7 @@ npx tauri build --target aarch64-apple-darwin --config src-tauri/tauri.preview.m
 
 | 版本 | 更新内容 |
 | --- | --- |
+| [`v0.4.0`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.4.0) | 新模块「输入替换」：在 Codex 里照常打字，发给模型前按你的规则替换字面文字，输入框和会话历史仍显示原文。由本机只监听 127.0.0.1 的中转服务完成替换，可一键连接或断开；规则表默认为空，也可以从拓展安装规则包（已启用的规则包更新前需要你确认）。[#96](https://github.com/Jia-Ethan/keysmith-switch/pull/96)–[#100](https://github.com/Jia-Ethan/keysmith-switch/pull/100) |
 | [`v0.3.9`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.3.9) | Codex 部署被拦截时，引导点「清理」的提示现在写明：清理会永久删除会话历史和登录，想保留聊天记录请先备份 `.codex` 文件夹。[#92](https://github.com/Jia-Ethan/keysmith-switch/pull/92) |
 | [`v0.3.8`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.3.8) | 部署被拦截时，提示改用你选的界面语言说明原因，并告诉你下一步点哪里（例如 Codex 的配置被改过时，引导点「清理」）。[#89](https://github.com/Jia-Ethan/keysmith-switch/pull/89) |
 | [`v0.3.7`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.3.7) | 修复 Windows 上反复弹出命令行窗口；检查更新时会使用 Windows 系统代理，不再因为代理导致超时。[#86](https://github.com/Jia-Ethan/keysmith-switch/pull/86) |
