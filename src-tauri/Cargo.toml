@@ -7,6 +7,9 @@ license = "PolyForm-Noncommercial-1.0.0"
 edition = "2021"
 rust-version = "1.85.0"
 
+[workspace]
+members = ["crates/rewrite"]
+
 [lib]
 name = "keysmith_switch_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
@@ -20,6 +23,7 @@ anyhow = "1"
 chrono = { version = "0.4", features = ["serde"] }
 dirs = "5"
 hex = "0.4"
+keysmith-rewrite = { path = "crates/rewrite" }
 regex = "1"
 rusqlite = { version = "0.32", features = ["bundled", "backup"] }
 serde = { version = "1", features = ["derive"] }

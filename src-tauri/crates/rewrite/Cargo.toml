@@ -1,0 +1,20 @@
+[package]
+name = "keysmith-rewrite"
+version = "0.1.0"
+description = "Input rewrite rules shared by Keysmith Switch and its relay"
+authors = ["Jia-Ethan"]
+license = "PolyForm-Noncommercial-1.0.0"
+edition = "2021"
+rust-version = "1.85.0"
+publish = false
+
+[lib]
+doctest = false
+
+[dependencies]
+aho-corasick = "1.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+pretty_assertions = "1"

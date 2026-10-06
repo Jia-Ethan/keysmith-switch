@@ -169,6 +169,9 @@ export interface Settings {
   firstRunCompleted: boolean;
   /** Extension packs read the network only when this is on. */
   extensionsEnabled: boolean;
+  /** Input rewrite master switch. Off keeps the rules but rewrites nothing. */
+  rewriteEnabled: boolean;
+  rewriteCodexEnabled: boolean;
 }
 
 export type SettingsPatch = Partial<Settings>;
@@ -377,6 +380,8 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: "system",
   firstRunCompleted: false,
   extensionsEnabled: false,
+  rewriteEnabled: false,
+  rewriteCodexEnabled: true,
 };
 
 export const TOOL_IDS: ToolId[] = ["claude", "codex", "grok", "zcode"];

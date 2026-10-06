@@ -430,6 +430,16 @@ pub struct Settings {
     pub first_run_completed: bool,
     /// Extension packs read the network only when this is on.
     pub extensions_enabled: bool,
+    /// Input rewrite master switch. Off keeps the rules but rewrites nothing.
+    #[serde(default)]
+    pub rewrite_enabled: bool,
+    /// Input rewrite for Codex, under the master switch.
+    #[serde(default = "enabled_by_default")]
+    pub rewrite_codex_enabled: bool,
+}
+
+fn enabled_by_default() -> bool {
+    true
 }
 
 impl Default for Settings {
@@ -445,6 +455,8 @@ impl Default for Settings {
             theme: "system".to_string(),
             first_run_completed: false,
             extensions_enabled: false,
+            rewrite_enabled: false,
+            rewrite_codex_enabled: true,
         }
     }
 }
@@ -462,6 +474,8 @@ pub struct SettingsPatch {
     pub theme: Option<String>,
     pub first_run_completed: Option<bool>,
     pub extensions_enabled: Option<bool>,
+    pub rewrite_enabled: Option<bool>,
+    pub rewrite_codex_enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

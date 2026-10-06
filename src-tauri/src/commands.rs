@@ -820,6 +820,8 @@ pub fn update_settings(
     theme: Option<String>,
     first_run_completed: Option<bool>,
     extensions_enabled: Option<bool>,
+    rewrite_enabled: Option<bool>,
+    rewrite_codex_enabled: Option<bool>,
 ) -> Result<Settings> {
     let settings = state.store.update_settings(SettingsPatch {
         language,
@@ -832,7 +834,12 @@ pub fn update_settings(
         theme,
         first_run_completed,
         extensions_enabled,
+        rewrite_enabled,
+        rewrite_codex_enabled,
     })?;
+    if rewrite_enabled.is_some() || rewrite_codex_enabled.is_some() {
+        crate::rewrite::publish(&state.store)?;
+    }
     Ok(settings)
 }
 
@@ -2063,4 +2070,83 @@ pub async fn extension_uninstall(
         Ok(ExtensionChange { view, report })
     })
     .await
+}
+
+// ----- input rewrite -------------------------------------------------------------------
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn rewrite_state(state: State<'_, AppState>) -> Result<crate::rewrite::RewriteView> {
+    crate::rewrite::view(&state.store)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn rewrite_set_switches(
+    state: State<'_, AppState>,
+    enabled: Option<bool>,
+    codex_enabled: Option<bool>,
+) -> Result<crate::rewrite::RewriteView> {
+    crate::rewrite::change(&state.store, |store| {
+        store.update_settings(SettingsPatch {
+            rewrite_enabled: enabled,
+            rewrite_codex_enabled: codex_enabled,
+            ..Default::default()
+        })?;
+        Ok(())
+    })
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn rewrite_save_user_rules(
+    state: State<'_, AppState>,
+    rules: Vec<keysmith_rewrite::Rule>,
+) -> Result<crate::rewrite::RewriteView> {
+    crate::rewrite::change(&state.store, |store| {
+        store.save_user_rules(&rules)?;
+        Ok(())
+    })
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn rewrite_set_table_enabled(
+    state: State<'_, AppState>,
+    id: String,
+    enabled: bool,
+) -> Result<crate::rewrite::RewriteView> {
+    crate::rewrite::change(&state.store, |store| {
+        store.set_rule_table_enabled(&id, enabled)?;
+        Ok(())
+    })
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn rewrite_reorder_tables(
+    state: State<'_, AppState>,
+    ids: Vec<String>,
+) -> Result<crate::rewrite::RewriteView> {
+    crate::rewrite::change(&state.store, |store| {
+        store.reorder_rule_tables(&ids)?;
+        Ok(())
+    })
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn rewrite_copy_to_user(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<crate::rewrite::RewriteView> {
+    crate::rewrite::change(&state.store, |store| {
+        store.copy_rules_to_user(&id)?;
+        Ok(())
+    })
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn rewrite_accept_update(
+    state: State<'_, AppState>,
+    id: String,
+) -> Result<crate::rewrite::RewriteView> {
+    crate::rewrite::change(&state.store, |store| {
+        store.accept_pack_update(&id)?;
+        Ok(())
+    })
 }

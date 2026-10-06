@@ -34,11 +34,11 @@ jobs:
         with:
           python-version: "3.12"
       - run: python3 scripts/build-sidecars.py
-      - run: cargo fmt --check
+      - run: cargo fmt --all --check
         working-directory: src-tauri
       - run: cargo check
         working-directory: src-tauri
-      - run: cargo test
+      - run: cargo test --workspace
         working-directory: src-tauri
 
   sidecar-macos:

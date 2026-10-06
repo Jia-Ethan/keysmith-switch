@@ -19,6 +19,7 @@ pub mod official;
 pub mod ops;
 pub mod paths;
 pub mod redact;
+pub mod rewrite;
 pub mod updater;
 
 use tauri::Manager;
@@ -50,6 +51,8 @@ pub fn run() {
         .setup(|app| {
             let state = commands::AppState::open().map_err(|error| error.to_string())?;
             let _ = logging::init(state.store.paths());
+            // The relay may have started before this app ever ran; give it current rules.
+            let _ = rewrite::publish(&state.store);
             app.manage(state);
             desktop::show_main(app.handle());
             Ok(())
@@ -123,6 +126,13 @@ pub fn run() {
             commands::show_main_window,
             commands::quit_app,
             commands::mark_first_run_done,
+            commands::rewrite_state,
+            commands::rewrite_set_switches,
+            commands::rewrite_save_user_rules,
+            commands::rewrite_set_table_enabled,
+            commands::rewrite_reorder_tables,
+            commands::rewrite_copy_to_user,
+            commands::rewrite_accept_update,
         ]);
 
     builder
