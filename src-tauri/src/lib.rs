@@ -53,6 +53,13 @@ pub fn run() {
             let _ = logging::init(state.store.paths());
             // The relay may have started before this app ever ran; give it current rules.
             let _ = rewrite::publish(&state.store);
+            // Bring an installed relay up to this version, off the startup path.
+            let paths = state.store.paths().clone();
+            std::thread::spawn(move || {
+                if let Err(error) = rewrite::service::refresh(&paths) {
+                    let _ = logging::write_line("relay-refresh", &error.to_string());
+                }
+            });
             app.manage(state);
             desktop::show_main(app.handle());
             Ok(())
@@ -133,6 +140,8 @@ pub fn run() {
             commands::rewrite_reorder_tables,
             commands::rewrite_copy_to_user,
             commands::rewrite_accept_update,
+            commands::rewrite_connect_codex,
+            commands::rewrite_disconnect_codex,
         ]);
 
     builder

@@ -2076,7 +2076,7 @@ pub async fn extension_uninstall(
 
 #[tauri::command(rename_all = "camelCase")]
 pub fn rewrite_state(state: State<'_, AppState>) -> Result<crate::rewrite::RewriteView> {
-    crate::rewrite::view(&state.store)
+    crate::rewrite::view_with(&state.store, opts().home.as_deref())
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -2149,4 +2149,29 @@ pub fn rewrite_accept_update(
         store.accept_pack_update(&id)?;
         Ok(())
     })
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn rewrite_connect_codex(
+    state: State<'_, AppState>,
+) -> Result<crate::rewrite::RewriteView> {
+    let paths = state.store.paths().clone();
+    let home = opts().home;
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::rewrite::connect_codex(&paths, home.as_deref())
+    })
+    .await
+    .map_err(|error| Error::message(error.to_string()))??;
+    crate::rewrite::view_with(&state.store, opts().home.as_deref())
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn rewrite_disconnect_codex(
+    state: State<'_, AppState>,
+) -> Result<crate::rewrite::RewriteView> {
+    let paths = state.store.paths().clone();
+    tauri::async_runtime::spawn_blocking(move || crate::rewrite::disconnect_codex(&paths))
+        .await
+        .map_err(|error| Error::message(error.to_string()))??;
+    crate::rewrite::view_with(&state.store, opts().home.as_deref())
 }
