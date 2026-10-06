@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { gatePlan } from "../lib/planGate";
-import { CONFIG_DRIFT, isNoise, needsReconcile } from "../lib/planFailure";
+import { CONFIG_DRIFT, isNoise, localizeReason, needsCleanup, needsReconcile } from "../lib/planFailure";
 import type { PlanFailure } from "../lib/planFailure";
 import { shortPath } from "../lib/format";
 import type { Envelope } from "../types";
@@ -85,7 +85,7 @@ export function PlanPreview({ envelope, tool, kind = "activate", fromTitle, toTi
   // becomes a sentence. The raw reasons stay in "details".
   const meaningful = gate.reasons.filter((reason) => !isNoise(reason));
   const reasons = (meaningful.length > 0 ? meaningful : gate.reasons).map((reason) =>
-    reason.includes(CONFIG_DRIFT) ? t("plan.blockerConfigDrift", { tool: toolName || t("plan.theAgent") }) : reason,
+    reason.includes(CONFIG_DRIFT) ? t("plan.blockerConfigDrift", { tool: toolName || t("plan.theAgent") }) : localizeReason(reason, t),
   );
   const warnings = envelope.warnings.filter((item) => !envelope.blockers.includes(item));
 
@@ -128,6 +128,7 @@ export function PlanPreview({ envelope, tool, kind = "activate", fromTitle, toTi
             ))}
           </ul>
           {tool && needsReconcile(tool, envelope) ? <p className="mt-1.5 font-medium">{t("plan.hintReconcile")}</p> : null}
+          {tool && needsCleanup(tool, envelope) ? <p className="mt-1.5 font-medium">{t("plan.hintCleanup")}</p> : null}
         </Callout>
       ) : null}
 
@@ -152,7 +153,7 @@ export function PlanPreview({ envelope, tool, kind = "activate", fromTitle, toTi
         <Callout tone="warn" icon={<IconAlert size={14} />}>
           <ul className="list-inside list-disc space-y-0.5">
             {warnings.map((item, index) => (
-              <li key={index}>{item}</li>
+              <li key={index}>{localizeReason(item, t)}</li>
             ))}
           </ul>
         </Callout>
@@ -166,7 +167,7 @@ export function PlanPreview({ envelope, tool, kind = "activate", fromTitle, toTi
 
       {envelope.error ? (
         <Callout tone="danger" icon={<IconAlert size={14} />}>
-          {envelope.error}
+          {localizeReason(envelope.error, t)}
         </Callout>
       ) : null}
 
