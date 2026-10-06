@@ -136,13 +136,13 @@ export function ExtensionsPage({ toast }: { toast: ToastApi }) {
   return (
     <section className="h-full min-h-0 w-full overflow-y-auto" data-testid="extensions-page" data-enabled={ext.enabled || undefined}>
       <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-5 px-4 pb-10 pt-6 sm:px-6">
-        <header className="flex flex-wrap items-center gap-4">
-          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/12 text-primary ring-1 ring-primary/20">
-            <IconPuzzle size={24} />
-          </span>
+        <header className="flex flex-wrap items-start gap-x-4 gap-y-2">
           <div className="min-w-0 flex-1">
-            <h1 className="text-[22px] font-semibold tracking-[-0.02em] text-foreground">{t("extensions.title")}</h1>
-            <p className="mt-0.5 text-[13px] text-muted-foreground">{t("extensions.lead")}</p>
+            <h1 className="flex items-center gap-2 text-[22px] font-semibold tracking-[-0.02em] text-foreground">
+              <IconPuzzle size={20} className="text-primary" />
+              {t("extensions.title")}
+            </h1>
+            <p className="mt-1 text-[13px] text-muted-foreground">{t("extensions.lead")}</p>
           </div>
           {ext.enabled ? (
             <div className="flex shrink-0 items-center gap-2">

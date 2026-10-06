@@ -34,6 +34,9 @@ module.exports = {
         },
         success: "hsl(var(--success))",
         warning: "hsl(var(--warning))",
+        "warning-strong": "hsl(var(--warning-strong))",
+        "success-strong": "hsl(var(--success-strong))",
+        "destructive-strong": "hsl(var(--destructive-strong))",
       },
       fontFamily: {
         sans: [

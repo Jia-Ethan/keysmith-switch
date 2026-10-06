@@ -597,49 +597,120 @@
   },
   "rewrite": {
     "title": "输入替换",
-    "lead": "你在 Codex 里照常打字，发给模型前按规则替换字面文本。输入框和会话历史仍显示原文。",
-    "masterLabel": "输入替换",
-    "masterHint": "关闭后不会替换任何内容，规则仍然保留。",
-    "codexLabel": "对 Codex 生效",
-    "codexHint": "替换你在 Codex 里输入的文字，包括历史里你说过的话。助手回复、工具输出和 Codex 自带的上下文不会改动；以 / 开头的命令整条跳过。",
-    "connect": {
-      "title": "Codex 连接",
-      "linked": "已连接：Codex 经 Keysmith 中转发往 {{provider}}",
-      "bypassed": "Codex 目前没有经过 Keysmith 中转（可能被其他工具切换了 provider），替换不会生效。",
-      "unlinked": "尚未连接。连接后，Keysmith 会在本机启动一个只监听 127.0.0.1 的中转服务，并在 Codex 的 config.toml 里新增一个 provider 指向它。",
-      "notRunning": "中转服务没有在运行，Codex 现在连不上模型。可以点「重新连接」，或「断开」让 Codex 直连。",
-      "connectButton": "连接 Codex",
+    "lead": "照常打字，发给模型前按你的规则替换；输入框和历史里仍是原文。",
+    "master": {
+      "label": "输入替换总开关",
+      "on": "开启",
+      "off": "已暂停",
+      "pausedBanner": "已暂停：不会替换任何内容，规则保留。"
+    },
+    "agents": {
+      "heading": "Agent",
+      "hint": "只对已连接的 Agent 生效。连接会改动该 Agent 的一个配置项，断开时只改回这一项。",
+      "toggle": "对 {{agent}} 生效"
+    },
+    "status": {
+      "active": "生效中",
+      "paused": "已暂停 · 原样转发",
+      "unlinked": "未连接",
+      "bypassed": "被绕过",
+      "notRunning": "中转未运行，{{agent}} 现在连不上模型",
+      "unsupported": "暂不支持",
+      "unrouted": "有 {{count}} 个新加的 provider 未经过中转，请重新连接"
+    },
+    "action": {
+      "connect": "连接…",
+      "disconnect": "断开…",
       "reconnect": "重新连接",
-      "disconnect": "断开",
-      "disconnectTitle": "断开 Codex",
-      "disconnectBody": "Codex 会改回直接连接 {{provider}}，Keysmith 中转服务会停止并取消开机启动。你的规则会保留。如果其他工具在这期间改过 config.toml 的同一项，那一项保持原样。",
-      "connected": "已连接 Codex",
-      "disconnected": "已断开，Codex 改回直连",
-      "provider": "当前 provider：{{name}}",
-      "unsupported": {
-        "no-config": "没有找到 Codex 的 config.toml，先运行一次 Codex 再来连接。",
-        "built-in-provider": "Codex 正在使用内置的 OpenAI 登录，暂不支持。请改用自定义 provider（config.toml 里的 [model_providers.xxx]）。",
-        "missing-provider": "config.toml 里的 model_provider 没有对应的 [model_providers] 配置。",
+      "restart": "重新启动",
+      "why": "了解原因",
+      "details": "连接详情"
+    },
+    "details": {
+      "writes": "写入 {{file}} 中的 {{field}}",
+      "upstream": "发往 {{host}}（断开时改回）",
+      "upstreams": "发往：{{hosts}}",
+      "oauth": "登录令牌会经过本机中转，不保存、不记录。",
+      "providerField": "每个个人 provider 的 baseUrl"
+    },
+    "connect": {
+      "title": "连接 {{agent}}",
+      "body": "将修改 {{file}} 中的 {{field}}，让 {{agent}} 经本机中转发送请求；中转只监听本机。断开时只改回这一项。",
+      "confirm": "连接",
+      "connected": "已连接 {{agent}}",
+      "disconnectTitle": "断开 {{agent}}",
+      "disconnectBody": "{{agent}} 会改回直接连接。只还原 {{file}} 里由 Keysmith 写入的那一项；如果其他工具改过它，就保持原样。规则保留。",
+      "disconnected": "已断开，{{agent}} 改回直接连接"
+    },
+    "bypassed": {
+      "codex": "Codex 的 provider 被其他工具切换了",
+      "claude": "settings.json 里的地址被改过，或项目设置覆盖了它",
+      "zcode": "在 ZCode 里改过 provider 的地址"
+    },
+    "unsupported": {
+      "codex": {
+        "no-config": "没有找到 Codex 的 config.toml，请先运行一次 Codex。",
+        "built-in-provider": "Codex 正在用内置的 OpenAI 登录，暂不支持；请使用自定义 provider。",
+        "missing-provider": "config.toml 里的 model_provider 没有对应的 provider 配置。",
         "no-base-url": "当前 provider 没有 base_url。",
         "not-http": "当前 provider 的 base_url 不是 http(s) 地址。",
-        "wire-api": "当前 provider 不是 Responses 接口（wire_api = \"responses\"）。"
+        "wire-api": "当前 provider 不是 Responses 接口。"
+      },
+      "claude": {
+        "no-config": "没有找到 Claude Code 的配置目录。",
+        "bad-settings": "settings.json 不是有效的 JSON，请先修好。",
+        "bedrock": "Bedrock 会对每个请求签名，改写后签名会失效，所以不支持。",
+        "vertex": "暂不支持 Vertex。",
+        "not-http": "ANTHROPIC_BASE_URL 不是 http(s) 地址。"
+      },
+      "zcode": {
+        "no-config": "没有找到 ZCode 的 provider 配置，请先在 ZCode 里添加一个 provider。",
+        "bad-config": "ZCode 的 provider_config.json 无法读取。",
+        "no-provider": "只有账号登录的 Coding Plan，暂不支持；请添加使用 API key 的 provider。"
+      },
+      "grok": {
+        "pending": "等 Grok 的 Keysmith 适配器支持后开放：它会在卸载时整份还原 config.toml，会把连接一起删掉。"
       }
     },
-    "tables": "规则表",
-    "tablesHint": "同一位置多张表都能匹配时，上面的优先。「我的规则」总在最前。",
+    "rules": {
+      "heading": "规则",
+      "hint": "同一位置多张表都能匹配时，上面的优先。「我的规则」总在最前。",
+      "count": "{{count}} 条",
+      "scope": "适用于",
+      "scopeAll": "全部 Agent",
+      "scopeLabel": "{{table}} 适用于哪些 Agent",
+      "filter": "按 Agent 筛选",
+      "filterAll": "全部 Agent",
+      "search": "搜索原文或替换",
+      "sort": "排序",
+      "sortAdded": "添加顺序",
+      "sortFrom": "原文 A→Z",
+      "noMatch": "没有匹配的规则",
+      "showAll": "显示全部 {{count}} 条",
+      "showLess": "收起",
+      "empty": "还没有规则。",
+      "addFirst": "添加第一条",
+      "howItMatches": "匹配方式",
+      "howBody": "按字面匹配，区分大小写；同一位置取最长的那条；替换出来的文字不会再被替换；以 / 开头的命令整条跳过。只改你打的字，助手回复、工具输出和 Agent 自带的上下文不动。",
+      "collapse": "收起 {{table}}",
+      "expand": "展开 {{table}}",
+      "enableTable": "启用{{table}}",
+      "scopeEmpty": "至少选择一个 Agent；想停用请关掉这张表。"
+    },
     "mine": "我的规则",
     "pack": "规则包",
-    "ruleCount": "{{count}} 条",
-    "enableTable": "启用{{table}}",
-    "moveUp": "上移",
-    "moveDown": "下移",
+    "moveUp": "上移 {{table}}",
+    "moveDown": "下移 {{table}}",
     "copyToMine": "复制到我的规则",
+    "copyHint": "合并到我的规则，原文重复的跳过",
     "copied": "已复制到我的规则",
     "readOnly": "规则包只读；想修改请先复制到我的规则。",
-    "pending": "有新版本 v{{version}}，确认后才会生效",
+    "viewRules": "查看规则",
+    "pending": "有新版本 v{{version}}，确认后才生效",
     "review": "查看更新",
     "reviewTitle": "规则包更新：{{title}}",
-    "reviewBody": "这张表正在启用。确认后，下一轮对话起按新规则替换。",
+    "reviewBodyOn": "这张表正在启用。确认后，下一轮对话起按新规则替换。",
+    "reviewBodyOff": "这张表没有启用。确认后切换到新版本，启用后才会生效。",
     "accept": "启用新版本",
     "accepted": "已切换到新版本",
     "diffAdded": "新增",
@@ -652,14 +723,14 @@
       "fromPlaceholder": "要匹配的文字",
       "toPlaceholder": "留空表示删除",
       "add": "添加规则",
-      "remove": "删除这条",
+      "remove": "删除第 {{n}} 条",
       "save": "保存规则",
       "saved": "规则已保存",
       "discard": "放弃修改",
-      "empty": "还没有规则。规则按字面匹配、区分大小写；同一位置取最长的那条，替换后的文字不会再被替换。",
       "duplicate": "「{{from}}」重复了",
       "emptyFrom": "原文不能为空",
-      "unsaved": "有未保存的修改"
+      "unsaved": "有未保存的修改",
+      "empty": "（空）"
     },
     "loadError": "读取输入替换设置失败"
   }

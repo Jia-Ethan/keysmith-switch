@@ -18,7 +18,7 @@
     "extensions": "Extensions",
     "announcements": "Announcements",
     "announcementsNew": "New announcement",
-    "rewrite": "Rewrite"
+    "rewrite": "Input rewrite"
   },
   "common": {
     "ok": "OK",
@@ -597,49 +597,120 @@
   },
   "rewrite": {
     "title": "Input rewrite",
-    "lead": "Type in Codex as usual. Before your words reach the model, matching text is replaced word for word. The input box and chat history keep what you typed.",
-    "masterLabel": "Input rewrite",
-    "masterHint": "When off, nothing is replaced. Your rules are kept.",
-    "codexLabel": "Apply to Codex",
-    "codexHint": "Replaces what you type in Codex, including your earlier messages in the history. Assistant replies, tool output and Codex's own context are left alone, and a message that starts with / is skipped whole.",
-    "connect": {
-      "title": "Codex connection",
-      "linked": "Connected: Codex goes through the Keysmith relay to {{provider}}",
-      "bypassed": "Codex is not going through the Keysmith relay right now (another tool may have switched its provider), so nothing is replaced.",
-      "unlinked": "Not connected. Connecting starts a relay on this computer that only listens on 127.0.0.1, and adds a provider to Codex's config.toml that points at it.",
-      "notRunning": "The relay is not running, so Codex cannot reach the model. Reconnect, or disconnect to let Codex connect directly.",
-      "connectButton": "Connect Codex",
+    "lead": "Type as usual. Your rules are applied before the model sees your words; the input box and history keep what you typed.",
+    "master": {
+      "label": "Input rewrite master switch",
+      "on": "On",
+      "off": "Paused",
+      "pausedBanner": "Paused: nothing is replaced. Your rules are kept."
+    },
+    "agents": {
+      "heading": "Agents",
+      "hint": "Applies only to connected agents. Connecting changes one setting of that agent; disconnecting restores only that setting.",
+      "toggle": "Apply to {{agent}}"
+    },
+    "status": {
+      "active": "Active",
+      "paused": "Paused · passing through",
+      "unlinked": "Not connected",
+      "bypassed": "Bypassed",
+      "notRunning": "The relay isn't running; {{agent}} can't reach the model",
+      "unsupported": "Not supported yet",
+      "unrouted": "New providers ({{count}}) don't go through the relay yet; reconnect"
+    },
+    "action": {
+      "connect": "Connect…",
+      "disconnect": "Disconnect…",
       "reconnect": "Reconnect",
-      "disconnect": "Disconnect",
-      "disconnectTitle": "Disconnect Codex",
-      "disconnectBody": "Codex goes back to connecting to {{provider}} directly, and the Keysmith relay stops and no longer starts at sign-in. Your rules are kept. If another tool changed the same config.toml entry in the meantime, that entry is left as it is.",
-      "connected": "Codex connected",
-      "disconnected": "Disconnected; Codex connects directly again",
-      "provider": "Current provider: {{name}}",
-      "unsupported": {
+      "restart": "Restart",
+      "why": "Why?",
+      "details": "Connection details"
+    },
+    "details": {
+      "writes": "Writes {{field}} in {{file}}",
+      "upstream": "Sends to {{host}} (restored when you disconnect)",
+      "upstreams": "Sends to: {{hosts}}",
+      "oauth": "Your sign-in token passes through the local relay and is never stored or logged.",
+      "providerField": "baseUrl of each personal provider"
+    },
+    "connect": {
+      "title": "Connect {{agent}}",
+      "body": "This changes {{field}} in {{file}} so {{agent}} sends requests through a relay that only listens on this computer. Disconnecting restores only that value.",
+      "confirm": "Connect",
+      "connected": "{{agent}} connected",
+      "disconnectTitle": "Disconnect {{agent}}",
+      "disconnectBody": "{{agent}} goes back to connecting directly. Only the value Keysmith wrote in {{file}} is restored; if another tool changed it, it's left alone. Your rules are kept.",
+      "disconnected": "Disconnected; {{agent}} connects directly again"
+    },
+    "bypassed": {
+      "codex": "Another tool switched Codex's provider",
+      "claude": "The address in settings.json changed, or a project setting overrides it",
+      "zcode": "A provider's address was changed in ZCode"
+    },
+    "unsupported": {
+      "codex": {
         "no-config": "Codex's config.toml was not found. Run Codex once, then connect.",
-        "built-in-provider": "Codex is signed in with its built-in OpenAI provider, which is not supported yet. Use a custom provider ([model_providers.xxx] in config.toml).",
-        "missing-provider": "The model_provider in config.toml has no matching [model_providers] entry.",
+        "built-in-provider": "Codex is signed in with its built-in OpenAI provider, which isn't supported yet. Use a custom provider.",
+        "missing-provider": "The model_provider in config.toml has no matching provider entry.",
         "no-base-url": "The current provider has no base_url.",
         "not-http": "The current provider's base_url is not an http(s) address.",
-        "wire-api": "The current provider does not use the Responses API (wire_api = \"responses\")."
+        "wire-api": "The current provider doesn't use the Responses API."
+      },
+      "claude": {
+        "no-config": "Claude Code's settings folder was not found.",
+        "bad-settings": "settings.json isn't valid JSON. Fix it first.",
+        "bedrock": "Bedrock signs each request, so a rewritten request would fail. Not supported.",
+        "vertex": "Vertex isn't supported yet.",
+        "not-http": "ANTHROPIC_BASE_URL is not an http(s) address."
+      },
+      "zcode": {
+        "no-config": "ZCode's provider settings were not found. Add a provider in ZCode first.",
+        "bad-config": "ZCode's provider_config.json can't be read.",
+        "no-provider": "Only Coding Plan sign-in is set up, which isn't supported yet. Add a provider that uses an API key."
+      },
+      "grok": {
+        "pending": "Coming once the Grok Keysmith adapter supports it: its uninstall restores the whole config.toml and would drop the connection."
       }
     },
-    "tables": "Rule tables",
-    "tablesHint": "When tables match at the same spot, the one higher up wins. My rules always comes first.",
+    "rules": {
+      "heading": "Rules",
+      "hint": "When tables match at the same spot, the one higher up wins. My rules always come first.",
+      "count": "Rules: {{count}}",
+      "scope": "Applies to",
+      "scopeAll": "All agents",
+      "scopeLabel": "Agents {{table}} applies to",
+      "filter": "Filter by agent",
+      "filterAll": "All agents",
+      "search": "Search rules",
+      "sort": "Sort",
+      "sortAdded": "Order added",
+      "sortFrom": "Text A→Z",
+      "noMatch": "No rules match",
+      "showAll": "Show all ({{count}})",
+      "showLess": "Show less",
+      "empty": "No rules yet.",
+      "addFirst": "Add your first rule",
+      "howItMatches": "How matching works",
+      "howBody": "Exact, case-sensitive matches. At any spot the longest rule wins; replaced text isn't replaced again; messages starting with / are skipped. Only what you type changes; assistant replies, tool output and the agent's own context are left alone.",
+      "collapse": "Collapse {{table}}",
+      "expand": "Expand {{table}}",
+      "enableTable": "Turn on {{table}}",
+      "scopeEmpty": "Pick at least one agent; to stop a table, turn it off."
+    },
     "mine": "My rules",
     "pack": "Rule pack",
-    "ruleCount": "{{count}} rules",
-    "enableTable": "Turn on {{table}}",
-    "moveUp": "Move up",
-    "moveDown": "Move down",
+    "moveUp": "Move {{table}} up",
+    "moveDown": "Move {{table}} down",
     "copyToMine": "Copy to My rules",
+    "copyHint": "Merged into My rules; text already there is skipped",
     "copied": "Copied to My rules",
     "readOnly": "Rule packs are read-only. Copy one to My rules to change it.",
-    "pending": "Version {{version}} is waiting for your OK",
+    "viewRules": "View rules",
+    "pending": "v{{version}} is waiting for your OK",
     "review": "Review update",
     "reviewTitle": "Rule pack update: {{title}}",
-    "reviewBody": "This table is on. Once you accept, the new rules apply from the next message.",
+    "reviewBodyOn": "This table is on. Once you accept, the new rules apply from the next message.",
+    "reviewBodyOff": "This table is off. Accepting switches it to the new version; it applies once you turn it on.",
     "accept": "Use new version",
     "accepted": "Switched to the new version",
     "diffAdded": "Added",
@@ -652,14 +723,14 @@
       "fromPlaceholder": "Text to match",
       "toPlaceholder": "Leave empty to delete",
       "add": "Add rule",
-      "remove": "Remove rule",
+      "remove": "Remove rule {{n}}",
       "save": "Save rules",
       "saved": "Rules saved",
       "discard": "Discard changes",
-      "empty": "No rules yet. Rules match text exactly and are case-sensitive. At any spot the longest rule wins, and replaced text is not replaced again.",
       "duplicate": "“{{from}}” appears twice",
       "emptyFrom": "Text to match cannot be empty",
-      "unsaved": "Unsaved changes"
+      "unsaved": "Unsaved changes",
+      "empty": "(empty)"
     },
     "loadError": "Could not read the input rewrite settings"
   }

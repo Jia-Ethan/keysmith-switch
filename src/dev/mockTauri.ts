@@ -122,20 +122,32 @@ function extView() {
   return { packs, updates: packs.filter((p) => p.updateAvailable).length, error: null, checkedAt: now() };
 }
 
-// Input rewrite. `?rewrite=pending` shows a pack waiting for review.
+// Input rewrite. `?rewrite=pending` shows a pack waiting for review; `?rewrite=states` shows
+// every agent state at once (active, bypassed, relay down, unsupported); `?rewrite=many` adds
+// a long table; `?rewrite=empty` starts with no rules.
+const rewriteMode = new URLSearchParams(window.location.search).get("rewrite");
 const rewrite = {
   enabled: true,
   codexEnabled: true,
   tables: [
-    { id: "user", kind: "user", title: "", enabled: true, priority: 0, packId: null, packVersion: null, tools: null, rules: [{ from: "提示词", to: "指令" }], pending: null },
-    ...(new URLSearchParams(window.location.search).get("rewrite") === "pending"
+    {
+      id: "user", kind: "user", title: "", enabled: true, priority: 0, packId: null, packVersion: null, tools: null,
+      rules:
+        rewriteMode === "empty"
+          ? []
+          : rewriteMode === "many"
+            ? Array.from({ length: 48 }, (_, i) => ({ from: `术语${i + 1}`, to: `term ${i + 1}` }))
+            : [{ from: "提示词", to: "指令" }, { from: "帮我", to: "请" }],
+      pending: null,
+    },
+    ...(rewriteMode === "pending" || rewriteMode === "states" || rewriteMode === "many"
       ? [{ id: "pack:example.rules", kind: "pack", title: "示例规则包", enabled: true, priority: 1, packId: "example.rules", packVersion: "0.1.0", tools: ["codex", "claude"], rules: [{ from: "foo", to: "bar" }], pending: { version: "0.2.0", title: "示例规则包", rules: [{ from: "foo", to: "baz" }, { from: "qux", to: "" }] } }]
       : []),
   ] as any[],
-  link: { state: "unlinked" } as any,
-  claudeLink: { state: "unlinked" } as any,
-  zcodeLink: { state: "unlinked" } as any,
-  running: false,
+  link: (rewriteMode === "states" ? { state: "linked", provider: "custom" } : { state: "unlinked" }) as any,
+  claudeLink: (rewriteMode === "states" ? { state: "bypassed" } : { state: "unlinked" }) as any,
+  zcodeLink: (rewriteMode === "states" ? { state: "linked", unrouted: 1 } : { state: "unlinked" }) as any,
+  running: rewriteMode === "states",
 };
 
 function rewriteView() {
