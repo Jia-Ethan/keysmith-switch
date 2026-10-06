@@ -199,8 +199,7 @@ fn script_basename(tool: ToolKind) -> &'static str {
     }
 }
 
-fn sidecar_file_name(tool: ToolKind) -> String {
-    let base = sidecar_basename(tool);
+fn sidecar_file_name(base: &str) -> String {
     if cfg!(windows) {
         format!("{base}.exe")
     } else {
@@ -213,11 +212,16 @@ fn target_triple() -> &'static str {
 }
 
 pub fn find_sidecar(tool: ToolKind) -> Option<PathBuf> {
-    let name = sidecar_file_name(tool);
+    find_bundled_binary(sidecar_basename(tool))
+}
+
+/// A binary shipped next to the app, by base name (no triple, no `.exe`).
+pub fn find_bundled_binary(base: &str) -> Option<PathBuf> {
+    let name = sidecar_file_name(base);
     let triple_name = if cfg!(windows) {
-        format!("{}-{}.exe", sidecar_basename(tool), target_triple())
+        format!("{base}-{}.exe", target_triple())
     } else {
-        format!("{}-{}", sidecar_basename(tool), target_triple())
+        format!("{base}-{}", target_triple())
     };
     let mut roots = Vec::new();
     if let Ok(dir) = std::env::var(ENV_SIDECAR_DIR) {
