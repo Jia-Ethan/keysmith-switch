@@ -597,49 +597,120 @@
   },
   "rewrite": {
     "title": "輸入替換",
-    "lead": "你在 Codex 裡照常打字，送給模型前按規則替換字面文字。輸入框與對話歷史仍顯示原文。",
-    "masterLabel": "輸入替換",
-    "masterHint": "關閉後不會替換任何內容，規則仍會保留。",
-    "codexLabel": "對 Codex 生效",
-    "codexHint": "替換你在 Codex 裡輸入的文字，包括歷史中你說過的話。助理回覆、工具輸出與 Codex 自帶的上下文不會改動；以 / 開頭的指令整條略過。",
-    "connect": {
-      "title": "Codex 連線",
-      "linked": "已連線：Codex 經 Keysmith 中轉送往 {{provider}}",
-      "bypassed": "Codex 目前沒有經過 Keysmith 中轉（可能被其他工具切換了 provider），替換不會生效。",
-      "unlinked": "尚未連線。連線後，Keysmith 會在本機啟動一個只監聽 127.0.0.1 的中轉服務，並在 Codex 的 config.toml 裡新增一個 provider 指向它。",
-      "notRunning": "中轉服務沒有在執行，Codex 現在連不上模型。可以按「重新連線」，或「中斷」讓 Codex 直連。",
-      "connectButton": "連線 Codex",
+    "lead": "照常打字，送給模型前按你的規則替換；輸入框與歷史中仍是原文。",
+    "master": {
+      "label": "輸入替換總開關",
+      "on": "開啟",
+      "off": "已暫停",
+      "pausedBanner": "已暫停：不會替換任何內容，規則保留。"
+    },
+    "agents": {
+      "heading": "Agent",
+      "hint": "只對已連線的 Agent 生效。連線會改動該 Agent 的一個設定項，中斷時只改回這一項。",
+      "toggle": "對 {{agent}} 生效"
+    },
+    "status": {
+      "active": "生效中",
+      "paused": "已暫停 · 原樣轉發",
+      "unlinked": "未連線",
+      "bypassed": "被繞過",
+      "notRunning": "中轉未執行，{{agent}} 目前連不上模型",
+      "unsupported": "暫不支援",
+      "unrouted": "有 {{count}} 個新加入的 provider 未經過中轉，請重新連線"
+    },
+    "action": {
+      "connect": "連線…",
+      "disconnect": "中斷…",
       "reconnect": "重新連線",
-      "disconnect": "中斷",
-      "disconnectTitle": "中斷 Codex",
-      "disconnectBody": "Codex 會改回直接連線 {{provider}}，Keysmith 中轉服務會停止並取消開機啟動。你的規則會保留。若其他工具在這段期間改過 config.toml 的同一項，那一項維持原樣。",
-      "connected": "已連線 Codex",
-      "disconnected": "已中斷，Codex 改回直連",
-      "provider": "目前 provider：{{name}}",
-      "unsupported": {
-        "no-config": "沒有找到 Codex 的 config.toml，請先執行一次 Codex 再來連線。",
-        "built-in-provider": "Codex 正在使用內建的 OpenAI 登入，暫不支援。請改用自訂 provider（config.toml 裡的 [model_providers.xxx]）。",
-        "missing-provider": "config.toml 裡的 model_provider 沒有對應的 [model_providers] 設定。",
+      "restart": "重新啟動",
+      "why": "了解原因",
+      "details": "連線詳情"
+    },
+    "details": {
+      "writes": "寫入 {{file}} 中的 {{field}}",
+      "upstream": "送往 {{host}}（中斷時改回）",
+      "upstreams": "送往：{{hosts}}",
+      "oauth": "登入權杖會經過本機中轉，不保存、不記錄。",
+      "providerField": "每個個人 provider 的 baseUrl"
+    },
+    "connect": {
+      "title": "連線 {{agent}}",
+      "body": "將修改 {{file}} 中的 {{field}}，讓 {{agent}} 經本機中轉送出請求；中轉只監聽本機。中斷時只改回這一項。",
+      "confirm": "連線",
+      "connected": "已連線 {{agent}}",
+      "disconnectTitle": "中斷 {{agent}}",
+      "disconnectBody": "{{agent}} 會改回直接連線。只還原 {{file}} 裡由 Keysmith 寫入的那一項；如果其他工具改過它，就保持原樣。規則保留。",
+      "disconnected": "已中斷，{{agent}} 改回直接連線"
+    },
+    "bypassed": {
+      "codex": "Codex 的 provider 被其他工具切換了",
+      "claude": "settings.json 裡的位址被改過，或專案設定覆蓋了它",
+      "zcode": "在 ZCode 裡改過 provider 的位址"
+    },
+    "unsupported": {
+      "codex": {
+        "no-config": "找不到 Codex 的 config.toml，請先執行一次 Codex。",
+        "built-in-provider": "Codex 正在使用內建的 OpenAI 登入，暫不支援；請使用自訂 provider。",
+        "missing-provider": "config.toml 裡的 model_provider 沒有對應的 provider 設定。",
         "no-base-url": "目前的 provider 沒有 base_url。",
         "not-http": "目前 provider 的 base_url 不是 http(s) 位址。",
-        "wire-api": "目前的 provider 不是 Responses 介面（wire_api = \"responses\"）。"
+        "wire-api": "目前的 provider 不是 Responses 介面。"
+      },
+      "claude": {
+        "no-config": "找不到 Claude Code 的設定資料夾。",
+        "bad-settings": "settings.json 不是有效的 JSON，請先修好。",
+        "bedrock": "Bedrock 會對每個請求簽章，改寫後簽章會失效，所以不支援。",
+        "vertex": "暫不支援 Vertex。",
+        "not-http": "ANTHROPIC_BASE_URL 不是 http(s) 位址。"
+      },
+      "zcode": {
+        "no-config": "找不到 ZCode 的 provider 設定，請先在 ZCode 裡新增一個 provider。",
+        "bad-config": "ZCode 的 provider_config.json 無法讀取。",
+        "no-provider": "只有帳號登入的 Coding Plan，暫不支援；請新增使用 API key 的 provider。"
+      },
+      "grok": {
+        "pending": "等 Grok 的 Keysmith 轉接器支援後開放：它在解除安裝時會整份還原 config.toml，會把連線一起刪掉。"
       }
     },
-    "tables": "規則表",
-    "tablesHint": "同一位置多張表都能匹配時，上面的優先。「我的規則」永遠在最前。",
+    "rules": {
+      "heading": "規則",
+      "hint": "同一位置多張表都能比對時，上面的優先。「我的規則」總在最前。",
+      "count": "{{count}} 條",
+      "scope": "適用於",
+      "scopeAll": "全部 Agent",
+      "scopeLabel": "{{table}} 適用於哪些 Agent",
+      "filter": "依 Agent 篩選",
+      "filterAll": "全部 Agent",
+      "search": "搜尋原文或替換",
+      "sort": "排序",
+      "sortAdded": "新增順序",
+      "sortFrom": "原文 A→Z",
+      "noMatch": "沒有符合的規則",
+      "showAll": "顯示全部 {{count}} 條",
+      "showLess": "收合",
+      "empty": "還沒有規則。",
+      "addFirst": "新增第一條",
+      "howItMatches": "比對方式",
+      "howBody": "按字面比對，區分大小寫；同一位置取最長的那條；替換出來的文字不會再被替換；以 / 開頭的指令整條略過。只改你打的字，助理回覆、工具輸出與 Agent 自帶的上下文不動。",
+      "collapse": "收合 {{table}}",
+      "expand": "展開 {{table}}",
+      "enableTable": "啟用{{table}}",
+      "scopeEmpty": "至少選一個 Agent；想停用請關掉這張表。"
+    },
     "mine": "我的規則",
     "pack": "規則包",
-    "ruleCount": "{{count}} 條",
-    "enableTable": "啟用{{table}}",
-    "moveUp": "上移",
-    "moveDown": "下移",
+    "moveUp": "上移 {{table}}",
+    "moveDown": "下移 {{table}}",
     "copyToMine": "複製到我的規則",
+    "copyHint": "合併到我的規則，原文重複的略過",
     "copied": "已複製到我的規則",
-    "readOnly": "規則包為唯讀；想修改請先複製到我的規則。",
-    "pending": "有新版本 v{{version}}，確認後才會生效",
-    "review": "檢視更新",
+    "readOnly": "規則包唯讀；想修改請先複製到我的規則。",
+    "viewRules": "查看規則",
+    "pending": "有新版本 v{{version}}，確認後才生效",
+    "review": "查看更新",
     "reviewTitle": "規則包更新：{{title}}",
-    "reviewBody": "這張表正在啟用。確認後，下一輪對話起按新規則替換。",
+    "reviewBodyOn": "這張表正在啟用。確認後，下一輪對話起按新規則替換。",
+    "reviewBodyOff": "這張表沒有啟用。確認後切換到新版本，啟用後才會生效。",
     "accept": "啟用新版本",
     "accepted": "已切換到新版本",
     "diffAdded": "新增",
@@ -649,17 +720,17 @@
     "editor": {
       "from": "原文",
       "to": "替換為",
-      "fromPlaceholder": "要匹配的文字",
+      "fromPlaceholder": "要比對的文字",
       "toPlaceholder": "留空表示刪除",
       "add": "新增規則",
-      "remove": "刪除這條",
+      "remove": "刪除第 {{n}} 條",
       "save": "儲存規則",
       "saved": "規則已儲存",
-      "discard": "放棄修改",
-      "empty": "還沒有規則。規則按字面匹配、區分大小寫；同一位置取最長的那條，替換後的文字不會再被替換。",
+      "discard": "捨棄修改",
       "duplicate": "「{{from}}」重複了",
       "emptyFrom": "原文不能為空",
-      "unsaved": "有未儲存的修改"
+      "unsaved": "有未儲存的修改",
+      "empty": "（空）"
     },
     "loadError": "讀取輸入替換設定失敗"
   }

@@ -42,6 +42,10 @@
     --destructive-foreground: 0 0% 100%;
     --success: 152 58% 36%;
     --warning: 36 92% 42%;
+    /* Status text on cards: --warning and --success are under 4.5:1 there; these pass AA. */
+    --warning-strong: 32 92% 32%;
+    --success-strong: 152 58% 30%;
+    --destructive-strong: 0 68% 50%;
     --shadow: 30 14% 10%;
 
     /* Accent: Keysmith copper until an agent is chosen. */
@@ -79,6 +83,9 @@
     --destructive-foreground: 0 0% 100%;
     --success: 152 52% 52%;
     --warning: 38 92% 58%;
+    --warning-strong: 38 92% 62%;
+    --success-strong: 152 52% 52%;
+    --destructive-strong: 0 72% 66%;
     --shadow: 228 30% 2%;
 
     --ac-r: 214;
