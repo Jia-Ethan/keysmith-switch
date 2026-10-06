@@ -953,3 +953,31 @@ fn an_old_app_style_index_entry_kind_mismatch_is_refused() {
     let error = install(&store, &fetch, &source("rk"), "fixture.rules", "en", true).unwrap_err();
     assert_eq!(error.code(), "invalid");
 }
+
+/// A rule pack built by the extensions repo's packlib (see make-extension-fixtures.py) passes
+/// the app's own archive checks: the two validators agree.
+#[test]
+fn a_rule_pack_built_by_the_publisher_tooling_passes_the_app_checks() {
+    let (_tmp, store) = store();
+    let fetch = Fixture::with(&["rules"]);
+    let view = refresh(&store, &fetch, &source("rules"), "zh-CN");
+    assert_eq!(view.packs.len(), 1);
+    let pack = &view.packs[0];
+    assert_eq!(pack.kind, PackKind::Rules);
+    assert_eq!(pack.min_app_version, "0.4.0");
+    let index = keysmith_switch_lib::extensions::parse_index(
+        &fetch.files.borrow()[&Fixture::url("rules", "index.json")],
+        &source("rules"),
+    )
+    .unwrap();
+    let entry = &index.packs[0];
+    let archive = fetch.files.borrow()[&entry.url].clone();
+    let loaded = check_archive(&archive, entry).unwrap();
+    assert_eq!(
+        loaded.rules,
+        vec![
+            keysmith_rewrite::Rule::new("提示词", "指令"),
+            keysmith_rewrite::Rule::new("um ", "")
+        ]
+    );
+}

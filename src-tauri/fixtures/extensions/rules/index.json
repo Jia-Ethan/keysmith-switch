@@ -1,0 +1,26 @@
+{
+  "generated_at": "2026-10-06T00:00:00Z",
+  "packs": [
+    {
+      "description": {
+        "en": "Fixture rule pack for tests"
+      },
+      "id": "fixture.rules",
+      "item_count": 0,
+      "kind": "rules",
+      "min_app_version": "0.4.0",
+      "name": {
+        "en": "Fixture rules",
+        "zh-CN": "测试规则"
+      },
+      "sha256": "25f4527dd90e4dcafe829290b5b19d7a5046a2ec752a6a9714eaf4ebd9c568a9",
+      "size": 529,
+      "tools": [
+        "codex"
+      ],
+      "url": "https://github.com/Jia-Ethan/keysmith-switch-extensions/releases/download/test-rules/fixture.rules-0.1.0.zip",
+      "version": "0.1.0"
+    }
+  ],
+  "schema": 1
+}
