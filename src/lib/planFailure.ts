@@ -18,6 +18,36 @@ export function isNoise(reason: string): boolean {
   return NOISE.test(reason.trim());
 }
 
+const OWNERSHIP = "existing deployment manifest ownership conflict: ";
+const INSTRUCTIONS_MISSING =
+  /model_instructions_file is missing; expected it to still reference (\S+?)\. Uninstall will leave/;
+const INSTRUCTIONS_REPOINTED =
+  /model_instructions_file ownership conflict: the current field is set to another path; expected it to still reference (\S+)/;
+const DRY_RUN = /dry-run found (\d+) confirmed blocker\(s\); no files were changed\.?/;
+
+/**
+ * The adapter speaks English whatever the interface language is. Say the reasons people
+ * actually hit in their own language; anything unknown passes through unchanged.
+ */
+export function localizeReason(reason: string, t: TFunction): string {
+  const dry = DRY_RUN.exec(reason);
+  if (dry) return t("plan.blockerDryRun", { count: Number(dry[1]) });
+  if (!reason.startsWith(OWNERSHIP)) return reason;
+  const missing = INSTRUCTIONS_MISSING.exec(reason);
+  if (missing) return t("plan.blockerInstructionsMissing", { ref: missing[1] });
+  const repointed = INSTRUCTIONS_REPOINTED.exec(reason);
+  if (repointed) return t("plan.blockerInstructionsRepointed", { ref: repointed[1] });
+  return t("plan.blockerOwnership", { detail: reason.slice(OWNERSHIP.length) });
+}
+
+/** Codex only: the managed config line is gone, so the old deployment record is stale and Cleanup puts it right. */
+export function needsCleanup(tool: ToolId, envelope: Envelope): boolean {
+  return (
+    tool === "codex" &&
+    [...envelope.blockers, envelope.error ?? ""].some((item) => INSTRUCTIONS_MISSING.test(item))
+  );
+}
+
 /** A command failed with a JSON body (`{"kind":…,"message":…}`); say what it means. */
 export function readableError(reason: unknown, t: TFunction): string {
   const text = reason instanceof Error ? reason.message : String(reason ?? "");
@@ -39,7 +69,7 @@ export function failureFromEnvelope(envelope: Envelope, t: TFunction): PlanFailu
   const reason = envelope.error || envelope.blockers.find((item) => !isNoise(item));
   const stderr = envelope.redactedStderr?.trim();
   return {
-    message: reason ? toastSafeMessage(reason) : t("plan.adapterFailed"),
+    message: reason ? toastSafeMessage(localizeReason(reason, t)) : t("plan.adapterFailed"),
     detail: stderr ? stderr.slice(-700) : null,
   };
 }
