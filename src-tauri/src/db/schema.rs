@@ -6,7 +6,9 @@ use crate::error::{Error, Result};
 use crate::models::now_rfc3339;
 use crate::paths::AppPaths;
 
-pub const SCHEMA_VERSION: i64 = 1;
+pub const SCHEMA_VERSION: i64 = 2;
+/// The oldest schema a backup may carry. Restoring one migrates it forward.
+pub const MIN_RESTORABLE_SCHEMA: i64 = 1;
 
 const MIGRATION_1: &str = r#"
 CREATE TABLE IF NOT EXISTS prompts (
@@ -87,6 +89,34 @@ CREATE INDEX IF NOT EXISTS idx_operations_tool ON operations(tool, created_at);
 CREATE INDEX IF NOT EXISTS idx_activations_tool ON activations(tool);
 "#;
 
+/// Input rewrite rules. `pack_*` columns describe a table an extension pack installed;
+/// `pending_json` holds a pack update that waits for the person to accept it.
+const MIGRATION_2: &str = r#"
+CREATE TABLE IF NOT EXISTS rule_tables (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 0,
+    priority INTEGER NOT NULL DEFAULT 0,
+    pack_id TEXT,
+    pack_version TEXT,
+    pending_json TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    table_id TEXT NOT NULL REFERENCES rule_tables(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    from_text TEXT NOT NULL,
+    to_text TEXT NOT NULL,
+    UNIQUE(table_id, from_text)
+);
+
+CREATE INDEX IF NOT EXISTS idx_rules_table ON rules(table_id, position);
+"#;
+
 pub fn configure(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "PRAGMA foreign_keys = ON;
@@ -141,6 +171,11 @@ pub fn apply_pending(conn: &Connection, paths: &AppPaths) -> Result<Vec<i64>> {
         conn.execute_batch(MIGRATION_1)?;
         record_version(conn, 1)?;
         applied.push(1);
+    }
+    if current < 2 {
+        conn.execute_batch(MIGRATION_2)?;
+        record_version(conn, 2)?;
+        applied.push(2);
     }
     Ok(applied)
 }

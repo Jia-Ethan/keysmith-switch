@@ -1,4 +1,5 @@
 pub mod markdown;
+pub mod rules;
 pub mod schema;
 
 use std::fs;
@@ -81,7 +82,8 @@ impl Store {
                 "backup database failed integrity validation",
             ));
         }
-        if schema::current_version(&source)? != schema::SCHEMA_VERSION {
+        let source_version = schema::current_version(&source)?;
+        if !(schema::MIN_RESTORABLE_SCHEMA..=schema::SCHEMA_VERSION).contains(&source_version) {
             return Err(Error::invalid("backup database schema is not supported"));
         }
 
@@ -125,6 +127,18 @@ impl Store {
         }
 
         if let Err(error) = schema::restore_from(&source, &mut conn) {
+            let _ = fs::remove_dir_all(&self.paths.prompts);
+            if had_prompts {
+                let _ = fs::rename(&previous_prompts, &self.paths.prompts);
+            }
+            if let Ok(previous) = open_connection(&rollback_db) {
+                let _ = schema::restore_from(&previous, &mut conn);
+            }
+            let _ = fs::remove_file(&rollback_db);
+            return Err(error);
+        }
+        // An older backup comes back at its own schema; bring it up to this app's.
+        if let Err(error) = schema::apply_pending(&conn, &self.paths) {
             let _ = fs::remove_dir_all(&self.paths.prompts);
             if had_prompts {
                 let _ = fs::rename(&previous_prompts, &self.paths.prompts);
@@ -194,6 +208,8 @@ impl Store {
             tx.execute("DELETE FROM operations", [])?;
             tx.execute("DELETE FROM tool_state", [])?;
             tx.execute("DELETE FROM settings", [])?;
+            tx.execute("DELETE FROM rules", [])?;
+            tx.execute("DELETE FROM rule_tables", [])?;
             write_settings(&tx, &Settings::default())?;
             tx.commit()?;
             self.paths.ensure()?;
@@ -751,6 +767,12 @@ impl Store {
         if let Some(value) = patch.extensions_enabled {
             settings.extensions_enabled = value;
         }
+        if let Some(value) = patch.rewrite_enabled {
+            settings.rewrite_enabled = value;
+        }
+        if let Some(value) = patch.rewrite_codex_enabled {
+            settings.rewrite_codex_enabled = value;
+        }
         let conn = self.conn()?;
         write_settings(&conn, &settings)?;
         Ok(settings)
@@ -1084,6 +1106,11 @@ fn write_settings(conn: &Connection, settings: &Settings) -> Result<()> {
             settings.first_run_completed.to_string(),
         ),
         ("extensionsEnabled", settings.extensions_enabled.to_string()),
+        ("rewriteEnabled", settings.rewrite_enabled.to_string()),
+        (
+            "rewriteCodexEnabled",
+            settings.rewrite_codex_enabled.to_string(),
+        ),
     ];
     for (key, value) in pairs {
         conn.execute(
@@ -1127,6 +1154,8 @@ fn apply_setting(settings: &mut Settings, key: &str, value: &str) {
         }
         "firstRunCompleted" => settings.first_run_completed = truthy(value),
         "extensionsEnabled" => settings.extensions_enabled = truthy(value),
+        "rewriteEnabled" => settings.rewrite_enabled = truthy(value),
+        "rewriteCodexEnabled" => settings.rewrite_codex_enabled = truthy(value),
         _ => {}
     }
 }

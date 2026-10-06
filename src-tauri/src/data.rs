@@ -525,7 +525,8 @@ fn read_backup_archive(zip_path: &Path) -> Result<ExtractedBackup> {
     let manifest: BackupManifest = serde_json::from_str(&manifest_text)
         .map_err(|_| Error::invalid("backup manifest is invalid"))?;
     if manifest.format != BACKUP_FORMAT
-        || manifest.schema_version != crate::db::schema::SCHEMA_VERSION
+        || !(crate::db::schema::MIN_RESTORABLE_SCHEMA..=crate::db::schema::SCHEMA_VERSION)
+            .contains(&manifest.schema_version)
         || manifest.database.path != BACKUP_DB_PATH
     {
         return Err(Error::invalid("backup format or schema is not supported"));
@@ -715,7 +716,9 @@ fn backup_meta(path: &Path, kind: &str) -> Result<BackupEntry> {
 }
 
 pub fn restore_backup_zip(store: &Store, zip_path: &Path) -> Result<ImportResult> {
-    import_zip(store, zip_path)
+    let result = import_zip(store, zip_path)?;
+    crate::rewrite::publish(store)?;
+    Ok(result)
 }
 
 pub fn clear_plan(paths: &AppPaths) -> ClearPlan {
@@ -748,7 +751,9 @@ pub fn clear_all_data(store: &Store, phrase: &str, confirmed: bool) -> Result<()
         return Err(Error::invalid("clear-all confirmation phrase mismatch"));
     }
     let _lock = HomeLock::acquire(store.paths())?;
-    store.clear_all()
+    store.clear_all()?;
+    // The relay keeps rewriting with whatever it last read until it reads the cleared rules.
+    crate::rewrite::publish(store)
 }
 
 pub fn sidecar_report() -> SidecarReport {

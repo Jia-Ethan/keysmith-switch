@@ -2369,6 +2369,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "keysmith-rewrite"
+version = "0.1.0"
+dependencies = [
+ "aho-corasick",
+ "pretty_assertions",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "keysmith-switch"
 version = "0.3.9"
 dependencies = [
@@ -2377,6 +2387,7 @@ dependencies = [
  "dirs 5.0.1",
  "hex",
  "httpmock",
+ "keysmith-rewrite",
  "libc",
  "minisign-verify",
  "pretty_assertions",
