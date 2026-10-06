@@ -327,6 +327,14 @@ export function IconPuzzle(props: IconProps) {
   );
 }
 
+export function IconSwap(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M3 5.5h8.5M9 3l2.5 2.5L9 8M13 10.5H4.5M7 8l-2.5 2.5L7 13" />
+    </Svg>
+  );
+}
+
 export function IconBell(props: IconProps) {
   return (
     <Svg {...props}>

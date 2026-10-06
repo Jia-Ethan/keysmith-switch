@@ -17,7 +17,8 @@
     "extensionsUpdates": "{{count}} updates",
     "extensions": "Extensions",
     "announcements": "Announcements",
-    "announcementsNew": "New announcement"
+    "announcementsNew": "New announcement",
+    "rewrite": "Rewrite"
   },
   "common": {
     "ok": "OK",
@@ -579,5 +580,73 @@
       "too-new": "These announcements need a newer version of the app.",
       "default": "The announcements could not be checked. The last copy is shown."
     }
+  },
+  "rewrite": {
+    "title": "Input rewrite",
+    "lead": "Type in Codex as usual. Before your words reach the model, matching text is replaced word for word. The input box and chat history keep what you typed.",
+    "masterLabel": "Input rewrite",
+    "masterHint": "When off, nothing is replaced. Your rules are kept.",
+    "codexLabel": "Apply to Codex",
+    "codexHint": "Replaces what you type in Codex, including your earlier messages in the history. Assistant replies, tool output and Codex's own context are left alone, and a message that starts with / is skipped whole.",
+    "connect": {
+      "title": "Codex connection",
+      "linked": "Connected: Codex goes through the Keysmith relay to {{provider}}",
+      "bypassed": "Codex is not going through the Keysmith relay right now (another tool may have switched its provider), so nothing is replaced.",
+      "unlinked": "Not connected. Connecting starts a relay on this computer that only listens on 127.0.0.1, and adds a provider to Codex's config.toml that points at it.",
+      "notRunning": "The relay is not running, so Codex cannot reach the model. Reconnect, or disconnect to let Codex connect directly.",
+      "connectButton": "Connect Codex",
+      "reconnect": "Reconnect",
+      "disconnect": "Disconnect",
+      "disconnectTitle": "Disconnect Codex",
+      "disconnectBody": "Codex goes back to connecting to {{provider}} directly, and the Keysmith relay stops and no longer starts at sign-in. Your rules are kept. If another tool changed the same config.toml entry in the meantime, that entry is left as it is.",
+      "connected": "Codex connected",
+      "disconnected": "Disconnected; Codex connects directly again",
+      "provider": "Current provider: {{name}}",
+      "unsupported": {
+        "no-config": "Codex's config.toml was not found. Run Codex once, then connect.",
+        "built-in-provider": "Codex is signed in with its built-in OpenAI provider, which is not supported yet. Use a custom provider ([model_providers.xxx] in config.toml).",
+        "missing-provider": "The model_provider in config.toml has no matching [model_providers] entry.",
+        "no-base-url": "The current provider has no base_url.",
+        "not-http": "The current provider's base_url is not an http(s) address.",
+        "wire-api": "The current provider does not use the Responses API (wire_api = \"responses\")."
+      }
+    },
+    "tables": "Rule tables",
+    "tablesHint": "When tables match at the same spot, the one higher up wins. My rules always comes first.",
+    "mine": "My rules",
+    "pack": "Rule pack",
+    "ruleCount": "{{count}} rules",
+    "enabled": "On",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "copyToMine": "Copy to My rules",
+    "copied": "Copied to My rules",
+    "readOnly": "Rule packs are read-only. Copy one to My rules to change it.",
+    "pending": "Version {{version}} is waiting for your OK",
+    "review": "Review update",
+    "reviewTitle": "Rule pack update: {{title}}",
+    "reviewBody": "This table is on. Once you accept, the new rules apply from the next message.",
+    "accept": "Use new version",
+    "accepted": "Switched to the new version",
+    "diffAdded": "Added",
+    "diffRemoved": "Removed",
+    "diffChanged": "Changed",
+    "noChanges": "The rules did not change",
+    "editor": {
+      "from": "Text",
+      "to": "Replace with",
+      "fromPlaceholder": "Text to match",
+      "toPlaceholder": "Leave empty to delete",
+      "add": "Add rule",
+      "remove": "Remove rule",
+      "save": "Save rules",
+      "saved": "Rules saved",
+      "discard": "Discard changes",
+      "empty": "No rules yet. Rules match text exactly and are case-sensitive. At any spot the longest rule wins, and replaced text is not replaced again.",
+      "duplicate": "“{{from}}” appears twice",
+      "emptyFrom": "Text to match cannot be empty",
+      "unsaved": "Unsaved changes"
+    },
+    "loadError": "Could not read the input rewrite settings"
   }
 }

@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import type { ScopeId, ToolId } from "../types";
 import { TOOL_IDS } from "../types";
 import { CountBadge, NoticeDot, cx, useSlidingIndicator } from "./ui";
-import { IconBell, IconPuzzle, IconSearch, IconSettings, IconTerminal } from "./icons";
+import { IconBell, IconPuzzle, IconSearch, IconSettings, IconSwap, IconTerminal } from "./icons";
 import { paletteShortcutLabel } from "./CommandPalette";
 import { useAnnouncementsOptional } from "./AnnouncementsProvider";
 import { useExtensionsOptional } from "./ExtensionsProvider";
@@ -26,6 +26,7 @@ export type AppPage =
     }
   | { kind: "settings"; tab?: string }
   | { kind: "extensions" }
+  | { kind: "rewrite" }
   | { kind: "announcements" }
   | { kind: "advanced" };
 
@@ -112,6 +113,15 @@ export function AppShell({
                 <IconPuzzle size={19} />
               </UtilityButton>
             ) : null}
+            <UtilityButton
+              testId="nav-rewrite"
+              label={t("nav.rewrite")}
+              active={page.kind === "rewrite"}
+              indicatorReady={Boolean(indicator)}
+              onClick={() => onNavigate({ kind: "rewrite" })}
+            >
+              <IconSwap size={19} />
+            </UtilityButton>
             {onOpenPalette ? (
               <UtilityButton
                 testId="nav-palette"

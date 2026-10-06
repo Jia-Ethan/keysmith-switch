@@ -19,6 +19,7 @@ import { isTauriRuntime } from "./lib/runtime";
 import { AdvancedPage } from "./pages/AdvancedPage";
 import { AnnouncementsPage } from "./pages/AnnouncementsPage";
 import { ExtensionsPage } from "./pages/ExtensionsPage";
+import { RewritePage } from "./pages/RewritePage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { WorkspacePage } from "./pages/WorkspacePage";
 import * as api from "./api";
@@ -226,6 +227,11 @@ export function App() {
           {visiblePage.kind === "extensions" ? (
             <div className="animate-page-in min-h-0 flex-1">
               <ExtensionsPage toast={toast} />
+            </div>
+          ) : null}
+          {visiblePage.kind === "rewrite" ? (
+            <div className="animate-page-in min-h-0 flex-1">
+              <RewritePage toast={toast} />
             </div>
           ) : null}
           {visiblePage.kind === "announcements" ? (
