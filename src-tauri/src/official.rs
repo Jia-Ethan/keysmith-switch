@@ -4,6 +4,7 @@
 //! executable, audited source URL, argv array, and destination. Install /
 //! update is never executed unless `confirmed=true`.
 
+use crate::nowindow::NoWindow;
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom};
@@ -591,6 +592,7 @@ where
             return Err(safe_io_error(&error));
         }
     };
+    command.no_window();
     command
         .stdout(Stdio::from(stdout_child))
         .stderr(Stdio::from(stderr_child));

@@ -13,6 +13,8 @@ pub mod harness;
 pub mod lock;
 pub mod logging;
 pub mod models;
+pub mod netproxy;
+pub mod nowindow;
 pub mod official;
 pub mod ops;
 pub mod paths;

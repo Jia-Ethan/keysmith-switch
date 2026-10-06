@@ -5,6 +5,8 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
+
+use crate::nowindow::NoWindow;
 use url::Url;
 
 use crate::error::{Error, Result};
@@ -268,6 +270,7 @@ fn login_shell_which(name: &str) -> Option<PathBuf> {
     }
     let output = std::process::Command::new(&shell_path)
         .args(["-lc", &format!("command -v {name}")])
+        .no_window()
         .env("GH_PROMPT_DISABLED", "1")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -291,6 +294,7 @@ fn login_shell_which(name: &str) -> Option<PathBuf> {
 
 fn command_for(program: &Path) -> Command {
     let mut command = Command::new(program);
+    command.no_window();
     if let Some(dir) = program.parent() {
         if let Some(joined) = prepend_path(dir) {
             command.env("PATH", joined);
