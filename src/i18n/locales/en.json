@@ -178,7 +178,7 @@
     "blockerDryRun": "The pre-check found {{count}} problem(s) that block this. No files were changed.",
     "blockerInstructionsRepointed": "model_instructions_file in the config now points to a different file; Keysmith expected {{ref}}. It will not overwrite it.",
     "blockerOwnership": "The deployment record does not match the current config: {{detail}}",
-    "hintCleanup": "Use \"Clean up\" at the bottom left to clear this stale deployment record. Your config.toml is kept as it is. Then deploy again.",
+    "hintCleanup": "\"Clean up\" at the bottom left clears this stale deployment record and keeps your config.toml. It also permanently deletes this agent's session history and login, and that cannot be undone. To keep your chats, back up the whole .codex folder first, then decide whether to clean up.",
     "hintReconcile": "Use \"Tidy config\" at the bottom left first, then deploy.",
     "reconciled": "Config tidied. You can deploy now.",
     "theAgent": "This agent"
