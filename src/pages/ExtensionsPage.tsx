@@ -6,7 +6,7 @@ import { Callout } from "../components/PlanPreview";
 import * as api from "../api";
 import { IconAlert, IconCheck, IconDownload, IconPuzzle, IconRefresh, IconShield, IconSwap } from "../components/icons";
 import { ToolLogo } from "../components/ToolLogos";
-import { Button, cx } from "../components/ui";
+import { Button, cx, Switch } from "../components/ui";
 import type { ToastApi } from "../hooks/useToasts";
 import { formatBytes, relativeTime } from "../lib/format";
 import type { ExtensionPack, ExtensionReport, RewriteRule } from "../types";
@@ -161,9 +161,14 @@ export function ExtensionsPage({ toast }: { toast: ToastApi }) {
                 <IconRefresh />
                 {ext.refreshing ? t("extensions.checking") : t("extensions.refresh")}
               </Button>
-              <Button size="sm" variant="ghost" disabled={enabling || locked} data-testid="extensions-disable" onClick={() => setDisabling(true)}>
-                {t("extensions.disable")}
-              </Button>
+              <Switch
+                checked
+                busy={enabling}
+                disabled={locked}
+                aria-label={t("extensions.switchLabel")}
+                data-testid="extensions-disable"
+                onCheckedChange={() => setDisabling(true)}
+              />
             </div>
           ) : null}
         </header>

@@ -194,6 +194,83 @@ export function Checkbox({
   );
 }
 
+/**
+ * An on/off setting. A real `<button role="switch">`, so Space and Enter toggle it and
+ * screen readers announce on/off. Name it with `label` (visible, to its left) or
+ * `aria-label` / `aria-labelledby` when the row already shows the name.
+ */
+export function Switch({
+  checked,
+  onCheckedChange,
+  label,
+  disabled = false,
+  busy = false,
+  size = "md",
+  className,
+  ...aria
+}: {
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  label?: ReactNode;
+  disabled?: boolean;
+  busy?: boolean;
+  size?: "sm" | "md";
+  className?: string;
+  id?: string;
+  "aria-label"?: string;
+  "aria-labelledby"?: string;
+  "aria-describedby"?: string;
+  "data-testid"?: string;
+}) {
+  const labelId = useId();
+  const inert = disabled || busy;
+  const control = (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-busy={busy || undefined}
+      {...aria}
+      aria-labelledby={label !== undefined ? labelId : aria["aria-labelledby"]}
+      disabled={disabled}
+      onClick={() => {
+        if (!inert) onCheckedChange(!checked);
+      }}
+      className={cx(
+        "group relative inline-flex shrink-0 items-center rounded-full transition-colors duration-200 motion-reduce:transition-none",
+        size === "sm" ? "h-4 w-7" : "h-5 w-9",
+        checked
+          ? "bg-primary"
+          : "bg-[hsl(30_6%_55%)] dark:bg-[hsl(228_7%_44%)]",
+        "disabled:cursor-not-allowed disabled:opacity-45",
+        busy && "cursor-progress",
+        FOCUS_RING,
+        label === undefined && className,
+      )}
+    >
+      <span
+        aria-hidden="true"
+        className={cx(
+          "pointer-events-none absolute left-0.5 flex items-center justify-center rounded-full bg-white shadow-[0_1px_2px_rgb(0_0_0/0.25)] transition-transform duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none",
+          size === "sm" ? "h-3 w-3" : "h-4 w-4",
+          checked && (size === "sm" ? "translate-x-3" : "translate-x-4"),
+        )}
+      >
+        {busy ? <span className="spinner h-2.5 w-2.5 border-[1.5px] text-muted-foreground" /> : null}
+      </span>
+    </button>
+  );
+  if (label === undefined) return control;
+  return (
+    <span className={cx("inline-flex items-center gap-2", className)}>
+      <span id={labelId} className="text-[13px] text-foreground" onClick={() => !inert && onCheckedChange(!checked)}>
+        {label}
+      </span>
+      {control}
+    </span>
+  );
+}
+
 /** Neutral content surface. Used sparingly: one level, no nesting. */
 export function Panel({
   children,
