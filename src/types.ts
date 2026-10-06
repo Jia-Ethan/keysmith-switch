@@ -389,6 +389,8 @@ export const TOOL_IDS: ToolId[] = ["claude", "codex", "grok", "zcode"];
 /** An extension pack as the interface shows it; the text is already in the app's language. */
 export interface ExtensionPack {
   id: string;
+  /** "rules" packs add an input rewrite table instead of prompts. */
+  kind: "prompts" | "rules";
   version: string;
   minAppVersion: string;
   name: string;

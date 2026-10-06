@@ -493,7 +493,19 @@
     "updateAll": "全部更新（{{count}}）",
     "updatedAllToast": "已更新 {{count}} 個包：更新 {{updated}} 條，新增 {{added}} 條，另存 {{copied}} 條",
     "updatedSomeToast": "已更新 {{done}}/{{total}} 個包，其餘未更新",
-    "checkedJustNow": "剛剛檢查過"
+    "checkedJustNow": "剛剛檢查過",
+    "rules": {
+      "kind": "輸入替換規則包",
+      "view": "檢視規則",
+      "previewTitle": "規則包：{{name}}",
+      "previewBody": "這個包會在「輸入替換」裡新增一張唯讀規則表，按下列規則替換你送給 Codex 的文字。不會改動提示詞庫。",
+      "installEnable": "安裝並啟用",
+      "installOnly": "只安裝",
+      "installedToast": "已加入輸入替換規則表",
+      "updatedToast": "規則包已更新；正在啟用的表需要在輸入替換頁確認後才會切換",
+      "removedToast": "已移除這張規則表",
+      "uninstallBody": "會從輸入替換中移除這張規則表。複製到「我的規則」的內容會保留。"
+    }
   },
   "cleanup": {
     "button": "清理",

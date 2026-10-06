@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use keysmith_switch_lib::db::Store;
 use keysmith_switch_lib::extensions::{
     check_archive, clear_state, hidden_prompt_ids, install, is_hidden_prompt, refresh, state_view,
-    uninstall, ExtError, Fetch, IndexPack, Source, OFFICIAL_URL_PREFIX, PACK_TAG,
+    uninstall, ExtError, Fetch, IndexPack, PackKind, Source, OFFICIAL_URL_PREFIX, PACK_TAG,
 };
 use keysmith_switch_lib::models::{
     Activation, PromptSort, Scope, ToolKind, ToolStatus, UpdatePromptInput,
@@ -198,6 +198,7 @@ fn zip_of(entries: &[(&str, &[u8])]) -> Vec<u8> {
 fn entry_for(archive: &[u8]) -> IndexPack {
     IndexPack {
         id: "hostile.pack".into(),
+        kind: PackKind::Prompts,
         version: "1.0.0".into(),
         min_app_version: "0.2.5".into(),
         name: Default::default(),
@@ -347,7 +348,7 @@ fn installing_a_tampered_archive_writes_nothing() {
     let last = bytes.len() - 30;
     bytes[last] ^= 0xff;
     fetch.set(&url, bytes);
-    let result = install(&store, &fetch, &source("v1"), "fixture.pack", "en");
+    let result = install(&store, &fetch, &source("v1"), "fixture.pack", "en", false);
     assert!(matches!(result, Err(ExtError::Invalid(_))), "{result:?}");
     assert!(prompts(&store, ToolKind::Claude).is_empty());
     assert!(prompts(&store, ToolKind::Codex).is_empty());
@@ -359,7 +360,8 @@ fn installing_a_tampered_archive_writes_nothing() {
 fn installing_fills_the_library_and_deploys_nothing() {
     let (_tmp, store) = store();
     let fetch = Fixture::with(&["v1"]);
-    let (view, report) = install(&store, &fetch, &source("v1"), "fixture.pack", "en").unwrap();
+    let (view, report) =
+        install(&store, &fetch, &source("v1"), "fixture.pack", "en", false).unwrap();
     assert_eq!(
         (report.added, report.updated, report.copied, report.kept),
         (2, 0, 0, 0)
@@ -399,7 +401,7 @@ fn what_a_pack_wrote_is_locked_but_the_persons_own_text_is_not() {
         )
         .unwrap();
     let fetch = Fixture::with(&["v1"]);
-    install(&store, &fetch, &source("v1"), "fixture.pack", "en").unwrap();
+    install(&store, &fetch, &source("v1"), "fixture.pack", "en", false).unwrap();
     assert!(
         !is_hidden_prompt(&store, "mine"),
         "linked text is the person's"
@@ -424,7 +426,7 @@ fn a_locked_prompt_cannot_be_edited_copied_diffed_or_restored() {
     use keysmith_switch_lib::ops;
     let (_tmp, store) = store();
     let fetch = Fixture::with(&["v1"]);
-    install(&store, &fetch, &source("v1"), "fixture.pack", "en").unwrap();
+    install(&store, &fetch, &source("v1"), "fixture.pack", "en", false).unwrap();
     let id = prompts(&store, ToolKind::Codex)[0].id.clone();
 
     let edit = ops::update_prompt(
@@ -457,7 +459,7 @@ fn text_the_library_already_has_is_linked_not_duplicated() {
         )
         .unwrap();
     let fetch = Fixture::with(&["v1"]);
-    let (_, report) = install(&store, &fetch, &source("v1"), "fixture.pack", "en").unwrap();
+    let (_, report) = install(&store, &fetch, &source("v1"), "fixture.pack", "en", false).unwrap();
     assert_eq!((report.added, report.linked), (1, 1));
     assert_eq!(prompts(&store, ToolKind::Claude).len(), 1);
 }
@@ -466,8 +468,8 @@ fn text_the_library_already_has_is_linked_not_duplicated() {
 fn installing_twice_changes_nothing() {
     let (_tmp, store) = store();
     let fetch = Fixture::with(&["v1"]);
-    install(&store, &fetch, &source("v1"), "fixture.pack", "en").unwrap();
-    let (_, report) = install(&store, &fetch, &source("v1"), "fixture.pack", "en").unwrap();
+    install(&store, &fetch, &source("v1"), "fixture.pack", "en", false).unwrap();
+    let (_, report) = install(&store, &fetch, &source("v1"), "fixture.pack", "en", false).unwrap();
     assert_eq!(
         (report.added, report.updated, report.copied, report.kept),
         (0, 0, 0, 2)
@@ -479,7 +481,15 @@ fn installing_twice_changes_nothing() {
 fn the_title_follows_the_app_language() {
     let (_tmp, store) = store();
     let fetch = Fixture::with(&["v1"]);
-    let (view, _) = install(&store, &fetch, &source("v1"), "fixture.pack", "zh-TW").unwrap();
+    let (view, _) = install(
+        &store,
+        &fetch,
+        &source("v1"),
+        "fixture.pack",
+        "zh-TW",
+        false,
+    )
+    .unwrap();
     assert_eq!(view.packs[0].name, "测试包 fixture.pack");
     let en = state_view(&store, &source("v1"), "en");
     assert_eq!(en.packs[0].name, "Fixture fixture.pack");
@@ -497,7 +507,7 @@ fn a_pack_that_needs_a_newer_app_is_listed_but_not_installable() {
         .unwrap();
     assert!(!future.compatible);
     assert!(!future.update_available);
-    let result = install(&store, &fetch, &source("v2"), "fixture.future", "en");
+    let result = install(&store, &fetch, &source("v2"), "fixture.future", "en", false);
     assert!(
         matches!(result, Err(ExtError::Incompatible(_))),
         "{result:?}"
@@ -510,7 +520,7 @@ fn an_unknown_pack_id_is_an_error() {
     let (_tmp, store) = store();
     let fetch = Fixture::with(&["v1"]);
     assert!(matches!(
-        install(&store, &fetch, &source("v1"), "no.such.pack", "en"),
+        install(&store, &fetch, &source("v1"), "no.such.pack", "en", false),
         Err(ExtError::Unknown)
     ));
 }
@@ -520,7 +530,7 @@ fn an_unknown_pack_id_is_an_error() {
 fn install_v1_then_see_v2() -> (tempfile::TempDir, Store, Fixture) {
     let (tmp, store) = store();
     let fetch = Fixture::with(&["v1", "v2"]);
-    install(&store, &fetch, &source("v1"), "fixture.pack", "en").unwrap();
+    install(&store, &fetch, &source("v1"), "fixture.pack", "en", false).unwrap();
     let view = refresh(&store, &fetch, &source("v2"), "en");
     let pack = view.packs.iter().find(|p| p.id == "fixture.pack").unwrap();
     assert!(pack.update_available);
@@ -532,7 +542,8 @@ fn install_v1_then_see_v2() -> (tempfile::TempDir, Store, Fixture) {
 fn an_unedited_prompt_follows_the_pack_and_keeps_its_history() {
     let (_tmp, store, fetch) = install_v1_then_see_v2();
     let alpha = prompts(&store, ToolKind::Claude)[0].id.clone();
-    let (view, report) = install(&store, &fetch, &source("v2"), "fixture.pack", "en").unwrap();
+    let (view, report) =
+        install(&store, &fetch, &source("v2"), "fixture.pack", "en", false).unwrap();
     assert_eq!(
         (report.updated, report.kept, report.added, report.copied),
         (1, 1, 1, 0)
@@ -553,7 +564,7 @@ fn an_edited_prompt_is_never_overwritten() {
     store
         .update_prompt(&alpha, None, Some("My own rules.\n"), None)
         .unwrap();
-    let (_, report) = install(&store, &fetch, &source("v2"), "fixture.pack", "en").unwrap();
+    let (_, report) = install(&store, &fetch, &source("v2"), "fixture.pack", "en", false).unwrap();
     assert_eq!((report.copied, report.updated, report.added), (1, 0, 1));
     assert_eq!(store.get_prompt(&alpha).unwrap().content, "My own rules.\n");
     let claude = prompts(&store, ToolKind::Claude);
@@ -575,7 +586,7 @@ fn an_edited_prompt_the_pack_did_not_change_is_simply_kept() {
     store
         .update_prompt(&beta, None, Some("Edited beta.\n"), None)
         .unwrap();
-    let (_, report) = install(&store, &fetch, &source("v2"), "fixture.pack", "en").unwrap();
+    let (_, report) = install(&store, &fetch, &source("v2"), "fixture.pack", "en", false).unwrap();
     assert_eq!(report.copied, 0);
     assert_eq!(store.get_prompt(&beta).unwrap().content, "Edited beta.\n");
     assert_eq!(prompts(&store, ToolKind::Codex).len(), 1);
@@ -586,7 +597,7 @@ fn a_prompt_the_person_deleted_does_not_come_back() {
     let (_tmp, store, fetch) = install_v1_then_see_v2();
     let alpha = prompts(&store, ToolKind::Claude)[0].id.clone();
     store.soft_delete_prompt(&alpha).unwrap();
-    install(&store, &fetch, &source("v2"), "fixture.pack", "en").unwrap();
+    install(&store, &fetch, &source("v2"), "fixture.pack", "en", false).unwrap();
     let titles: Vec<_> = prompts(&store, ToolKind::Claude)
         .into_iter()
         .map(|p| p.title)
@@ -600,7 +611,7 @@ fn a_prompt_the_person_deleted_does_not_come_back() {
 fn uninstalling_removes_only_what_is_safe_to_remove() {
     let (_tmp, store) = store();
     let fetch = Fixture::with(&["v2"]);
-    install(&store, &fetch, &source("v2"), "fixture.pack", "en").unwrap();
+    install(&store, &fetch, &source("v2"), "fixture.pack", "en", false).unwrap();
     let claude = prompts(&store, ToolKind::Claude);
     let alpha = claude
         .iter()
@@ -652,7 +663,7 @@ fn uninstalling_removes_only_what_is_safe_to_remove() {
 fn clearing_all_data_also_forgets_installed_packs() {
     let (_tmp, store) = store();
     let fetch = Fixture::with(&["v1"]);
-    install(&store, &fetch, &source("v1"), "fixture.pack", "en").unwrap();
+    install(&store, &fetch, &source("v1"), "fixture.pack", "en", false).unwrap();
     store.clear_all().unwrap();
     assert!(!store.paths().home.join("extensions").exists());
     let view = refresh(&store, &fetch, &source("v1"), "en");
@@ -663,7 +674,7 @@ fn clearing_all_data_also_forgets_installed_packs() {
 fn a_record_pointing_at_missing_prompts_heals_itself() {
     let (_tmp, store) = store();
     let fetch = Fixture::with(&["v1"]);
-    install(&store, &fetch, &source("v1"), "fixture.pack", "en").unwrap();
+    install(&store, &fetch, &source("v1"), "fixture.pack", "en", false).unwrap();
     // The prompts are gone (restored from an older backup, say) but the record is not.
     store.clear_all().unwrap();
     std::fs::create_dir_all(store.paths().home.join("extensions")).unwrap();
@@ -681,7 +692,7 @@ fn a_record_pointing_at_missing_prompts_heals_itself() {
 fn a_damaged_record_means_nothing_is_installed() {
     let (_tmp, store) = store();
     let fetch = Fixture::with(&["v1"]);
-    install(&store, &fetch, &source("v1"), "fixture.pack", "en").unwrap();
+    install(&store, &fetch, &source("v1"), "fixture.pack", "en", false).unwrap();
     std::fs::write(
         store.paths().home.join("extensions/installed.json"),
         "{ not json",
@@ -701,4 +712,244 @@ fn packs_hosted_outside_the_sources_own_address_are_ignored() {
     let view = refresh(&store, &fetch, &pinned, "en");
     assert_eq!(view.error, None);
     assert!(view.packs.is_empty());
+}
+
+// ----- rule packs ------------------------------------------------------------------
+
+/// A release with one rule pack at `version`, served at test-`release`.
+fn rule_release(fetch: &Fixture, release: &str, version: &str, rules: serde_json::Value) {
+    let rules_bytes = serde_json::to_vec(&serde_json::json!({ "rules": rules })).unwrap();
+    let manifest = serde_json::json!({
+        "schema": 1, "id": "fixture.rules", "version": version, "min_app_version": "0.2.5",
+        "kind": "rules", "name": {"en": "Fixture rules", "zh-CN": "测试规则"},
+        "description": {"en": "Rules for tests"}, "tools": ["codex"],
+        "rules": {"file": "rules.json", "sha256": sha(&rules_bytes)}
+    })
+    .to_string();
+    let archive = zip_of(&[
+        ("pack.json", manifest.as_bytes()),
+        ("rules.json", &rules_bytes),
+    ]);
+    let url = Fixture::url(release, &format!("fixture.rules-{version}.zip"));
+    let index = serde_json::json!({
+        "schema": 1,
+        "packs": [{
+            "id": "fixture.rules", "kind": "rules", "version": version, "min_app_version": "0.2.5",
+            "name": {"en": "Fixture rules", "zh-CN": "测试规则"}, "description": {"en": "Rules"},
+            "tools": ["codex"], "item_count": 0, "url": url, "sha256": sha(&archive),
+            "size": archive.len()
+        }]
+    });
+    fetch.set(&url, archive);
+    fetch.set(
+        &Fixture::url(release, "index.json"),
+        serde_json::to_vec(&index).unwrap(),
+    );
+}
+
+fn pack_table(store: &Store) -> Option<keysmith_switch_lib::db::rules::RuleTable> {
+    store
+        .list_rule_tables()
+        .unwrap()
+        .into_iter()
+        .find(|table| table.pack_id.as_deref() == Some("fixture.rules"))
+}
+
+#[test]
+fn a_rule_pack_installs_as_a_read_only_table_and_never_touches_prompts() {
+    let (_tmp, store) = store();
+    let fetch = Fixture::with(&[]);
+    rule_release(
+        &fetch,
+        "r1",
+        "0.1.0",
+        serde_json::json!([{"from": "a", "to": "b"}]),
+    );
+    let view = refresh(&store, &fetch, &source("r1"), "en");
+    assert_eq!(view.packs.len(), 1);
+    assert_eq!(view.packs[0].kind, PackKind::Rules);
+
+    let preview =
+        keysmith_switch_lib::extensions::preview_rules(&fetch, &source("r1"), "fixture.rules")
+            .unwrap();
+    assert_eq!(preview, vec![keysmith_rewrite::Rule::new("a", "b")]);
+    assert!(pack_table(&store).is_none(), "preview installs nothing");
+
+    let (view, report) = install(
+        &store,
+        &fetch,
+        &source("r1"),
+        "fixture.rules",
+        "zh-CN",
+        true,
+    )
+    .unwrap();
+    assert_eq!(report.added, 1);
+    assert_eq!(view.packs[0].installed_version.as_deref(), Some("0.1.0"));
+    let table = pack_table(&store).unwrap();
+    assert!(table.enabled);
+    assert_eq!(table.title, "测试规则");
+    assert!(prompts(&store, ToolKind::Codex).is_empty());
+    // The snapshot the relay reads now carries the rule.
+    let snapshot =
+        std::fs::read(keysmith_switch_lib::rewrite::snapshot_path(store.paths())).unwrap();
+    assert!(String::from_utf8_lossy(&snapshot).contains("\"from\": \"a\""));
+}
+
+#[test]
+fn an_update_to_an_enabled_rule_pack_waits_for_the_person() {
+    let (_tmp, store) = store();
+    let fetch = Fixture::with(&[]);
+    rule_release(
+        &fetch,
+        "r1",
+        "0.1.0",
+        serde_json::json!([{"from": "a", "to": "1"}]),
+    );
+    install(&store, &fetch, &source("r1"), "fixture.rules", "en", true).unwrap();
+
+    rule_release(
+        &fetch,
+        "r2",
+        "0.2.0",
+        serde_json::json!([{"from": "a", "to": "2"}]),
+    );
+    refresh(&store, &fetch, &source("r2"), "en");
+    keysmith_switch_lib::extensions::follow_rule_packs(&store, &fetch, &source("r2"), "en");
+    let table = pack_table(&store).unwrap();
+    assert_eq!(table.rules, vec![keysmith_rewrite::Rule::new("a", "1")]);
+    assert_eq!(table.pending.as_ref().unwrap().version, "0.2.0");
+    // Still recorded at the version in use, so the extensions page keeps offering it.
+    let view = state_view(&store, &source("r2"), "en");
+    assert_eq!(view.packs[0].installed_version.as_deref(), Some("0.1.0"));
+
+    // Following again does not churn.
+    let asked = fetch.asked.borrow().len();
+    keysmith_switch_lib::extensions::follow_rule_packs(&store, &fetch, &source("r2"), "en");
+    assert_eq!(fetch.asked.borrow().len(), asked);
+
+    store.accept_pack_update(&table.id).unwrap();
+    assert_eq!(
+        pack_table(&store).unwrap().rules,
+        vec![keysmith_rewrite::Rule::new("a", "2")]
+    );
+}
+
+#[test]
+fn an_update_to_a_disabled_rule_pack_follows_silently() {
+    let (_tmp, store) = store();
+    let fetch = Fixture::with(&[]);
+    rule_release(
+        &fetch,
+        "r1",
+        "0.1.0",
+        serde_json::json!([{"from": "a", "to": "1"}]),
+    );
+    install(&store, &fetch, &source("r1"), "fixture.rules", "en", false).unwrap();
+    assert!(!pack_table(&store).unwrap().enabled);
+
+    rule_release(
+        &fetch,
+        "r2",
+        "0.2.0",
+        serde_json::json!([{"from": "a", "to": "2"}]),
+    );
+    refresh(&store, &fetch, &source("r2"), "en");
+    keysmith_switch_lib::extensions::follow_rule_packs(&store, &fetch, &source("r2"), "en");
+    let table = pack_table(&store).unwrap();
+    assert_eq!(table.rules, vec![keysmith_rewrite::Rule::new("a", "2")]);
+    assert!(table.pending.is_none());
+    assert!(!table.enabled);
+}
+
+#[test]
+fn uninstalling_a_rule_pack_removes_its_table() {
+    let (_tmp, store) = store();
+    let fetch = Fixture::with(&[]);
+    rule_release(
+        &fetch,
+        "r1",
+        "0.1.0",
+        serde_json::json!([{"from": "a", "to": "1"}]),
+    );
+    install(&store, &fetch, &source("r1"), "fixture.rules", "en", true).unwrap();
+    let (view, report) = uninstall(&store, &source("r1"), "fixture.rules", "en").unwrap();
+    assert_eq!(report.removed, 1);
+    assert!(view.packs[0].installed_version.is_none());
+    assert!(pack_table(&store).is_none());
+    assert!(store.active_rules().unwrap().is_empty());
+}
+
+#[test]
+fn hostile_rule_packs_are_rejected() {
+    let (_tmp, store) = store();
+    for (name, rules) in [
+        ("empty-from", serde_json::json!([{"from": "", "to": "x"}])),
+        (
+            "dupe",
+            serde_json::json!([{"from": "a", "to": "1"}, {"from": "a", "to": "2"}]),
+        ),
+        ("no-rules", serde_json::json!([])),
+        ("control", serde_json::json!([{"from": "a\nb", "to": "x"}])),
+    ] {
+        let fetch = Fixture::with(&[]);
+        rule_release(&fetch, name, "0.1.0", rules);
+        let error =
+            install(&store, &fetch, &source(name), "fixture.rules", "en", true).unwrap_err();
+        assert_eq!(error.code(), "invalid", "{name}");
+        assert!(pack_table(&store).is_none(), "{name}");
+    }
+}
+
+#[test]
+fn a_rule_pack_for_another_tool_is_not_listed() {
+    let (_tmp, store) = store();
+    let fetch = Fixture::with(&[]);
+    let index = serde_json::json!({
+        "schema": 1,
+        "packs": [{
+            "id": "claude.rules", "kind": "rules", "version": "0.1.0", "min_app_version": "0.2.5",
+            "name": {"en": "R"}, "description": {"en": "R"}, "tools": ["claude"], "item_count": 0,
+            "url": Fixture::url("rc", "claude.rules-0.1.0.zip"), "sha256": "0".repeat(64), "size": 10
+        }]
+    });
+    fetch.set(
+        &Fixture::url("rc", "index.json"),
+        serde_json::to_vec(&index).unwrap(),
+    );
+    assert!(refresh(&store, &fetch, &source("rc"), "en")
+        .packs
+        .is_empty());
+}
+
+#[test]
+fn an_old_app_style_index_entry_kind_mismatch_is_refused() {
+    // The index says rules but the archive says prompts: refuse rather than guess.
+    let (_tmp, store) = store();
+    let fetch = Fixture::with(&[]);
+    rule_release(
+        &fetch,
+        "rk",
+        "0.1.0",
+        serde_json::json!([{"from": "a", "to": "1"}]),
+    );
+    let url = Fixture::url("rk", "fixture.rules-0.1.0.zip");
+    let manifest = serde_json::json!({
+        "schema": 1, "id": "fixture.rules", "version": "0.1.0", "min_app_version": "0.2.5",
+        "kind": "prompts", "name": {"en": "x"}, "description": {"en": "x"}, "tools": ["codex"],
+        "items": []
+    })
+    .to_string();
+    let archive = zip_of(&[("pack.json", manifest.as_bytes())]);
+    let mut index: serde_json::Value =
+        serde_json::from_slice(&fetch.files.borrow()[&Fixture::url("rk", "index.json")]).unwrap();
+    index["packs"][0]["sha256"] = sha(&archive).into();
+    index["packs"][0]["size"] = archive.len().into();
+    fetch.set(&url, archive);
+    fetch.set(
+        &Fixture::url("rk", "index.json"),
+        serde_json::to_vec(&index).unwrap(),
+    );
+    let error = install(&store, &fetch, &source("rk"), "fixture.rules", "en", true).unwrap_err();
+    assert_eq!(error.code(), "invalid");
 }

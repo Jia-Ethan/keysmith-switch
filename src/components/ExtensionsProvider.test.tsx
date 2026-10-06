@@ -17,6 +17,7 @@ vi.mock("../api", () => ({
 
 const pack = {
   id: "a.pack",
+  kind: "prompts" as const,
   version: "0.2.0",
   minAppVersion: "0.2.5",
   name: "A",

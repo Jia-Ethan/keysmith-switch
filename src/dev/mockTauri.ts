@@ -87,6 +87,7 @@ const extPacks = [
   { id: "keysmith.grok", version: "0.2.0", minAppVersion: "0.2.5", name: "Grok Keysmith", description: "Grok Keysmith 项目的主提示词（默认的 Grok 提示词）。", tools: ["grok"], itemCount: 1, size: 4100, official: true, compatible: true, installedVersion: null as string | null, updateAvailable: false },
   { id: "keysmith.zcode", version: "0.2.0", minAppVersion: "0.2.5", name: "ZCode Keysmith", description: "ZCode Keysmith 项目的主提示词（system role）。", tools: ["zcode"], itemCount: 1, size: 4800, official: true, compatible: true, installedVersion: null as string | null, updateAvailable: false },
   { id: "third.party", version: "0.2.0", minAppVersion: "0.2.5", name: "第三方提示词", description: "非官方来源的包，只用来预览没有角标的样子。", tools: ["claude"], itemCount: 1, size: 900, official: false, compatible: true, installedVersion: null as string | null, updateAvailable: false },
+  { id: "example.rules", kind: "rules", version: "0.1.0", minAppVersion: "0.4.0", name: "示例规则包", description: "预览规则包的样子。", tools: ["codex"], itemCount: 0, size: 600, official: true, compatible: true, installedVersion: null as string | null, updateAvailable: false },
   { id: "keysmith.future", version: "1.0.0", minAppVersion: "9.0.0", name: "需要新版 App 的包", description: "这个包要求比现在更新的 App。", tools: ["claude"], itemCount: 5, size: 8800, official: true, compatible: false, installedVersion: null as string | null, updateAvailable: false },
 ];
 const annMarks = { read: new Set<string>(), dismissed: new Set<string>() };
@@ -117,7 +118,7 @@ function annView() {
 }
 
 function extView() {
-  const packs = extPacks.map((p) => ({ ...p, updateAvailable: p.compatible && p.installedVersion !== null && p.installedVersion !== p.version }));
+  const packs = extPacks.map((p) => ({ kind: "prompts", ...p, updateAvailable: p.compatible && p.installedVersion !== null && p.installedVersion !== p.version }));
   return { packs, updates: packs.filter((p) => p.updateAvailable).length, error: null, checkedAt: now() };
 }
 
@@ -191,6 +192,8 @@ async function handle(cmd: string, args: Record<string, any> = {}): Promise<unkn
       pack.installedVersion = pack.version;
       return delay({ view: extView(), report }, 1200);
     }
+    case "extension_preview_rules":
+      return delay([{ from: "foo", to: "bar" }, { from: "提示词", to: "指令" }], 500);
     case "extension_uninstall": {
       const pack = extPacks.find((p) => p.id === args.packId)!;
       pack.installedVersion = null;
