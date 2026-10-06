@@ -178,7 +178,7 @@
     "blockerDryRun": "預檢發現 {{count}} 個阻塞問題，沒有更動任何檔案。",
     "blockerInstructionsRepointed": "設定裡的 model_instructions_file 現在指向了別的檔案，預期仍是 {{ref}}。Keysmith 不會覆蓋它。",
     "blockerOwnership": "部署記錄與現有設定不一致：{{detail}}",
-    "hintCleanup": "可以點左下角的「清理」，清掉這條過期的部署記錄，你的 config.toml 會原樣保留；然後再重新部署。",
+    "hintCleanup": "點左下角的「清理」可以清掉這條過期的部署記錄，你的 config.toml 會保留。但清理也會永久刪除這個 Agent 的對話歷史和登入，刪除後無法復原。想保留聊天記錄的話，請先備份整個 .codex 資料夾，再決定要不要清理。",
     "hintReconcile": "可以先點左下角的「整理設定」，整理好之後再繼續部署。",
     "reconciled": "設定已整理好，可以繼續部署了。",
     "theAgent": "這個 Agent"
