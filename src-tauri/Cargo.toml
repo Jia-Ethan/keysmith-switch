@@ -8,7 +8,7 @@ edition = "2021"
 rust-version = "1.85.0"
 
 [workspace]
-members = ["crates/rewrite"]
+members = ["crates/rewrite", "crates/relay"]
 
 [lib]
 name = "keysmith_switch_lib"

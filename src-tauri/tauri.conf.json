@@ -35,7 +35,8 @@
       "binaries/keysmith-claude",
       "binaries/keysmith-codex",
       "binaries/keysmith-grok",
-      "binaries/keysmith-zcode"
+      "binaries/keysmith-zcode",
+      "binaries/keysmith-relay"
     ],
     "resources": [
       "../third_party/keysmith"

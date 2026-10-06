@@ -1,0 +1,201 @@
+{
+ "model": "gpt-5",
+ "instructions": "<model instructions elided for the fixture>",
+ "input": [
+  {
+   "type": "message",
+   "role": "developer",
+   "content": [
+    {
+     "type": "input_text",
+     "text": "<permissions instructions>\nFilesystem sandboxing defines which files can be read or written. `sandbox_mode` is `read-only`: The sandbox only permits reading files. Network access is restricted.\nApproval policy is currently never. Do not provide the `sandbox_permissions` for any reason, commands will be rejected.\n</permissions instructions>"
+    },
+    {
+     "type": "input_text",
+     "text": "<skills_instructions>\n(elided)\n</skills_instructions>"
+    }
+   ]
+  },
+  {
+   "type": "message",
+   "role": "user",
+   "content": [
+    {
+     "type": "input_text",
+     "text": "<environment_context>\n  <cwd>/work/proj</cwd>\n  <shell>zsh</shell>\n  <current_date>2026-10-06</current_date>\n  <timezone>Asia/Shanghai</timezone>\n  <filesystem><workspace_roots><root>/work/proj</root></workspace_roots><permission_profile type=\"managed\"><file_system type=\"restricted\"><entry access=\"read\"><special>:root</special></entry></file_system></permission_profile></filesystem>\n</environment_context>"
+    }
+   ]
+  },
+  {
+   "type": "message",
+   "role": "user",
+   "content": [
+    {
+     "type": "input_text",
+     "text": "上一轮说的提示词"
+    }
+   ]
+  },
+  {
+   "type": "message",
+   "role": "assistant",
+   "content": [
+    {
+     "type": "output_text",
+     "text": "助手提到提示词"
+    }
+   ]
+  },
+  {
+   "type": "function_call",
+   "name": "shell",
+   "arguments": "{\"cmd\":\"echo 提示词\"}",
+   "call_id": "c1"
+  },
+  {
+   "type": "function_call_output",
+   "call_id": "c1",
+   "output": "提示词"
+  },
+  {
+   "type": "message",
+   "role": "user",
+   "content": [
+    {
+     "type": "input_text",
+     "text": "# Context from my IDE setup:\n\n## My request for Codex:\n提示词"
+    }
+   ]
+  },
+  {
+   "type": "message",
+   "role": "user",
+   "content": [
+    {
+     "type": "input_text",
+     "text": "/review 提示词"
+    }
+   ]
+  },
+  {
+   "type": "message",
+   "role": "user",
+   "content": [
+    {
+     "type": "input_text",
+     "text": "把提示词改一下 /not-a-command"
+    }
+   ]
+  }
+ ],
+ "tools": [
+  {
+   "type": "function",
+   "name": "exec_command",
+   "description": "Runs a command in a PTY, returning output or a session ID for ongoing interaction.",
+   "strict": false,
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "cmd": {
+      "type": "string",
+      "description": "Shell command to execute."
+     },
+     "justification": {
+      "type": "string",
+      "description": "User-facing approval question for `require_escalated`; omit otherwise."
+     },
+     "login": {
+      "type": "boolean",
+      "description": "True runs the shell with -l/-i semantics; false disables them. Defaults to true."
+     },
+     "max_output_tokens": {
+      "type": "number",
+      "description": "Output token budget. Defaults to 10000 tokens; larger requests may be capped by policy."
+     },
+     "prefix_rule": {
+      "type": "array",
+      "description": "Reusable approval prefix for `cmd`, only with `sandbox_permissions: \"require_escalated\"`; for example [\"git\", \"pull\"].",
+      "items": {
+       "type": "string"
+      }
+     },
+     "sandbox_permissions": {
+      "type": "string",
+      "description": "Per-command sandbox override. Defaults to `use_default`; use `require_escalated` for unsandboxed execution.",
+      "enum": [
+       "use_default",
+       "require_escalated"
+      ]
+     },
+     "shell": {
+      "type": "string",
+      "description": "Shell binary to launch. Defaults to the user's default shell."
+     },
+     "tty": {
+      "type": "boolean",
+      "description": "True allocates a PTY for the command; false or omitted uses plain pipes."
+     },
+     "workdir": {
+      "type": "string",
+      "description": "Working directory for the command. Defaults to the turn cwd."
+     },
+     "yield_time_ms": {
+      "type": "number",
+      "description": "Wait before yielding output. Defaults to 10000 ms; effective range is 250-30000 ms."
+     }
+    },
+    "required": [
+     "cmd"
+    ],
+    "additionalProperties": false
+   }
+  },
+  {
+   "type": "function",
+   "name": "write_stdin",
+   "description": "Writes characters to an existing unified exec session and returns recent output.",
+   "strict": false,
+   "parameters": {
+    "type": "object",
+    "properties": {
+     "chars": {
+      "type": "string",
+      "description": "Bytes to write to stdin. Defaults to empty, which polls without writing."
+     },
+     "max_output_tokens": {
+      "type": "number",
+      "description": "Output token budget. Defaults to 10000 tokens; larger requests may be capped by policy."
+     },
+     "session_id": {
+      "type": "number",
+      "description": "Identifier of the running unified exec session."
+     },
+     "yield_time_ms": {
+      "type": "number",
+      "description": "Wait before yielding output. Non-empty writes default to 250 ms and cap at 30000 ms; empty polls wait 5000-300000 ms by default."
+     }
+    },
+    "required": [
+     "session_id"
+    ],
+    "additionalProperties": false
+   }
+  }
+ ],
+ "tool_choice": "auto",
+ "parallel_tool_calls": false,
+ "reasoning": null,
+ "store": false,
+ "stream": true,
+ "include": [],
+ "prompt_cache_key": "00000000-0000-0000-0000-000000000000",
+ "client_metadata": {
+  "x-codex-turn-metadata": "redacted",
+  "session_id": "redacted",
+  "x-codex-window-id": "redacted",
+  "x-codex-installation-id": "redacted",
+  "turn_id": "redacted",
+  "thread_id": "redacted"
+ }
+}

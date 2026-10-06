@@ -102,6 +102,8 @@ for name in keysmith-claude keysmith-codex keysmith-grok keysmith-zcode; do
   fi
 done
 assert_sidecar_previews
+assert_arm64_executable "$MACOS/keysmith-relay" "sidecar keysmith-relay"
+assert_sidecar_runs "$MACOS/keysmith-relay" "sidecar keysmith-relay"
 
 if [[ "$RESIGN" == true ]]; then
   echo "re-signing app with a local ad-hoc identity"
