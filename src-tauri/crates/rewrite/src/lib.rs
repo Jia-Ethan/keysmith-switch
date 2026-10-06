@@ -8,6 +8,8 @@
 //!
 //! The app owns the rules and writes them out as a [`Snapshot`]; the relay only reads it.
 
+pub mod responses;
+
 use std::borrow::Cow;
 
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};

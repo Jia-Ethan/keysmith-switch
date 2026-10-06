@@ -53,6 +53,7 @@ jobs:
       - run: test -x src-tauri/binaries/keysmith-codex-aarch64-apple-darwin
       - run: test -x src-tauri/binaries/keysmith-grok-aarch64-apple-darwin
       - run: test -x src-tauri/binaries/keysmith-zcode-aarch64-apple-darwin
+      - run: test -x src-tauri/binaries/keysmith-relay-aarch64-apple-darwin
 
   sidecar-windows:
     runs-on: windows-latest
@@ -69,7 +70,8 @@ jobs:
             "keysmith-claude-x86_64-pc-windows-msvc.exe",
             "keysmith-codex-x86_64-pc-windows-msvc.exe",
             "keysmith-grok-x86_64-pc-windows-msvc.exe",
-            "keysmith-zcode-x86_64-pc-windows-msvc.exe"
+            "keysmith-zcode-x86_64-pc-windows-msvc.exe",
+            "keysmith-relay-x86_64-pc-windows-msvc.exe"
           )
           foreach ($sidecar in $sidecars) {
             $path = Join-Path "src-tauri/binaries" $sidecar

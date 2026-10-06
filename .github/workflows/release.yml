@@ -78,8 +78,8 @@ jobs:
           npm test
           npm run build
           python3 scripts/build-sidecars.py
-          cargo fmt --check --manifest-path src-tauri/Cargo.toml
-          cargo test --manifest-path src-tauri/Cargo.toml
+          cargo fmt --all --check --manifest-path src-tauri/Cargo.toml
+          cargo test --workspace --manifest-path src-tauri/Cargo.toml
           tmp="$(mktemp -d)"
           chmod 700 "$tmp"
           trap 'rm -rf "$tmp"' EXIT

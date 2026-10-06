@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Freeze the four Keysmith CLIs into platform-native sidecars.
+"""Freeze the four Keysmith CLIs into platform-native sidecars, and build the input
+rewrite relay (Rust) next to them.
 
 Users of the packaged app do not need Python. Dev `tauri dev` and cargo tests
 still fall back to python + vendored scripts when these binaries are absent.
@@ -175,6 +176,27 @@ def build_one(python: Path, spec: dict, triple: str) -> Path:
     return dest
 
 
+def build_relay(triple: str) -> Path:
+    """Build keysmith-relay for the same target and place it where Tauri expects sidecars."""
+    manifest = ROOT / "src-tauri" / "Cargo.toml"
+    cmd = ["cargo", "build", "--release", "-p", "keysmith-relay", "--manifest-path", str(manifest)]
+    host = subprocess.run(["rustc", "-vV"], capture_output=True, text=True).stdout
+    cross = f"host: {triple}" not in host
+    if cross:
+        cmd += ["--target", triple]
+    subprocess.check_call(cmd, cwd=str(ROOT))
+    suffix = ".exe" if sys.platform == "win32" else ""
+    target = ROOT / "src-tauri" / "target"
+    produced = (target / triple if cross else target) / "release" / f"keysmith-relay{suffix}"
+    if not produced.is_file():
+        raise SystemExit(f"cargo did not produce {produced}")
+    OUT.mkdir(parents=True, exist_ok=True)
+    dest = OUT / f"keysmith-relay-{triple}{suffix}"
+    shutil.copy2(produced, dest)
+    print(f"wrote {dest}")
+    return dest
+
+
 def main() -> None:
     if not VENDOR.is_dir():
         raise SystemExit(f"missing vendored CLIs at {VENDOR}")
@@ -183,7 +205,8 @@ def main() -> None:
     built = []
     for spec in SPECS:
         built.append(build_one(python, spec, triple))
-    missing = [spec["name"] for spec, path in zip(SPECS, built) if not path.is_file()]
+    built.append(build_relay(triple))
+    missing = [path.name for path in built if not path.is_file()]
     if missing:
         raise SystemExit(f"sidecar missing: {missing}")
     print("sidecars ok:", ", ".join(str(path.name) for path in built))
