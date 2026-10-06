@@ -5,7 +5,7 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Callout } from "../components/PlanPreview";
 import { IconAlert, IconCheck, IconChevronDown, IconCopy, IconPlus, IconSwap, IconTrash } from "../components/icons";
 import { ToolLogo } from "../components/ToolLogos";
-import { Button, Checkbox, IconButton, Input, SettingRow, cx } from "../components/ui";
+import { Button, Switch, IconButton, Input, SettingRow, cx } from "../components/ui";
 import type { ToastApi } from "../hooks/useToasts";
 import type { RewriteRule, RewriteView, RuleTable } from "../types";
 
@@ -83,12 +83,12 @@ export function RewritePage({ toast }: { toast: ToastApi }) {
                 description={t("rewrite.masterHint")}
                 htmlFor="rewrite-master"
                 control={
-                  <Checkbox
+                  <Switch
                     id="rewrite-master"
                     data-testid="rewrite-master"
                     checked={view.enabled}
                     disabled={busy !== null}
-                    onChange={(event) => void run("switch", () => api.rewriteSetSwitches({ enabled: event.target.checked }))}
+                    onCheckedChange={(enabled) => void run("switch", () => api.rewriteSetSwitches({ enabled }))}
                   />
                 }
               />
@@ -97,12 +97,12 @@ export function RewritePage({ toast }: { toast: ToastApi }) {
                 description={t("rewrite.codexHint")}
                 htmlFor="rewrite-codex"
                 control={
-                  <Checkbox
+                  <Switch
                     id="rewrite-codex"
                     data-testid="rewrite-codex"
                     checked={view.codexEnabled}
                     disabled={busy !== null || !view.enabled}
-                    onChange={(event) => void run("switch", () => api.rewriteSetSwitches({ codexEnabled: event.target.checked }))}
+                    onCheckedChange={(codexEnabled) => void run("switch", () => api.rewriteSetSwitches({ codexEnabled }))}
                   />
                 }
               />
@@ -440,13 +440,15 @@ function TableHeader({
         </p>
       </div>
       {children}
-      <Checkbox
-        label={t("rewrite.enabled")}
-        checked={enabled}
-        disabled={busy}
-        data-testid={testId}
-        onChange={(event) => onToggle(event.target.checked)}
-      />
+      {count > 0 ? (
+        <Switch
+          aria-label={t("rewrite.enableTable", { table: title })}
+          checked={enabled}
+          disabled={busy}
+          data-testid={testId}
+          onCheckedChange={onToggle}
+        />
+      ) : null}
     </div>
   );
 }
