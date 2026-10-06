@@ -469,9 +469,11 @@ async fn terminate_process_tree(child: &mut Child) {
 
 #[cfg(windows)]
 async fn terminate_process_tree(child: &mut Child) {
+    use crate::nowindow::NoWindow;
     if let Some(pid) = child.id() {
         let _ = Command::new("taskkill")
             .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .no_window()
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status()

@@ -676,8 +676,11 @@ fn agent_running(tool: ToolKind, opts: &AdapterOptions) -> bool {
         .args(["-axo", "comm="])
         .output();
     #[cfg(windows)]
+    use crate::nowindow::NoWindow;
+    #[cfg(windows)]
     let listing = std::process::Command::new("tasklist")
         .args(["/FO", "CSV", "/NH"])
+        .no_window()
         .output();
     #[cfg(not(any(unix, windows)))]
     return false;

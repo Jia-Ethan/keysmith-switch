@@ -1527,12 +1527,14 @@ async fn run_resolved_streaming(
     argv: &[String],
     cancel: Arc<AtomicBool>,
 ) -> Result<ProcOut> {
+    use crate::nowindow::NoWindow;
     use std::process::Stdio;
     use tokio::process::Command as TokioCommand;
 
     let mut cmd = TokioCommand::new(&cli.program);
     cmd.args(&cli.prefix);
     cmd.args(argv);
+    cmd.no_window();
     cmd.env("PYTHONUTF8", "1");
     cmd.env("PYTHONNOUSERSITE", "1");
     cmd.stdout(Stdio::piped());
