@@ -262,6 +262,7 @@ npx tauri build --target aarch64-apple-darwin --config src-tauri/tauri.preview.m
 
 | 版本 | 更新内容 |
 | --- | --- |
+| [`v0.3.8`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.3.8) | 部署被拦截时，提示改用你选的界面语言说明原因，并告诉你下一步点哪里（例如 Codex 的配置被改过时，引导点「清理」）。[#89](https://github.com/Jia-Ethan/keysmith-switch/pull/89) |
 | [`v0.3.7`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.3.7) | 修复 Windows 上反复弹出命令行窗口；检查更新时会使用 Windows 系统代理，不再因为代理导致超时。[#86](https://github.com/Jia-Ethan/keysmith-switch/pull/86) |
 | [`v0.3.6`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.3.6) | 拓展页的卡片不再显示包摘要，只保留名称、官方角标、条数、大小、版本和安装状态。[#81](https://github.com/Jia-Ethan/keysmith-switch/pull/81) |
 | [`v0.3.5`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.3.5) | Windows 上可以使用 ZCode 了：之前 Windows 版把 ZCode 整个禁用，现在可以部署、查看状态和移除提示词。[#78](https://github.com/Jia-Ethan/keysmith-switch/pull/78) |

@@ -1,1 +1,1 @@
-Keysmith Switch v0.3.7：修复 Windows 上反复弹出命令行窗口，并支持通过系统代理检查更新。
+Keysmith Switch v0.3.8：部署被拦截时，提示改用界面语言说明原因，并告诉你下一步该点哪里。
