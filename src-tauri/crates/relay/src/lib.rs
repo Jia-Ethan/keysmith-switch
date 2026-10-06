@@ -1,10 +1,12 @@
-//! A loopback relay between Codex and its model provider. It forwards every request as is,
-//! except that the person's words in a Responses request pass through the input rewrite
-//! first. Responses stream back untouched.
+//! A loopback relay between an agent and its model provider. It forwards every request as
+//! is, except that the person's words in a conversation request (Responses, Messages or Chat
+//! Completions) pass through the input rewrite first. Responses stream back untouched.
 //!
-//! Requests arrive as `/r/<token>/<provider>/<path>` and leave for the provider's real base
-//! URL plus `<path>`. The token keeps other local programs from borrowing the route. Nothing
-//! is stored: no bodies, no rules, no credentials are written or logged.
+//! Requests arrive as `/t/<token>/<tool>/<upstream>/<path>` and leave for that upstream's
+//! real base URL plus `<path>`. Codex links written by v0.4.0 use `/r/<token>/<provider>/<path>`,
+//! which is the same as `/t/<token>/codex/<provider>/<path>`. The token keeps other local
+//! programs from borrowing the route. Nothing is stored: no bodies, no rules, no credentials
+//! are written or logged.
 
 use std::collections::BTreeMap;
 use std::convert::Infallible;
@@ -22,8 +24,7 @@ use hyper_util::rt::TokioIo;
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
 
-use keysmith_rewrite::responses::rewrite_request_bytes;
-use keysmith_rewrite::{Matcher, Snapshot};
+use keysmith_rewrite::{rewrite_request_bytes, Matcher, Protocol, Snapshot, Tool};
 
 pub const CONFIG_SCHEMA: u32 = 1;
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -36,8 +37,23 @@ pub struct RelayConfig {
     pub schema: u32,
     pub port: u16,
     pub token: String,
-    /// Provider id → the base URL Codex used before the relay, e.g. `https://host/v1`.
+    /// Codex provider id → the base URL Codex used before the relay, e.g. `https://host/v1`.
     pub upstreams: BTreeMap<String, String>,
+    /// `<tool>/<upstream id>` → the base URL that agent used before the relay. Absent in
+    /// configs written by v0.4.0.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub routes: BTreeMap<String, String>,
+}
+
+impl RelayConfig {
+    /// The real base URL for one agent's upstream.
+    pub fn upstream(&self, tool: Tool, id: &str) -> Option<&str> {
+        match tool {
+            Tool::Codex => self.upstreams.get(id),
+            _ => self.routes.get(&format!("{}/{id}", tool.as_str())),
+        }
+        .map(String::as_str)
+    }
 }
 
 impl RelayConfig {
@@ -95,8 +111,19 @@ fn stamp(path: &Path) -> Option<(SystemTime, u64)> {
     Some((meta.modified().ok()?, meta.len()))
 }
 
-fn parse_matcher(bytes: &[u8]) -> Option<Arc<Matcher>> {
-    Snapshot::parse(bytes)?.codex_matcher().map(Arc::new)
+/// One matcher per agent whose switches are all on.
+type Matchers = Arc<BTreeMap<Tool, Matcher>>;
+
+fn parse_matchers(bytes: &[u8]) -> Matchers {
+    let Some(snapshot) = Snapshot::parse(bytes) else {
+        return Arc::default();
+    };
+    Arc::new(
+        Tool::ALL
+            .into_iter()
+            .filter_map(|tool| snapshot.matcher(tool).map(|matcher| (tool, matcher)))
+            .collect(),
+    )
 }
 
 fn parse_config(bytes: &[u8]) -> Option<RelayConfig> {
@@ -105,7 +132,7 @@ fn parse_config(bytes: &[u8]) -> Option<RelayConfig> {
 
 pub struct Relay {
     config: Mutex<Watched<Option<RelayConfig>>>,
-    rules: Mutex<Watched<Option<Arc<Matcher>>>>,
+    rules: Mutex<Watched<Matchers>>,
     client: reqwest::Client,
 }
 
@@ -119,7 +146,7 @@ impl Relay {
             .expect("http client");
         Arc::new(Self {
             config: Mutex::new(Watched::new(config_path(home), parse_config)),
-            rules: Mutex::new(Watched::new(snapshot_path(home), parse_matcher)),
+            rules: Mutex::new(Watched::new(snapshot_path(home), parse_matchers)),
             client,
         })
     }
@@ -128,8 +155,11 @@ impl Relay {
         self.config.lock().ok()?.get()
     }
 
-    fn matcher(&self) -> Option<Arc<Matcher>> {
-        self.rules.lock().ok()?.get()
+    fn matchers(&self) -> Matchers {
+        self.rules
+            .lock()
+            .map(|mut rules| rules.get())
+            .unwrap_or_default()
     }
 }
 
@@ -178,35 +208,60 @@ fn hop_by_hop(name: &HeaderName) -> bool {
 }
 
 struct Route {
+    tool: Tool,
     upstream: String,
     rest: String,
 }
 
-/// `/r/<token>/<provider>/<rest>` → the upstream URL, or `None` when the token or provider is wrong.
+/// `/t/<token>/<tool>/<upstream>/<rest>` or `/r/<token>/<provider>/<rest>` → the upstream
+/// URL, or `None` when the token, tool or upstream is wrong.
 fn route(config: &RelayConfig, path: &str, query: Option<&str>) -> Option<Route> {
-    let mut parts = path.strip_prefix("/r/")?.splitn(3, '/');
-    let token = parts.next()?;
-    let provider = parts.next()?;
-    let rest = parts.next().unwrap_or("");
+    let (token, tool, id, rest) = if let Some(path) = path.strip_prefix("/t/") {
+        let mut parts = path.splitn(4, '/');
+        let token = parts.next()?;
+        let tool = Tool::parse(parts.next()?)?;
+        (token, tool, parts.next()?, parts.next().unwrap_or(""))
+    } else {
+        let mut parts = path.strip_prefix("/r/")?.splitn(3, '/');
+        let token = parts.next()?;
+        (
+            token,
+            Tool::Codex,
+            parts.next()?,
+            parts.next().unwrap_or(""),
+        )
+    };
     if token != config.token {
         return None;
     }
-    let base = config.upstreams.get(provider)?.trim_end_matches('/');
+    let base = config.upstream(tool, id)?.trim_end_matches('/');
     let mut upstream = format!("{base}/{rest}");
     if let Some(query) = query {
         upstream.push('?');
         upstream.push_str(query);
     }
     Some(Route {
+        tool,
         upstream,
         rest: rest.to_string(),
     })
 }
 
-fn is_responses_create(method: &hyper::Method, rest: &str, headers: &HeaderMap) -> bool {
-    method == hyper::Method::POST
-        && rest.trim_end_matches('/').ends_with("responses")
-        && !headers.contains_key(hyper::header::CONTENT_ENCODING)
+/// The format of a request whose body may carry the person's words, or `None` to forward it
+/// as is. Compressed bodies are never opened.
+fn rewritable(route: &Route, method: &hyper::Method, headers: &HeaderMap) -> Option<Protocol> {
+    if method != hyper::Method::POST || headers.contains_key(hyper::header::CONTENT_ENCODING) {
+        return None;
+    }
+    // ZCode marks subagent and workflow requests; their prompts were written by the model.
+    if route.tool == Tool::Zcode
+        && headers
+            .get("x-zcode-session-type")
+            .is_some_and(|kind| kind.as_bytes() != b"main")
+    {
+        return None;
+    }
+    Protocol::from_path(&route.rest)
 }
 
 pub async fn handle(relay: Arc<Relay>, request: Request<Incoming>) -> Response<Body> {
@@ -238,10 +293,11 @@ pub async fn handle(relay: Arc<Relay>, request: Request<Incoming>) -> Response<B
     };
 
     let mut rewritten = 0usize;
-    let body = if is_responses_create(&parts.method, &route.rest, &parts.headers) {
-        match relay
-            .matcher()
-            .and_then(|matcher| rewrite_request_bytes(&matcher, &bytes))
+    let body = if let Some(protocol) = rewritable(&route, &parts.method, &parts.headers) {
+        let matchers = relay.matchers();
+        match matchers
+            .get(&route.tool)
+            .and_then(|matcher| rewrite_request_bytes(protocol, route.tool, matcher, &bytes))
         {
             Some(out) => {
                 rewritten = 1;
@@ -285,8 +341,9 @@ pub async fn handle(relay: Arc<Relay>, request: Request<Incoming>) -> Response<B
         }
     };
     log(&format!(
-        "{} status={} rewritten={rewritten} ms={}",
+        "{} tool={} status={} rewritten={rewritten} ms={}",
         parts.method,
+        route.tool.as_str(),
         upstream.status().as_u16(),
         started.elapsed().as_millis()
     ));
