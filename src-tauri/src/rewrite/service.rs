@@ -29,6 +29,9 @@ pub struct RelayConfig {
     pub port: u16,
     pub token: String,
     pub upstreams: std::collections::BTreeMap<String, String>,
+    /// `<tool>/<upstream id>` → base URL, for agents other than Codex.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub routes: std::collections::BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -79,6 +82,7 @@ pub fn ensure_config(paths: &AppPaths) -> Result<RelayConfig> {
         port,
         token: uuid::Uuid::new_v4().simple().to_string(),
         upstreams: Default::default(),
+        routes: Default::default(),
     };
     write_config(paths, &config)?;
     Ok(config)

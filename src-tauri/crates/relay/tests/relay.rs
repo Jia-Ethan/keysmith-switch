@@ -99,8 +99,14 @@ fn write_rules(home: &std::path::Path, enabled: bool) {
     let snapshot = Snapshot {
         schema: SNAPSHOT_SCHEMA,
         enabled,
-        tools: ToolSwitches { codex: true },
+        tools: ToolSwitches {
+            codex: true,
+            claude: true,
+            zcode: true,
+            grok: false,
+        },
         rules: vec![Rule::new("提示词", "指令")],
+        by_tool: None,
     };
     std::fs::write(snapshot_path(home), serde_json::to_vec(&snapshot).unwrap()).unwrap();
 }
@@ -115,6 +121,10 @@ async fn start(enabled: bool) -> Fixture {
         port: 0,
         token: "tok".into(),
         upstreams: BTreeMap::from([("custom".into(), format!("http://{up}/v1"))]),
+        routes: BTreeMap::from([
+            ("claude/anthropic".into(), format!("http://{up}")),
+            ("zcode/lgw".into(), format!("http://{up}/v1")),
+        ]),
     };
     std::fs::write(config_path(&home), serde_json::to_vec(&config).unwrap()).unwrap();
     write_rules(&home, enabled);
@@ -191,8 +201,12 @@ async fn rules_reload_without_restart() {
     let snapshot = Snapshot {
         schema: SNAPSHOT_SCHEMA,
         enabled: true,
-        tools: ToolSwitches { codex: true },
+        tools: ToolSwitches {
+            codex: true,
+            ..Default::default()
+        },
         rules: vec![Rule::new("提示词", "指令"), Rule::new("改", "换")],
+        by_tool: None,
     };
     std::fs::write(
         snapshot_path(&f.home),
@@ -243,4 +257,120 @@ async fn health_answers_without_a_token() {
         .await
         .unwrap();
     assert_eq!(response.status(), 200);
+}
+
+const MESSAGES: &str = r#"{"model":"m","stream":true,"system":[{"type":"text","text":"提示词"}],"messages":[{"role":"user","content":[{"type":"text","text":"<system-reminder>提示词</system-reminder>"},{"type":"text","text":"改提示词","cache_control":{"type":"ephemeral"}}]}]}"#;
+
+#[tokio::test]
+async fn claude_messages_are_rewritten_with_key_order_kept() {
+    let f = start(true).await;
+    let response = post(
+        &format!(
+            "{}/t/tok/claude/anthropic/v1/messages?beta=true",
+            f.relay_url
+        ),
+        MESSAGES,
+    )
+    .await;
+    assert_eq!(response.status(), 200);
+    let seen = f.seen.lock().unwrap().clone();
+    assert_eq!(seen.path, "/v1/messages");
+    assert_eq!(seen.query.as_deref(), Some("beta=true"));
+    assert_eq!(
+        String::from_utf8(seen.body).unwrap(),
+        MESSAGES.replace("改提示词", "改指令")
+    );
+}
+
+#[tokio::test]
+async fn zcode_subagent_requests_pass_through() {
+    let f = start(true).await;
+    let body = r#"{"messages":[{"role":"user","content":"改提示词"}]}"#;
+    let url = format!("{}/t/tok/zcode/lgw/chat/completions", f.relay_url);
+    let client = reqwest::Client::new();
+    client
+        .post(&url)
+        .header("x-zcode-session-type", "subagent")
+        .body(body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(f.seen.lock().unwrap().body, body.as_bytes());
+    client
+        .post(&url)
+        .header("x-zcode-session-type", "main")
+        .body(body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(
+        f.seen.lock().unwrap().body,
+        body.replace("改提示词", "改指令").as_bytes()
+    );
+}
+
+#[tokio::test]
+async fn an_agent_switched_off_passes_through() {
+    let f = start(true).await;
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    let snapshot = Snapshot {
+        schema: SNAPSHOT_SCHEMA,
+        enabled: true,
+        tools: ToolSwitches {
+            codex: true,
+            ..Default::default()
+        },
+        rules: vec![Rule::new("提示词", "指令")],
+        by_tool: None,
+    };
+    std::fs::write(
+        snapshot_path(&f.home),
+        serde_json::to_vec(&snapshot).unwrap(),
+    )
+    .unwrap();
+    post(
+        &format!("{}/t/tok/claude/anthropic/v1/messages", f.relay_url),
+        MESSAGES,
+    )
+    .await;
+    assert_eq!(f.seen.lock().unwrap().body, MESSAGES.as_bytes());
+}
+
+#[tokio::test]
+async fn new_route_for_codex_matches_the_old_one() {
+    let f = start(true).await;
+    post(
+        &format!("{}/t/tok/codex/custom/responses", f.relay_url),
+        BODY,
+    )
+    .await;
+    let body: serde_json::Value = serde_json::from_slice(&f.seen.lock().unwrap().body).unwrap();
+    assert_eq!(body["input"][0]["content"][0]["text"], "改指令");
+}
+
+#[tokio::test]
+async fn unknown_tool_or_upstream_is_refused() {
+    let f = start(true).await;
+    for path in [
+        "/t/tok/cursor/anthropic/v1/messages",
+        "/t/tok/claude/lgw/v1/messages",
+        "/t/nope/claude/anthropic/v1/messages",
+    ] {
+        let response = post(&format!("{}{path}", f.relay_url), MESSAGES).await;
+        assert_eq!(response.status(), 404, "{path}");
+    }
+    assert!(f.seen.lock().unwrap().path.is_empty());
+}
+
+#[test]
+fn reads_a_v040_config_without_routes() {
+    let config = RelayConfig::parse(
+        br#"{"schema":1,"port":1,"token":"t","upstreams":{"custom":"https://h/v1"}}"#,
+    )
+    .unwrap();
+    assert!(config.routes.is_empty());
+    assert_eq!(
+        config.upstream(keysmith_rewrite::Tool::Codex, "custom"),
+        Some("https://h/v1")
+    );
 }

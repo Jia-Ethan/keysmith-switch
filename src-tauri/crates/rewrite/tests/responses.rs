@@ -1,5 +1,5 @@
 use keysmith_rewrite::responses::{rewrite_request, rewrite_request_bytes, rewrite_user_text};
-use keysmith_rewrite::{Matcher, Rule};
+use keysmith_rewrite::{Matcher, Rule, Tool};
 use pretty_assertions::assert_eq;
 use serde_json::{json, Value};
 
@@ -31,7 +31,7 @@ fn texts(body: &Value) -> Vec<String> {
 fn codex_request_changes_only_what_the_person_typed() {
     let original: Value = serde_json::from_str(FIXTURE).unwrap();
     let mut body = original.clone();
-    let changed = rewrite_request(&matcher(), &mut body);
+    let changed = rewrite_request(Tool::Codex, &matcher(), &mut body);
     // The earlier user turn, the IDE-wrapped request and the current turn.
     assert_eq!(changed, 3);
 
@@ -105,7 +105,7 @@ fn string_content_and_non_message_items() {
             {"type": "reasoning", "summary": [{"type": "summary_text", "text": "提示词"}]}
         ]
     });
-    assert_eq!(rewrite_request(&matcher(), &mut body), 1);
+    assert_eq!(rewrite_request(Tool::Codex, &matcher(), &mut body), 1);
     assert_eq!(body["input"][0]["content"], "指令");
     assert_eq!(body["input"][1]["content"][0]["text"], "提示词");
     assert_eq!(body["input"][2]["content"][0]["image_url"], "data:提示词");
@@ -134,7 +134,7 @@ fn rewriting_is_deterministic_across_turns() {
     let m = matcher();
     let mut first: Value = serde_json::from_str(FIXTURE).unwrap();
     let mut second: Value = serde_json::from_str(FIXTURE).unwrap();
-    rewrite_request(&m, &mut first);
-    rewrite_request(&m, &mut second);
+    rewrite_request(Tool::Codex, &m, &mut first);
+    rewrite_request(Tool::Codex, &m, &mut second);
     assert_eq!(first, second);
 }

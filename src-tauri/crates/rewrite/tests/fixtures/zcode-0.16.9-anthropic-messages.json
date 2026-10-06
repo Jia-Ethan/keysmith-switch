@@ -1,0 +1,228 @@
+{
+ "_capture": {
+  "source": "zcode CLI 0.16.9 (ZCode.app 3.14.4) -> local mock upstream",
+  "method": "POST",
+  "path": "/v1/messages",
+  "headers": {
+   "host": "127.0.0.1:18801",
+   "connection": "keep-alive",
+   "anthropic-version": "2023-06-01",
+   "authorization": "<REDACTED>",
+   "content-type": "application/json",
+   "http-referer": "https://zcode.z.ai",
+   "user-agent": "ZCode/0.16.9 ai-sdk/provider-utils/4.0.27 runtime/node.js/24",
+   "x-api-key": "<REDACTED>",
+   "x-client-language": "zh-CN",
+   "x-client-timezone": "Asia/Shanghai",
+   "x-os-category": "macos",
+   "x-os-version": "27.0.0",
+   "x-platform": "darwin-arm64",
+   "x-query-id": "<uuid>",
+   "x-release-channel": "production",
+   "x-request-id": "<uuid>",
+   "x-session-id": "<uuid>",
+   "x-title": "Z Code@cli",
+   "x-zcode-agent": "glm",
+   "x-zcode-app-version": "0.16.9",
+   "x-zcode-session-type": "main",
+   "x-zcode-trace-id": "<uuid>",
+   "accept": "*/*",
+   "accept-language": "*",
+   "sec-fetch-mode": "cors",
+   "accept-encoding": "gzip, deflate",
+   "content-length": "76613"
+  }
+ },
+ "model": "mock-model",
+ "max_tokens": 8000,
+ "metadata": {
+  "user_id": "{\"device_id\":\"<REDACTED>\",\"account_uuid\":\"\",\"session_id\":\"<REDACTED>\"}"
+ },
+ "system": [
+  {
+   "type": "text",
+   "text": "<project_instructions>\n[REDACTED: custom system prompt from ~/.zcode-keysmith/system-role.md injected by patched zcode.cjs]\n</project_instructions>",
+   "cache_control": {
+    "type": "ephemeral"
+   }
+  }
+ ],
+ "messages": [
+  {
+   "role": "user",
+   "content": [
+    {
+     "type": "text",
+     "text": "<system-reminder>\nThe following skills are available for use with the Skill tool:\n\n- browser-use:control-browser: Use when opening, navigating, inspecting, testing, clicking, typing, filling, screenshotting, or verifying web pages and local HTTP targets (localhost, 127.0.0.1, ::1) inside ZCode, including browser/web-UI automation, rendered-page scraping, fronte... (also loadable as control-browser) (file: /Users/USER/.zcode/cli/plugins/cache/zcode-plugins-official/browser-use/0.5.1/skills/control-browser/SKILL.md)\n- browser-use:web-gui-tester: Use the browser automation tooling available in the session to test web frontends interactively in a purely GUI-based, black-box manner: simulate real user clicks, text input, scrolling, and other actions; use screenshots for visual verification and... (also loadable as web-gui-tester) (file: /Users/USER/.zcode/cli/plugins/cache/zcode-plugins-official/browser-use/0.5.1/skills/web-gui-tester/SKILL.md)\n- documents:docx: Complete DOCX document creation, editing, and analysis capabilities with support for revisions, comments, formatting preservation, and text extraction. Also handles Word format conversion: legacy .doc → .docx, DOCX → PDF, DOCX → images (PNG/JPG) for... (also loadable as docx) (file: /Users/USER/.zcode/cli/plugins/cache/zcode-plugins-official/documents/0.1.7/skills/docx/SKILL.md)\n- dynamic-workflows: Use when writing, debugging, or resubmitting a dynamic-workflow script for the CreateWorkflow tool: choosing subagent topology, typing subagent results, fanning out over files or git, gating loops on world.run commands, testing pieces with EvalWorkf... (file: /Applications/ZCode.app/Contents/Resources/glm/packages/bundled-skills/skills/dynamic-workflows/SKILL.md)\n- pdf:pdf: Professional PDF toolkit covering four production workflows: reports, creative visuals, academic LaTeX, and existing PDF processing. Routes automatically by document type and supports reports, posters, papers, resumes, extraction, merging, splitting... (also loadable as pdf) (file: /Users/USER/.zcode/cli/plugins/cache/zcode-plugins-official/pdf/0.1.7/skills/pdf/SKILL.md)\n- plugin-creator:plugin-creator: Create or update ZCode plugin source and a local test marketplace, then guide the user to add, install, update and try it in the app. Use for new plugins or changes to an existing plugin's capabilities, manifest or local distribution. (also loadable as plugin-creator) (file: /Users/USER/.zcode/cli/plugins/cache/zcode-plugins-official/plugin-creator/0.1.1/skills/plugin-creator/SKILL.md)\n- presentations:pptx: Use this skill any time a presentation file is the primary input or output. Covers: creating new .pptx decks from scratch or from an outline/document (pptxgenjs / python-pptx); editing and restyling an existing .pptx; reading and extracting text/str... (also loadable as pptx) (file: /Users/USER/.zcode/cli/plugins/cache/zcode-plugins-official/presentations/0.1.7/skills/pptx/SKILL.md)\n- skill-creator:skill-creator: Create new skills, edit existing skills, and iterate wording. Use when writing SKILL.md from scratch, improving existing skills, turning repeated workflows into reusable skills, or refining skill descriptions to improve trigger reliability. (also loadable as skill-creator) (file: /Users/USER/.zcode/cli/plugins/cache/zcode-plugins-official/skill-creator/0.1.0/skills/skill-creator/SKILL.md)\n- spreadsheets:xlsx: Use this skill any time a spreadsheet file is the primary input or output. This means any task where the user wants to: open, read, edit, or fix an existing .xlsx, .xlsm, .csv, or .tsv file; create a new spreadsheet from scratch or from other data s... (also loadable as xlsx) (file: /Users/USER/.zcode/cli/plugins/cache/zcode-plugins-official/spreadsheets/0.1.7/skills/xlsx/SKILL.md)\n- zcode-guide:diagnosing-commands: Use to diagnose and fix ZCode custom slash-command (/command) configuration problems in the ZCode client. Applies when a command is missing, is overridden by a higher-precedence command of the same name, has a frontmatter parse error, is dropped for... (also loadable as diagnosing-commands) (file: /Users/USER/.zcode/cli/plugins/cache/zcode-plugins-official/zcode-guide/0.3.0/skills/diagnosing-commands/SKILL.md)\n- zcode-guide:diagnosing-hooks: Use to diagnose and fix ZCode hook configuration problems in the ZCode client. Applies when a hook does not trigger, an event name is wrong, a matcher does not match a tool name, a script is not executable, template variables are not expanded, a tim... (also loadable as diagnosing-hooks) (file: /Users/USER/.zcode/cli/plugins/cache/zcode-plugins-official/zcode-guide/0.3.0/skills/diagnosing-hooks/SKILL.md)\n- zcode-guide:diagnosing-mcp: Use to diagnose and fix ZCode MCP (Model Context Protocol) server configuration problems in the ZCode client. Applies when an MCP server will not connect, its tools (mcp__server__tool) do not appear, it shows as disabled or failed, connections time ... (also loadable as diagnosing-mcp) (file: /Users/USER/.zcode/cli/plugins/cache/zcode-plugins-official/zcode-guide/0.3.0/skills/diagnosing-mcp/SKILL.md)\n- zcode-guide:diagnosing-plugins: Use to diagnose and fix ZCode plugin and marketplace problems in the ZCode client. Applies when a plugin is not listed, adding a marketplace or installing a plugin fails, a plugin is enabled but its skills or commands are missing, a built-in plugin ... (also loadable as diagnosing-plugins) (file: /Users/USER/.zcode/cli/plugins/cache/zcode-plugins-official/zcode-guide/0.3.0/skills/diagnosing-plugins/SKILL.md)\n- zcode-guide:diagnosing-skills: Use to diagnose and fix ZCode skill configuration problems in the ZCode client. Applies when a skill is not discovered, is installed but does not trigger automatically, is shadowed by a higher-precedence skill of the same name, is disabled by config... (also loadable as diagnosing-skills) (file: /Users/USER/.zcode/cli/plugins/cache/zcode-plugins-official/zcode-guide/0.3.0/skills/diagnosing-skills/SKILL.md)\n- zcode-guide:zcode-configuration-guide: Use when configuring ZCode's extension resources (MCP servers, slash commands, skills, hooks, and plugins) or instruction files such as AGENTS.md in the ZCode client. Explains where each resource is configured at the user and workspace scope, the di... (also loadable as zcode-configuration-guide) (file: /Users/USER/.zcode/cli/plugins/cache/zcode-plugins-official/zcode-guide/0.3.0/skills/zcode-configuration-guide/SKILL.md)\n</system-reminder>"
+    },
+    {
+     "type": "text",
+     "text": "<system-reminder>\nAs you answer the user's questions, you can use the following context:\n# currentDate\nToday's date is 2026-10-06.\n\n      IMPORTANT: this context may or may not be relevant to your tasks. You should not respond to this context unless it is highly relevant to your task.\n</system-reminder>\n"
+    },
+    {
+     "type": "text",
+     "text": "anth turn1 KSMARK5"
+    }
+   ]
+  },
+  {
+   "role": "assistant",
+   "content": [
+    {
+     "type": "text",
+     "text": "MOCK_OK"
+    }
+   ]
+  },
+  {
+   "role": "user",
+   "content": [
+    {
+     "type": "text",
+     "text": "/kscmd argsKSMARK6"
+    }
+   ]
+  },
+  {
+   "role": "assistant",
+   "content": [
+    {
+     "type": "text",
+     "text": "MOCK_OK"
+    }
+   ]
+  },
+  {
+   "role": "user",
+   "content": [
+    {
+     "type": "text",
+     "text": "anth turn3 KSMARK7",
+     "cache_control": {
+      "type": "ephemeral"
+     }
+    }
+   ]
+  }
+ ],
+ "tools": [
+  {
+   "name": "Agent",
+   "_redacted": "schema omitted"
+  },
+  {
+   "name": "AskUserQuestion",
+   "_redacted": "schema omitted"
+  },
+  {
+   "name": "Bash",
+   "_redacted": "schema omitted"
+  },
+  {
+   "name": "Edit",
+   "_redacted": "schema omitted"
+  },
+  {
+   "name": "EnterPlanMode",
+   "_redacted": "schema omitted"
+  },
+  {
+   "name": "ExitPlanMode",
+   "_redacted": "schema omitted"
+  },
+  {
+   "name": "Read",
+   "_redacted": "schema omitted"
+  },
+  {
+   "name": "Skill",
+   "_redacted": "schema omitted"
+  },
+  {
+   "name": "TaskOutput",
+   "_redacted": "schema omitted"
+  },
+  {
+   "name": "TaskStop",
+   "_redacted": "schema omitted"
+  },
+  {
+   "name": "TodoRead",
+   "_redacted": "schema omitted"
+  },
+  {
+   "name": "TodoWrite",
+   "_redacted": "schema omitted"
+  },
+  {
+   "name": "WebFetch",
+   "_redacted": "schema omitted"
+  },
+  {
+   "name": "Write",
+   "_redacted": "schema omitted"
+  },
+  {
+   "name": "SendMessage",
+   "_redacted": "schema omitted"
+  },
+  {
+   "name": "ReadSessionContext",
+   "_redacted": "schema omitted"
+  },
+  {
+   "name": "CreateWorkflow",
+   "_redacted": "schema omitted"
+  },
+  {
+   "name": "AmendWorkflow",
+   "_redacted": "schema omitted"
+  },
+  {
+   "name": "SaveWorkflow",
+   "_redacted": "schema omitted"
+  },
+  {
+   "name": "EvalWorkflowSnippet",
+   "_redacted": "schema omitted"
+  },
+  {
+   "name": "ListWorkflowRuns",
+   "_redacted": "schema omitted"
+  },
+  {
+   "name": "GetWorkflowRun",
+   "_redacted": "schema omitted"
+  },
+  {
+   "name": "ResumeWorkflowRun",
+   "_redacted": "schema omitted"
+  },
+  {
+   "name": "ResolveWorkflowQuestion",
+   "_redacted": "schema omitted"
+  },
+  {
+   "name": "ListSavedWorkflows",
+   "_redacted": "schema omitted"
+  },
+  {
+   "name": "ListModels",
+   "_redacted": "schema omitted"
+  },
+  {
+   "name": "mcp__node_repl__js",
+   "_redacted": "schema omitted"
+  }
+ ],
+ "tool_choice": {
+  "type": "auto"
+ },
+ "stream": true,
+ "thinking": {
+  "type": "adaptive"
+ },
+ "output_config": {
+  "effort": "high"
+ }
+}

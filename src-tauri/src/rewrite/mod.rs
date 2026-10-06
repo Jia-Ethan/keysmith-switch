@@ -35,8 +35,10 @@ pub fn build_snapshot(store: &Store) -> Result<Snapshot> {
         enabled: settings.rewrite_enabled,
         tools: ToolSwitches {
             codex: settings.rewrite_codex_enabled,
+            ..Default::default()
         },
         rules: store.active_rules()?,
+        by_tool: None,
     })
 }
 

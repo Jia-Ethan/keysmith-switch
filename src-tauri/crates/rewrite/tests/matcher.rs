@@ -107,8 +107,12 @@ fn snapshot_switches_gate_the_codex_matcher() {
     let mut snapshot = Snapshot {
         schema: SNAPSHOT_SCHEMA,
         enabled: true,
-        tools: ToolSwitches { codex: true },
+        tools: ToolSwitches {
+            codex: true,
+            ..Default::default()
+        },
         rules: vec![Rule::new("a", "b")],
+        by_tool: None,
     };
     assert!(snapshot.codex_matcher().is_some());
     snapshot.tools.codex = false;
