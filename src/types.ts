@@ -548,3 +548,50 @@ export interface AnnouncementsView {
   /** Why the last look failed (`offline`, `invalid`, `too-new`), when it did. */
   error: string | null;
 }
+
+// ----- input rewrite ------------------------------------------------------------------
+
+export interface RewriteRule {
+  from: string;
+  to: string;
+}
+
+export interface RulePendingUpdate {
+  version: string;
+  title: string;
+  rules: RewriteRule[];
+}
+
+export interface RuleTable {
+  id: string;
+  kind: "user" | "pack";
+  title: string;
+  enabled: boolean;
+  priority: number;
+  packId: string | null;
+  packVersion: string | null;
+  rules: RewriteRule[];
+  /** An update to an enabled pack table that waits for the person to accept it. */
+  pending: RulePendingUpdate | null;
+}
+
+export type CodexLinkState =
+  | { state: "linked"; provider: string }
+  | { state: "bypassed"; provider: string | null }
+  | { state: "unlinked" };
+
+export interface CodexRewriteView {
+  link: CodexLinkState;
+  service: { installed: boolean; running: boolean };
+  provider: { id: string; name: string; baseUrl: string } | null;
+  /** Why Codex cannot be linked, e.g. "built-in-provider". */
+  unsupported: string | null;
+  codexDir: string | null;
+}
+
+export interface RewriteView {
+  enabled: boolean;
+  codexEnabled: boolean;
+  tables: RuleTable[];
+  codex: CodexRewriteView;
+}

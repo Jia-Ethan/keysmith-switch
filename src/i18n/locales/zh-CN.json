@@ -17,7 +17,8 @@
     "extensionsUpdates": "{{count}} 个可更新",
     "extensions": "拓展",
     "announcements": "公告",
-    "announcementsNew": "有新公告"
+    "announcementsNew": "有新公告",
+    "rewrite": "输入替换"
   },
   "common": {
     "ok": "确定",
@@ -579,5 +580,73 @@
       "too-new": "这些公告需要更新版本的 App 才能显示。",
       "default": "公告检查失败，显示的是上一次的内容。"
     }
+  },
+  "rewrite": {
+    "title": "输入替换",
+    "lead": "你在 Codex 里照常打字，发给模型前按规则替换字面文本。输入框和会话历史仍显示原文。",
+    "masterLabel": "输入替换",
+    "masterHint": "关闭后不会替换任何内容，规则仍然保留。",
+    "codexLabel": "对 Codex 生效",
+    "codexHint": "替换你在 Codex 里输入的文字，包括历史里你说过的话。助手回复、工具输出和 Codex 自带的上下文不会改动；以 / 开头的命令整条跳过。",
+    "connect": {
+      "title": "Codex 连接",
+      "linked": "已连接：Codex 经 Keysmith 中转发往 {{provider}}",
+      "bypassed": "Codex 目前没有经过 Keysmith 中转（可能被其他工具切换了 provider），替换不会生效。",
+      "unlinked": "尚未连接。连接后，Keysmith 会在本机启动一个只监听 127.0.0.1 的中转服务，并在 Codex 的 config.toml 里新增一个 provider 指向它。",
+      "notRunning": "中转服务没有在运行，Codex 现在连不上模型。可以点「重新连接」，或「断开」让 Codex 直连。",
+      "connectButton": "连接 Codex",
+      "reconnect": "重新连接",
+      "disconnect": "断开",
+      "disconnectTitle": "断开 Codex",
+      "disconnectBody": "Codex 会改回直接连接 {{provider}}，Keysmith 中转服务会停止并取消开机启动。你的规则会保留。如果其他工具在这期间改过 config.toml 的同一项，那一项保持原样。",
+      "connected": "已连接 Codex",
+      "disconnected": "已断开，Codex 改回直连",
+      "provider": "当前 provider：{{name}}",
+      "unsupported": {
+        "no-config": "没有找到 Codex 的 config.toml，先运行一次 Codex 再来连接。",
+        "built-in-provider": "Codex 正在使用内置的 OpenAI 登录，暂不支持。请改用自定义 provider（config.toml 里的 [model_providers.xxx]）。",
+        "missing-provider": "config.toml 里的 model_provider 没有对应的 [model_providers] 配置。",
+        "no-base-url": "当前 provider 没有 base_url。",
+        "not-http": "当前 provider 的 base_url 不是 http(s) 地址。",
+        "wire-api": "当前 provider 不是 Responses 接口（wire_api = \"responses\"）。"
+      }
+    },
+    "tables": "规则表",
+    "tablesHint": "同一位置多张表都能匹配时，上面的优先。「我的规则」总在最前。",
+    "mine": "我的规则",
+    "pack": "规则包",
+    "ruleCount": "{{count}} 条",
+    "enabled": "启用",
+    "moveUp": "上移",
+    "moveDown": "下移",
+    "copyToMine": "复制到我的规则",
+    "copied": "已复制到我的规则",
+    "readOnly": "规则包只读；想修改请先复制到我的规则。",
+    "pending": "有新版本 v{{version}}，确认后才会生效",
+    "review": "查看更新",
+    "reviewTitle": "规则包更新：{{title}}",
+    "reviewBody": "这张表正在启用。确认后，下一轮对话起按新规则替换。",
+    "accept": "启用新版本",
+    "accepted": "已切换到新版本",
+    "diffAdded": "新增",
+    "diffRemoved": "删除",
+    "diffChanged": "改动",
+    "noChanges": "规则内容没有变化",
+    "editor": {
+      "from": "原文",
+      "to": "替换为",
+      "fromPlaceholder": "要匹配的文字",
+      "toPlaceholder": "留空表示删除",
+      "add": "添加规则",
+      "remove": "删除这条",
+      "save": "保存规则",
+      "saved": "规则已保存",
+      "discard": "放弃修改",
+      "empty": "还没有规则。规则按字面匹配、区分大小写；同一位置取最长的那条，替换后的文字不会再被替换。",
+      "duplicate": "「{{from}}」重复了",
+      "emptyFrom": "原文不能为空",
+      "unsaved": "有未保存的修改"
+    },
+    "loadError": "读取输入替换设置失败"
   }
 }

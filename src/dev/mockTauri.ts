@@ -121,6 +121,35 @@ function extView() {
   return { packs, updates: packs.filter((p) => p.updateAvailable).length, error: null, checkedAt: now() };
 }
 
+// Input rewrite. `?rewrite=pending` shows a pack waiting for review.
+const rewrite = {
+  enabled: true,
+  codexEnabled: true,
+  tables: [
+    { id: "user", kind: "user", title: "", enabled: true, priority: 0, packId: null, packVersion: null, rules: [{ from: "提示词", to: "指令" }], pending: null },
+    ...(new URLSearchParams(window.location.search).get("rewrite") === "pending"
+      ? [{ id: "pack:example.rules", kind: "pack", title: "示例规则包", enabled: true, priority: 1, packId: "example.rules", packVersion: "0.1.0", rules: [{ from: "foo", to: "bar" }], pending: { version: "0.2.0", title: "示例规则包", rules: [{ from: "foo", to: "baz" }, { from: "qux", to: "" }] } }]
+      : []),
+  ] as any[],
+  link: { state: "unlinked" } as any,
+  running: false,
+};
+
+function rewriteView() {
+  return {
+    enabled: rewrite.enabled,
+    codexEnabled: rewrite.codexEnabled,
+    tables: rewrite.tables,
+    codex: {
+      link: rewrite.link,
+      service: { installed: rewrite.running, running: rewrite.running },
+      provider: { id: "custom", name: "custom", baseUrl: "https://example.test/v1" },
+      unsupported: null,
+      codexDir: "~/.codex",
+    },
+  };
+}
+
 let claudeMemoryBytes = 1342;
 let codexMemoriesGone = false;
 const snapshots: Array<{ id: string; createdAt: string; tool: ToolId; kind: string; deployment: { present: boolean; title: string | null; restorable: boolean }; memory: { path: string; bytes: number; lines: number; sha256: string; mode: number } | null; memories?: { path: string; files: number; bytes: number } | null }> = [];
@@ -167,6 +196,33 @@ async function handle(cmd: string, args: Record<string, any> = {}): Promise<unkn
       pack.installedVersion = null;
       return delay({ view: extView(), report: { added: 0, updated: 0, copied: 0, linked: 0, kept: 1, removed: 1 } }, 700);
     }
+    case "rewrite_state":
+      return rewriteView();
+    case "rewrite_set_switches": {
+      if (args.enabled !== undefined) rewrite.enabled = args.enabled;
+      if (args.codexEnabled !== undefined) rewrite.codexEnabled = args.codexEnabled;
+      return rewriteView();
+    }
+    case "rewrite_save_user_rules":
+      rewrite.tables[0] = { ...rewrite.tables[0], rules: args.rules };
+      return delay(rewriteView());
+    case "rewrite_set_table_enabled":
+      rewrite.tables = rewrite.tables.map((t) => (t.id === args.id ? { ...t, enabled: args.enabled } : t));
+      return rewriteView();
+    case "rewrite_reorder_tables":
+    case "rewrite_copy_to_user":
+      return rewriteView();
+    case "rewrite_accept_update":
+      rewrite.tables = rewrite.tables.map((t) => (t.id === args.id && t.pending ? { ...t, rules: t.pending.rules, packVersion: t.pending.version, pending: null } : t));
+      return delay(rewriteView());
+    case "rewrite_connect_codex":
+      rewrite.link = { state: "linked", provider: "custom" };
+      rewrite.running = true;
+      return delay(rewriteView(), 900);
+    case "rewrite_disconnect_codex":
+      rewrite.link = { state: "unlinked" };
+      rewrite.running = false;
+      return delay(rewriteView(), 600);
     case "get_about":
       return { app: { name: "Keysmith Switch", version: "0.2.3", channel: "stable", preview: false, signed: false, identifier: "com.jia-ethan.keysmith-switch", website: "", github: "" }, adapters: [], official: [] };
     case "get_startup_report":

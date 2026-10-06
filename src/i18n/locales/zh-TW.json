@@ -17,7 +17,8 @@
     "extensionsUpdates": "{{count}} 個可更新",
     "extensions": "拓展",
     "announcements": "公告",
-    "announcementsNew": "有新公告"
+    "announcementsNew": "有新公告",
+    "rewrite": "輸入替換"
   },
   "common": {
     "ok": "確定",
@@ -579,5 +580,73 @@
       "too-new": "這些公告需要更新版本的 App 才能顯示。",
       "default": "公告檢查失敗，顯示的是上一次的內容。"
     }
+  },
+  "rewrite": {
+    "title": "輸入替換",
+    "lead": "你在 Codex 裡照常打字，送給模型前按規則替換字面文字。輸入框與對話歷史仍顯示原文。",
+    "masterLabel": "輸入替換",
+    "masterHint": "關閉後不會替換任何內容，規則仍會保留。",
+    "codexLabel": "對 Codex 生效",
+    "codexHint": "替換你在 Codex 裡輸入的文字，包括歷史中你說過的話。助理回覆、工具輸出與 Codex 自帶的上下文不會改動；以 / 開頭的指令整條略過。",
+    "connect": {
+      "title": "Codex 連線",
+      "linked": "已連線：Codex 經 Keysmith 中轉送往 {{provider}}",
+      "bypassed": "Codex 目前沒有經過 Keysmith 中轉（可能被其他工具切換了 provider），替換不會生效。",
+      "unlinked": "尚未連線。連線後，Keysmith 會在本機啟動一個只監聽 127.0.0.1 的中轉服務，並在 Codex 的 config.toml 裡新增一個 provider 指向它。",
+      "notRunning": "中轉服務沒有在執行，Codex 現在連不上模型。可以按「重新連線」，或「中斷」讓 Codex 直連。",
+      "connectButton": "連線 Codex",
+      "reconnect": "重新連線",
+      "disconnect": "中斷",
+      "disconnectTitle": "中斷 Codex",
+      "disconnectBody": "Codex 會改回直接連線 {{provider}}，Keysmith 中轉服務會停止並取消開機啟動。你的規則會保留。若其他工具在這段期間改過 config.toml 的同一項，那一項維持原樣。",
+      "connected": "已連線 Codex",
+      "disconnected": "已中斷，Codex 改回直連",
+      "provider": "目前 provider：{{name}}",
+      "unsupported": {
+        "no-config": "沒有找到 Codex 的 config.toml，請先執行一次 Codex 再來連線。",
+        "built-in-provider": "Codex 正在使用內建的 OpenAI 登入，暫不支援。請改用自訂 provider（config.toml 裡的 [model_providers.xxx]）。",
+        "missing-provider": "config.toml 裡的 model_provider 沒有對應的 [model_providers] 設定。",
+        "no-base-url": "目前的 provider 沒有 base_url。",
+        "not-http": "目前 provider 的 base_url 不是 http(s) 位址。",
+        "wire-api": "目前的 provider 不是 Responses 介面（wire_api = \"responses\"）。"
+      }
+    },
+    "tables": "規則表",
+    "tablesHint": "同一位置多張表都能匹配時，上面的優先。「我的規則」永遠在最前。",
+    "mine": "我的規則",
+    "pack": "規則包",
+    "ruleCount": "{{count}} 條",
+    "enabled": "啟用",
+    "moveUp": "上移",
+    "moveDown": "下移",
+    "copyToMine": "複製到我的規則",
+    "copied": "已複製到我的規則",
+    "readOnly": "規則包為唯讀；想修改請先複製到我的規則。",
+    "pending": "有新版本 v{{version}}，確認後才會生效",
+    "review": "檢視更新",
+    "reviewTitle": "規則包更新：{{title}}",
+    "reviewBody": "這張表正在啟用。確認後，下一輪對話起按新規則替換。",
+    "accept": "啟用新版本",
+    "accepted": "已切換到新版本",
+    "diffAdded": "新增",
+    "diffRemoved": "刪除",
+    "diffChanged": "變更",
+    "noChanges": "規則內容沒有變化",
+    "editor": {
+      "from": "原文",
+      "to": "替換為",
+      "fromPlaceholder": "要匹配的文字",
+      "toPlaceholder": "留空表示刪除",
+      "add": "新增規則",
+      "remove": "刪除這條",
+      "save": "儲存規則",
+      "saved": "規則已儲存",
+      "discard": "放棄修改",
+      "empty": "還沒有規則。規則按字面匹配、區分大小寫；同一位置取最長的那條，替換後的文字不會再被替換。",
+      "duplicate": "「{{from}}」重複了",
+      "emptyFrom": "原文不能為空",
+      "unsaved": "有未儲存的修改"
+    },
+    "loadError": "讀取輸入替換設定失敗"
   }
 }

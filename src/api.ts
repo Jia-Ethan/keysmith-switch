@@ -16,6 +16,8 @@ import type {
   Envelope,
   ExtensionChange,
   ExtensionsView,
+  RewriteRule,
+  RewriteView,
   FeedbackInput,
   FeedbackResult,
   FirstRunReport,
@@ -412,4 +414,43 @@ export function confirmRollback(operationId: string): Promise<RollbackResult> {
 
 export function deleteSnapshot(snapshotId: string): Promise<OkResult> {
   return call("delete_snapshot", { snapshotId });
+}
+
+/** Input rewrite rules, switches and Codex link state. Reads files only. */
+export function rewriteState(): Promise<RewriteView> {
+  return call("rewrite_state", {});
+}
+
+export function rewriteSetSwitches(input: { enabled?: boolean; codexEnabled?: boolean }): Promise<RewriteView> {
+  return call("rewrite_set_switches", input);
+}
+
+export function rewriteSaveUserRules(rules: RewriteRule[]): Promise<RewriteView> {
+  return call("rewrite_save_user_rules", { rules });
+}
+
+export function rewriteSetTableEnabled(id: string, enabled: boolean): Promise<RewriteView> {
+  return call("rewrite_set_table_enabled", { id, enabled });
+}
+
+export function rewriteReorderTables(ids: string[]): Promise<RewriteView> {
+  return call("rewrite_reorder_tables", { ids });
+}
+
+export function rewriteCopyToUser(id: string): Promise<RewriteView> {
+  return call("rewrite_copy_to_user", { id });
+}
+
+export function rewriteAcceptUpdate(id: string): Promise<RewriteView> {
+  return call("rewrite_accept_update", { id });
+}
+
+/** Start the relay and point Codex's config at it. */
+export function rewriteConnectCodex(): Promise<RewriteView> {
+  return call("rewrite_connect_codex", {});
+}
+
+/** Point Codex back at its own provider and stop the relay. Rules stay. */
+export function rewriteDisconnectCodex(): Promise<RewriteView> {
+  return call("rewrite_disconnect_codex", {});
 }

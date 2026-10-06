@@ -8,7 +8,7 @@ import { detectPlatform } from "../lib/platform";
 import type { PromptSummary, ToolId } from "../types";
 import { TOOL_IDS } from "../types";
 import type { AppPage } from "./AppShell";
-import { IconPlus, IconPuzzle, IconRocket, IconSearch, IconSettings } from "./icons";
+import { IconPlus, IconPuzzle, IconSwap, IconRocket, IconSearch, IconSettings } from "./icons";
 import { ToolLogo } from "./ToolLogos";
 import { cx } from "./ui";
 
@@ -109,6 +109,16 @@ export function CommandPalette({
       run: () => {
         onClose();
         onNavigate({ kind: "extensions" });
+      },
+    });
+    list.push({
+      id: "rewrite",
+      group: "actions",
+      label: t("nav.rewrite"),
+      icon: <IconSwap size={15} />,
+      run: () => {
+        onClose();
+        onNavigate({ kind: "rewrite" });
       },
     });
     list.push({
