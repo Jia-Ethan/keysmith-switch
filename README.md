@@ -74,8 +74,8 @@
 <tr>
 <td valign="top" colspan="2">
 
-### ⇄ 输入替换（Codex）
-在 Codex 里照常打字，发给模型前按你的规则做字面替换；输入框和会话历史仍是原文。规则默认为空，可随时关闭或断开。详见[输入替换](#-输入替换)。
+### ⇄ 输入替换
+在 Claude Code、Codex、ZCode 里照常打字，发给模型前按你的规则做字面替换；输入框和会话历史里仍是原文。规则默认为空，可以只对部分 Agent 生效，也可以随时关闭或断开。详见[输入替换](#-输入替换)。
 
 </td>
 </tr>
@@ -204,16 +204,36 @@ flowchart LR
 
 ## ⇄ 输入替换
 
-在左侧栏的「输入替换」页编辑规则、连接 Codex。
+在左侧栏的「输入替换」页编辑规则，并逐个连接 Agent。
 
-- **改写发生在本机。** 连接后，Switch 在本机启动 `keysmith-relay`，它只监听 `127.0.0.1`，并在 Codex 的 `config.toml` 里新增 `[model_providers.keysmith-relay]` 指向它（复制你原来的 provider，只改 `base_url`）。中转服务按规则改写你输入的文字后，再转发给原来的地址；响应原样流式返回。中转服务开机自启（macOS 用 LaunchAgent，Windows 用登录启动项），Switch 不打开也能工作。
-- **只改你打的字。** 只替换你自己输入的文字，包括历史里你之前说过的话。助手回复、工具输出、Codex 自带的上下文（环境、AGENTS.md、技能等）都不动；以 `/` 开头的消息整条跳过。
-- **匹配规则。** 字面匹配、区分大小写；同一位置取最长的一条；替换后的文字不会再被替换。「我的规则」排在最前，其余规则表按你排的顺序。
-- **不碰提示词部署。** 部署或撤销 Codex 提示词只动 `model_instructions_file`，不影响连接。
-- **可随时断开。** 「断开」只还原 Switch 自己写的两处（`model_provider` 和受管 provider 块），其他工具在此期间改过的值保持原样；规则保留。每次写 `config.toml` 前都会在旁边备份。
-- **不存会话。** 中转服务不保存、不记录请求内容、规则或鉴权信息。
-- **规则包。** 拓展仓库也可以发布规则包。安装前会先列出全部规则；已启用的规则包有更新时，需要你确认才会切换。
-- **目前的限制。** 只支持 Codex，并且 Codex 要使用自定义 provider（`wire_api = "responses"`）；Codex 内置的 OpenAI 登录暂不支持。
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/rewrite-dark.png" />
+  <img src="docs/images/rewrite-light.png" width="880" alt="输入替换页：每个 Agent 一行，显示状态、开关和连接操作；下方是可按 Agent 筛选的规则表" />
+</picture>
+
+- **改写发生在本机。** Switch 在本机运行 `keysmith-relay`，它只监听 `127.0.0.1`。连接一个 Agent，就是只改它的一个配置项，让它把请求发给中转服务。中转服务按规则改写你输入的文字后，转发到原来的地址，响应原样流式返回。中转服务开机自启（macOS 用 LaunchAgent，Windows 用登录启动项），Switch 不打开也能工作。
+
+  | Agent | 连接时改动的配置 |
+  | --- | --- |
+  | Claude Code | `~/.claude/settings.json` 的 `env.ANTHROPIC_BASE_URL`（有 `CLAUDE_CONFIG_DIR` 时用那个目录） |
+  | Codex | `~/.codex/config.toml`：新增 `[model_providers.keysmith-relay]`（复制你原来的 provider，只改 `base_url`），并把顶层 `model_provider` 指向它 |
+  | ZCode | `~/.zcode/v2/provider_config.json`：每个个人 provider 的 `baseUrl` |
+
+- **只改你打的字。** 只替换你自己输入的文字，包括历史里你之前说过的话。以下内容都不动：
+  - 助手回复和工具输出；
+  - Agent 自带的上下文，例如 Claude Code 的 `<system-reminder>`、Codex 的环境和 AGENTS.md、ZCode 的技能列表；
+  - 以 `/` 开头的斜杠命令及其展开内容；
+  - ZCode 子代理发出的请求。
+- **匹配规则。** 字面匹配，区分大小写；同一位置取最长的一条；替换后的文字不会再被替换。「我的规则」排在最前，其余规则表按你排的顺序。每张表可以选择适用于哪些 Agent。
+- **不碰提示词部署。** 部署或撤销提示词都不会动上表里的配置项。清理某个 Agent 前，会先断开它的输入替换，回滚时恢复的是你原来的地址。
+- **可随时断开。** 「断开」只还原 Switch 自己写过、而且现在仍是当时写入值的那几项；其他工具在此期间改过的值保持原样。规则会保留。每次写配置前都会在旁边留一份备份。
+- **不存会话。** 中转服务不保存、不记录请求内容、规则或鉴权信息。订阅登录时，登录令牌会经过本机中转，同样不保存。
+- **规则包。** 拓展仓库也可以发布规则包，用 `tools` 声明默认适用的 Agent。安装前会先列出全部规则；已启用的规则包有更新时，需要你确认后才会切换。
+- **目前的限制。**
+  - Grok Build 暂不支持：它的 Keysmith 适配器在卸载时会整份还原 `config.toml`，会把连接一起删掉。
+  - Claude Code 不支持 Bedrock 和 Vertex。
+  - ZCode 不支持账号登录的 Coding Plan。
+  - Codex 需要使用自定义 provider（`wire_api = "responses"`）。
 
 ## 🗄️ 数据位置
 
@@ -224,7 +244,7 @@ flowchart LR
 | `~/.keysmith-switch/backups/<operation-id>/` | 部署前的备份 |
 | `~/.keysmith-switch/snapshots/` | 清理前保存的版本 |
 | `~/.keysmith-switch/logs/` | 日志（中转服务日志为 `relay.log`） |
-| `~/.keysmith-switch/input-rewrite/` | 输入替换：中转服务读取的规则快照 `rules.json`、端口与转发地址 `relay.json`、Codex 连接记录、中转服务程序 |
+| `~/.keysmith-switch/input-rewrite/` | 输入替换：中转服务读取的规则快照 `rules.json`、端口与转发地址 `relay.json`、各 Agent 的连接记录（`codex-link.json`、`claude-link.json`、`zcode-link.json`）、中转服务程序 |
 
 测试时可以用 `KEYSMITH_SWITCH_HOME` 覆盖数据根目录。
 
@@ -284,6 +304,7 @@ npx tauri build --target aarch64-apple-darwin --config src-tauri/tauri.preview.m
 
 | 版本 | 更新内容 |
 | --- | --- |
+| [`v0.5.0`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.5.0) | 「输入替换」现在支持 Claude Code 和 ZCode：每个 Agent 一键连接，只改一个配置项，断开时只改回这一项。规则表可以只对部分 Agent 生效，规则包可以面向任意 Agent。输入替换页重新设计：用开关代替复选框，每个 Agent 一行显示状态，支持筛选和搜索规则。Grok Build 暂缓。[#104](https://github.com/Jia-Ethan/keysmith-switch/pull/104)–[#109](https://github.com/Jia-Ethan/keysmith-switch/pull/109) |
 | [`v0.4.0`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.4.0) | 新模块「输入替换」：在 Codex 里照常打字，发给模型前按你的规则替换字面文字，输入框和会话历史仍显示原文。由本机只监听 127.0.0.1 的中转服务完成替换，可一键连接或断开；规则表默认为空，也可以从拓展安装规则包（已启用的规则包更新前需要你确认）。[#96](https://github.com/Jia-Ethan/keysmith-switch/pull/96)–[#100](https://github.com/Jia-Ethan/keysmith-switch/pull/100) |
 | [`v0.3.9`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.3.9) | Codex 部署被拦截时，引导点「清理」的提示现在写明：清理会永久删除会话历史和登录，想保留聊天记录请先备份 `.codex` 文件夹。[#92](https://github.com/Jia-Ethan/keysmith-switch/pull/92) |
 | [`v0.3.8`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.3.8) | 部署被拦截时，提示改用你选的界面语言说明原因，并告诉你下一步点哪里（例如 Codex 的配置被改过时，引导点「清理」）。[#89](https://github.com/Jia-Ethan/keysmith-switch/pull/89) |
