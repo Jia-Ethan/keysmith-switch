@@ -1,1 +1,1 @@
-Keysmith Switch v0.4.0：新增「输入替换」——在 Codex 里照常打字，发给模型前按你的规则替换文字；规则默认为空，可随时断开。
+Keysmith Switch v0.5.0：「输入替换」现在支持 Claude Code 和 ZCode，规则可以只对部分 Agent 生效，输入替换页重新设计。

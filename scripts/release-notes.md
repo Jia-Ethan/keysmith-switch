@@ -1,28 +1,42 @@
-# Keysmith Switch v0.4.0
+# Keysmith Switch v0.5.0
 
-新模块：**输入替换**。你在 Codex 里照常打字，发给模型前按你的规则替换字面文字；输入框和会话历史里仍然是你打的原文。
+「输入替换」现在也支持 **Claude Code** 和 **ZCode**，「输入替换」页也重新设计了。
 
 ## 这一版有什么
 
-- **输入替换页**：在左侧栏打开。
-  - 总开关和「对 Codex 生效」开关。关闭后不会替换任何内容，你的规则会保留。
-  - 「我的规则」默认是空的，由你自己填写。规则按字面匹配、区分大小写；同一位置取最长的那条；替换后的文字不会再被替换；以 `/` 开头的消息整条跳过。
-  - 只替换你自己输入的文字（包括历史里你之前说过的话）。助手回复、工具输出和 Codex 自带的上下文都不会改动。
-- **连接 Codex**：点「连接 Codex」后，Switch 会在本机启动一个只监听 `127.0.0.1` 的中转服务，并在 Codex 的 `config.toml` 里新增一个 provider 指向它。你原来的 provider 配置不会被修改，写入前会自动备份。中转服务会开机自启，Switch 没打开时也能工作。
-  - 「断开」会让 Codex 改回直接连接，并停止中转服务；你的规则会保留。
-  - 部署或撤销 Codex 提示词都不会影响这个连接。
-  - 如果其他工具（例如 cc-switch）把 Codex 切到了别的 provider，输入替换页会提示「没有经过中转」，你可以重新连接。
-- **规则包**：拓展仓库现在也可以发布输入替换规则包。安装前会先列出全部规则，你可以选择「安装并启用」或「只安装」。已经启用的规则包有新版本时不会自动生效，要你在输入替换页看过差异、确认后才切换。目前官方没有上架任何规则包。
+- **Claude Code 和 ZCode 也能用输入替换。** 在「输入替换」页每个 Agent 一行，点「连接…」即可。
+  - 连接前会先告诉你要改哪个文件的哪个字段：
+    - Claude Code：只改 `~/.claude/settings.json` 里的 `env.ANTHROPIC_BASE_URL`。
+    - ZCode：只改 `~/.zcode/v2/provider_config.json` 里每个个人 provider 的地址。
+  - 断开时只改回这一项；如果这期间别的工具改过它，就保持原样。
+  - 用 API key、订阅登录或自定义网关的 Claude Code 都可以连接。订阅登录时，登录令牌会经过本机中转，但中转服务不保存、不记录它。
+  - 只改你自己打的字。不会改动的内容：
+    - Claude Code 的 `<system-reminder>`、工具结果、`!` 命令输出；
+    - ZCode 的技能列表和 AGENTS.md 上下文；
+    - 斜杠命令和它展开出来的模板；
+    - ZCode 子代理发出的请求。
+  - 部署或撤销 Claude Code 提示词不会影响连接。清理某个 Agent 之前，会先断开它的输入替换，这样回滚时恢复的是你原来的地址。
+- **规则可以只对部分 Agent 生效。** 每张规则表都能选择适用于哪些 Agent，默认是全部。规则包也可以面向任意 Agent。
+- **「输入替换」页重新设计。**
+  - 开关改成了开关样式。拓展页的启用和停用也改成了开关。
+  - 每个 Agent 一行，同时显示它的状态和操作。
+  - 不再显示 provider id。
+  - 「断开…」改成醒目的红色按钮。
+  - 规则表支持按 Agent 筛选、搜索、排序和折叠。
+  - 空状态更简洁。
+  - 深色和浅色主题下的状态文字都更清楚。
 
 ## 目前的限制
 
-- 只支持 Codex。Claude Code、Grok Build 和 ZCode 以后再接入。
-- Codex 必须使用自定义 provider（`config.toml` 里的 `[model_providers.xxx]`，`wire_api = "responses"`）。用 Codex 内置的 OpenAI 登录时暂时不能连接，页面上会说明原因。
+- Grok Build 暂不支持，因为它的 Keysmith 适配器卸载时会把整个 `config.toml` 还原，连接会被一起删掉。等适配器支持后再开放。
+- Claude Code 暂不支持 Bedrock 和 Vertex。Bedrock 会对每个请求签名，改写后签名会失效。
+- ZCode 暂不支持账号登录的 Coding Plan，请改用 API key 的 provider。
+- Codex 仍然需要使用自定义 provider（`wire_api = "responses"`）。
 
 ## 安装
 
-- 已安装 `v0.1.3` 及以上的版本可以在应用内点「检查更新」升级到 `v0.4.0`；安装仍需用户确认。
-- macOS Apple Silicon：`Keysmith.Switch_0.4.0_aarch64.dmg`
-- Windows x64：`Keysmith.Switch_0.4.0_x64-setup.exe`
+- 已安装 `v0.1.3` 及以上版本的，可以在应用内点「检查更新」升级到 `v0.5.0`，安装时仍需你确认。
+- macOS Apple Silicon：`Keysmith.Switch_0.5.0_aarch64.dmg`
+- Windows x64：`Keysmith.Switch_0.5.0_x64-setup.exe`
 
-安装包不使用 Apple Developer ID、公证或 Windows Authenticode。更新包使用独立的生产 minisign 密钥签名；这不是平台代码签名。
+安装包没有使用 Apple Developer ID、公证或 Windows Authenticode。更新包用独立的生产 minisign 密钥签名，这不是平台代码签名。
