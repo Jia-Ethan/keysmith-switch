@@ -241,6 +241,14 @@ fn normalize_grok(
         .and_then(Value::as_array)
         .map(string_values)
         .unwrap_or_else(|| envelope.conflicts.clone());
+    envelope.salvage_available = plan
+        .get("salvage_available")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    envelope.config_salvage = plan
+        .get("config_salvage")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
     envelope.confirmation_token = plan
         .get("confirmation_token")
         .or_else(|| result.get("confirmation_token"))

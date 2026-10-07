@@ -138,6 +138,8 @@ pub struct UiEnvelope {
     pub reload_hint: Option<String>,
     pub error: Option<String>,
     pub redacted_stderr: String,
+    /// Grok: deactivating can keep config.toml as it is (its managed backup is lost).
+    pub salvage_available: bool,
 }
 
 impl From<Envelope> for UiEnvelope {
@@ -189,6 +191,7 @@ impl From<Envelope> for UiEnvelope {
             reload_hint: value.reload_hint,
             error: value.error,
             redacted_stderr: value.redacted_stderr,
+            salvage_available: value.salvage_available,
         }
     }
 }
@@ -610,6 +613,7 @@ pub async fn plan_deactivate(
     tool: String,
     scope: String,
     project_dir: Option<String>,
+    salvage_config: Option<bool>,
 ) -> Result<UiPlanResult> {
     let result = ops::plan_deactivate(
         &state.store,
@@ -618,6 +622,7 @@ pub async fn plan_deactivate(
             tool: parse_tool(&tool)?,
             scope: scope.parse()?,
             project_dir: project_dir.map(PathBuf::from),
+            salvage_config: salvage_config.unwrap_or(false),
         },
         &opts(),
     )

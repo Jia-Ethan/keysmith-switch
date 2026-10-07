@@ -354,7 +354,25 @@ pub async fn plan_deactivate(
         opts,
     )
     .await?;
-    let drifted = status.status == ToolStatus::Drift || status.recovery_required;
+    let salvage = input.salvage_config && input.tool == ToolKind::Grok;
+    // A drifted Grok deployment whose only problem is a lost config backup can still be
+    // removed when the person asks for it; the adapter checks that and refuses otherwise.
+    let drifted = !salvage && (status.status == ToolStatus::Drift || status.recovery_required);
+    let mut salvage_available = false;
+    if drifted && input.tool == ToolKind::Grok {
+        let probe = run_adapter_with(
+            input.tool,
+            AdapterCommand::PlanDeactivate {
+                scope: input.scope,
+                project_dir: input.project_dir.clone(),
+                name: name.clone(),
+                salvage_config: true,
+            },
+            opts,
+        )
+        .await?;
+        salvage_available = probe.ok && probe.config_salvage && probe.blockers.is_empty();
+    }
     let mut envelope = if drifted {
         let mut blocked = status;
         blocked.command = OperationKind::PlanDeactivate.as_str().to_string();
@@ -378,6 +396,7 @@ pub async fn plan_deactivate(
                 scope: input.scope,
                 project_dir: input.project_dir.clone(),
                 name: name.clone(),
+                salvage_config: salvage,
             },
             opts,
         )
@@ -385,6 +404,7 @@ pub async fn plan_deactivate(
     };
     if drifted {
         envelope.recovery_required = true;
+        envelope.salvage_available = salvage_available;
     }
     let request = json!({
         "promptId": input.prompt_id,
@@ -393,6 +413,7 @@ pub async fn plan_deactivate(
         "projectDir": input.project_dir,
         "name": name,
         "drift": drifted,
+        "salvageConfig": salvage,
     });
     let operation = store_preview(
         store,
@@ -467,6 +488,10 @@ pub async fn confirm_deactivate(
             project_dir: project_dir.clone(),
             name,
             expected_preview_token: preview_token,
+            salvage_config: request
+                .get("salvageConfig")
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false),
         },
         opts,
     )

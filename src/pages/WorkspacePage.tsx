@@ -36,7 +36,7 @@ import type {
   ToolInfo,
 } from "../types";
 
-type PlanKind = "activate" | "deactivate" | "recover" | "reconcile";
+type PlanKind = "activate" | "deactivate" | "salvage" | "recover" | "reconcile";
 
 interface OpenPlan {
   kind: PlanKind;
@@ -398,6 +398,21 @@ export function WorkspacePage({
     }
   };
 
+  /** Grok only: its config backup is gone, so remove the deployment keeping config.toml as it is. */
+  const openSalvagePlan = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const result = await api.planDeactivate({ tool, scope: "user", salvageConfig: true });
+      setPlanFailure(null);
+      setPlan({ kind: "salvage", result, promptId: null, title: deployedTitle ?? "", source: "machine" });
+    } catch (reason) {
+      fail(reason, t("quickDeploy.failed"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const openRecoverPlan = async () => {
     if (busy) return;
     setBusy(true);
@@ -428,8 +443,8 @@ export function WorkspacePage({
       if (from.kind === "activate" && from.promptId) {
         const result = await api.planActivate({ promptId: from.promptId, scope: "user" });
         setPlan({ ...from, result });
-      } else if (from.kind === "deactivate") {
-        const result = await api.planDeactivate({ tool, scope: "user" });
+      } else if (from.kind === "deactivate" || from.kind === "salvage") {
+        const result = await api.planDeactivate({ tool, scope: "user", salvageConfig: from.kind === "salvage" });
         setPlan({ ...from, result });
       } else if (from.kind === "recover") {
         const result = await api.recoverTool({ tool, scope: "user" });
@@ -477,7 +492,7 @@ export function WorkspacePage({
       const result =
         plan.kind === "activate"
           ? await api.activate(plan.result.operationId)
-          : plan.kind === "deactivate"
+          : plan.kind === "deactivate" || plan.kind === "salvage"
             ? await api.deactivate(plan.result.operationId)
             : plan.kind === "reconcile"
               ? await api.confirmReconcile(plan.result.operationId)
@@ -508,7 +523,7 @@ export function WorkspacePage({
         setComposerOpen(false);
       }
       if (plan.kind === "activate") setCelebration({ kind: "deployed", subtitle: plan.title || t("quickDeploy.deployed") });
-      else if (plan.kind === "deactivate") setCelebration({ kind: "removed", subtitle: plan.title });
+      else if (plan.kind === "deactivate" || plan.kind === "salvage") setCelebration({ kind: "removed", subtitle: plan.title });
       else toast?.ok(t("plan.success"));
       setPlan(null);
       setLocalEpoch((value) => value + 1);
@@ -545,7 +560,11 @@ export function WorkspacePage({
   const filtered = Boolean(query.trim() || tag);
   const locked = busy || Boolean(plan);
   const toolName = t(`nav.${tool}`);
-  const planRecoverable = plan && plan.kind !== "recover" && plan.kind !== "reconcile" && isRecoveryState(plan.result.envelope);
+  // Grok whose managed config backup is gone: restoring has nothing to restore from, so the
+  // way out is removing the deployment while keeping config.toml as it is.
+  const planSalvageable = plan?.kind === "deactivate" && Boolean(plan.result.envelope.salvageAvailable);
+  const planRecoverable =
+    plan && !planSalvageable && plan.kind !== "recover" && plan.kind !== "reconcile" && isRecoveryState(plan.result.envelope);
   const planReconcilable = plan?.kind === "activate" && needsReconcile(tool, plan.result.envelope);
   // A deploy that cannot be confirmed can still be cleared away with the Cleanup dialog.
   const planCleanable =
@@ -773,7 +792,7 @@ export function WorkspacePage({
         wide
         icon={<ToolLogo tool={tool} size={22} />}
         title={
-          plan?.kind === "deactivate"
+          plan?.kind === "deactivate" || plan?.kind === "salvage"
             ? t("plan.titleDeactivate", { tool: toolName })
             : plan?.kind === "recover"
               ? t("operations.recover")
@@ -785,6 +804,8 @@ export function WorkspacePage({
         confirmLabel={
           plan?.kind === "deactivate"
             ? t("plan.confirmDeactivate")
+            : plan?.kind === "salvage"
+              ? t("plan.confirmSalvage")
             : plan?.kind === "recover"
               ? t("operations.restoreEntry")
               : plan?.kind === "reconcile"
@@ -794,13 +815,17 @@ export function WorkspacePage({
         cancelLabel={t("common.cancel")}
         closeLabel={t("common.close")}
         busy={busy}
-        danger={plan?.kind === "deactivate"}
+        danger={plan?.kind === "deactivate" || plan?.kind === "salvage"}
         confirmDisabled={planBlocked(plan) || busy || Boolean(planFailure)}
         confirmTestId="quick-deploy-confirm"
         onClose={closePlan}
         onConfirm={() => void confirmPlan()}
         footerStart={
-          planReconcilable ? (
+          planSalvageable ? (
+            <Button size="sm" variant="outline" disabled={busy} data-testid="plan-salvage" onClick={() => void openSalvagePlan()}>
+              {t("plan.salvageButton")}
+            </Button>
+          ) : planReconcilable ? (
             <Button size="sm" variant="outline" disabled={busy} data-testid="plan-reconcile" onClick={() => void openReconcilePlan()}>
               {t("plan.reconcileButton")}
             </Button>
@@ -820,6 +845,11 @@ export function WorkspacePage({
           ) : null
         }
       >
+        {planSalvageable ? (
+          <p className="mb-3 rounded-xl border border-warning/40 bg-warning/10 px-3 py-2 text-[13px] text-warning-strong" data-testid="plan-salvage-notice">
+            {t("plan.salvageNotice")}
+          </p>
+        ) : null}
         {plan ? (
           <PlanPreview
             envelope={plan.result.envelope}

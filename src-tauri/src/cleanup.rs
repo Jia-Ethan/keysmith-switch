@@ -66,6 +66,10 @@ struct Table {
     /// backups are saved.
     saved_prefixes: &'static [(&'static str, &'static str)],
     erased_prefixes: &'static [(&'static str, &'static str)],
+    /// Names under `erased_prefixes` that belong to the agent's Keysmith adapter (its
+    /// deployment backups). They are never erased: an adapter that lost its backup cannot
+    /// undo its own deployment.
+    adapter_owned: &'static [(&'static str, &'static str)],
     /// The agent's folder: a wrapper the adapter reports inside it is saved too.
     folder: &'static str,
     /// Where the agent keeps its login besides files (the macOS keychain).
@@ -119,6 +123,7 @@ const CLAUDE: Table = Table {
         (".claude", "settings.local.json."),
         ("", ".claude.json."),
     ],
+    adapter_owned: &[],
     folder: ".claude",
     keychain: &["Claude Code-credentials"],
     launch_agents: &[],
@@ -178,6 +183,7 @@ const CODEX: Table = Table {
         (".codex", "queue_1.sqlite-"),
         (".codex", "thread_history_1.sqlite-"),
     ],
+    adapter_owned: &[],
     folder: ".codex",
     keychain: &["Codex Auth"],
     launch_agents: &[],
@@ -217,6 +223,7 @@ const GROK: Table = Table {
     ],
     saved_prefixes: &[(".grok", "AGENTS.md.")],
     erased_prefixes: &[(".grok", "auth.json."), (".grok", "config.toml.")],
+    adapter_owned: &[(".grok", "config.toml.keysmith-backup-")],
     folder: ".grok",
     keychain: &[],
     launch_agents: &[],
@@ -282,6 +289,7 @@ const ZCODE: Table = Table {
         (".zcode/v2", "credentials.json."),
         (".zcode/cli", "config.json."),
     ],
+    adapter_owned: &[],
     folder: ".zcode",
     keychain: &["ZCode Safe Storage"],
     launch_agents: &["com.jia.zcode-keysmith.env", "com.jia.zcode-keysmith.rearm"],
@@ -790,7 +798,16 @@ fn extra_entries(tool: ToolKind, envelope: &Envelope, opts: &AdapterOptions) -> 
     }
     for (folder, prefix) in table.erased_prefixes {
         for name in prefixed(&home, folder, prefix) {
-            add(name, "erased");
+            let owned = table
+                .adapter_owned
+                .iter()
+                .any(|(owned_folder, owned_prefix)| {
+                    name.strip_prefix(&format!("{owned_folder}/"))
+                        .is_some_and(|file| file.starts_with(owned_prefix))
+                });
+            if !owned {
+                add(name, "erased");
+            }
         }
     }
     let agent_folder = home.join(table.folder);
@@ -1771,6 +1788,7 @@ async fn run_cleanup(
                 tool,
                 scope: Scope::User,
                 project_dir: None,
+                salvage_config: false,
             },
             opts,
         )

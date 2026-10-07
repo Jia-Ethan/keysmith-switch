@@ -389,6 +389,7 @@ async fn zcode_032_json_uninstall_parses() {
         scope: Scope::User,
         project_dir: None,
         name: None,
+        salvage_config: false,
     };
     let captured = Captured {
         argv: vec![
@@ -446,6 +447,7 @@ async fn zcode_uninstall_json_preview_before_yes() {
             scope: Scope::User,
             project_dir: None,
             name: None,
+            salvage_config: false,
         },
         &opts,
     )
@@ -469,6 +471,7 @@ async fn zcode_uninstall_json_preview_before_yes() {
             project_dir: None,
             name: None,
             expected_preview_token: None,
+            salvage_config: false,
         },
         &opts,
     )

@@ -1150,3 +1150,102 @@ fn walk(dir: &std::path::Path) -> Vec<PathBuf> {
     }
     out
 }
+
+/// Issue #95: Grok was deployed, config.toml changed, and its managed backup went missing.
+/// Turning off was refused, tidying the config was refused, and restoring had nothing to do.
+#[tokio::test]
+async fn grok_without_its_config_backup_can_be_turned_off_keeping_the_config() {
+    if !python3_available() {
+        return;
+    }
+    use keysmith_switch_lib::models::PlanDeactivateInput;
+    use keysmith_switch_lib::ops::{confirm_deactivate, plan_deactivate};
+
+    let world = world("grok/grok-keysmith.py");
+    let grok = world.home.join(".grok");
+    write(
+        grok.join("config.toml"),
+        "[ui]\npermission_mode = \"ask\"\n",
+    );
+    let outcome = deploy_harness_with(
+        &world.store,
+        ToolKind::Grok,
+        &world.opts,
+        Some("# Grok rules\nAsk first.\n".into()),
+    )
+    .await
+    .unwrap();
+    assert!(outcome.ok, "{outcome:?}");
+
+    // What the person did afterwards, and what used to erase the backup.
+    let mut config = std::fs::read_to_string(grok.join("config.toml")).unwrap();
+    config.push_str("\n[models]\ndefault = \"grok-4.6\"\n");
+    std::fs::write(grok.join("config.toml"), &config).unwrap();
+    for entry in std::fs::read_dir(&grok).unwrap().flatten() {
+        if entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with("config.toml.keysmith-backup-")
+        {
+            std::fs::remove_file(entry.path()).unwrap();
+        }
+    }
+
+    let input = |salvage_config| PlanDeactivateInput {
+        prompt_id: None,
+        tool: ToolKind::Grok,
+        scope: Scope::User,
+        project_dir: None,
+        salvage_config,
+    };
+    let blocked = plan_deactivate(&world.store, input(false), &world.opts)
+        .await
+        .unwrap();
+    assert!(blocked.envelope.recovery_required, "{:?}", blocked.envelope);
+    assert!(blocked.envelope.salvage_available, "{:?}", blocked.envelope);
+
+    let plan = plan_deactivate(&world.store, input(true), &world.opts)
+        .await
+        .unwrap();
+    assert!(
+        plan.envelope.ok && plan.envelope.blockers.is_empty(),
+        "{:?}",
+        plan.envelope
+    );
+    let done = confirm_deactivate(&world.store, &plan.operation_id, &world.opts)
+        .await
+        .unwrap();
+    assert!(done.envelope.ok, "{:?}", done.envelope);
+    assert!(!deployed(&world, ToolKind::Grok).await);
+
+    let after = std::fs::read_to_string(grok.join("config.toml")).unwrap();
+    assert!(
+        after.contains("permission_mode = \"ask\"") && after.contains("default = \"grok-4.6\"")
+    );
+    assert!(!after.contains("grok-keysmith compat isolation"), "{after}");
+}
+
+#[tokio::test]
+async fn cleanup_keeps_grok_keysmiths_own_config_backup() {
+    if !python3_available() {
+        return;
+    }
+    let world = world("grok/grok-keysmith.py");
+    let grok = world.home.join(".grok");
+    write(grok.join("config.toml"), "[ui]\ntheme = \"dark\"\n");
+    write(
+        grok.join("config.toml.keysmith-backup-20260101T000000-abcdef0123"),
+        "[ui]\n",
+    );
+    write(grok.join("config.toml.bak-20260813"), "old\n");
+    let plan = plan_cleanup(&world.store, ToolKind::Grok, &world.opts)
+        .await
+        .unwrap();
+    confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
+        .await
+        .unwrap();
+    assert!(grok
+        .join("config.toml.keysmith-backup-20260101T000000-abcdef0123")
+        .exists());
+    assert!(!grok.join("config.toml.bak-20260813").exists());
+}

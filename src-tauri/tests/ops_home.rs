@@ -117,6 +117,7 @@ async fn temp_home_activate_deactivate_restore_recover_drift_lock() {
     let deactivate_plan = plan_deactivate(
         &store,
         PlanDeactivateInput {
+            salvage_config: false,
             prompt_id: Some(created.id.clone()),
             tool: ToolKind::Claude,
             scope: Scope::User,

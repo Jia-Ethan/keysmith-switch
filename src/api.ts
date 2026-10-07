@@ -165,6 +165,8 @@ export function planDeactivate(input: {
   tool: ToolId;
   scope: ScopeId;
   projectDir?: string;
+  /** Grok only: keep config.toml as it is (its managed backup is lost). */
+  salvageConfig?: boolean;
 }): Promise<PlanResult> {
   return call("plan_deactivate", input);
 }
