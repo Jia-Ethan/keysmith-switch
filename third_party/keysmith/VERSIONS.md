@@ -8,7 +8,7 @@ Keysmith Switch.
 | --- | --- | --- | --- |
 | claude | claude/claude-instruct.py | `7dbfa253` (`v7.2`) | v7.2 |
 | codex | codex/codex-instruct.py | `33cf4049` (`v0.6.0`) | v0.6.0 |
-| grok | grok/grok-keysmith.py | `168f604a` (`v0.6.1`) | v0.6.1 |
+| grok | grok/grok-keysmith.py | `4e4acea7` (`v0.6.2`) | v0.6.2 |
 | zcode | zcode/zcode-keysmith.py | `7348b875` (no `v0.3.2` tag; desktop `desktop-v0.1.0-beta.1`) | 0.3.2 |
 
 `v0.3.1` is the Zcode CLI Latest tag and is not this pin. `v0.2.0` is older. The

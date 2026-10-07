@@ -84,6 +84,12 @@ pub struct Envelope {
     /// Grok CLI `confirmation_token`. Other tools leave this empty.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub confirmation_token: Option<String>,
+    /// Grok uninstall: the managed config backup is lost and an uninstall that keeps
+    /// config.toml as it is (removing only the marked block) is available / is this plan.
+    #[serde(default)]
+    pub salvage_available: bool,
+    #[serde(default)]
+    pub config_salvage: bool,
 }
 
 impl Envelope {
@@ -121,6 +127,8 @@ impl Envelope {
             error: None,
             redacted_stderr: String::new(),
             confirmation_token: None,
+            salvage_available: false,
+            config_salvage: false,
         }
     }
 

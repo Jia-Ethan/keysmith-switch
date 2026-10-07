@@ -88,6 +88,9 @@ pub enum AdapterCommand {
         project_dir: Option<PathBuf>,
         #[serde(default)]
         name: Option<String>,
+        /// Grok only: uninstall keeping config.toml when its managed backup is lost.
+        #[serde(default)]
+        salvage_config: bool,
     },
     Deactivate {
         scope: Scope,
@@ -97,6 +100,8 @@ pub enum AdapterCommand {
         name: Option<String>,
         #[serde(default)]
         expected_preview_token: Option<String>,
+        #[serde(default)]
+        salvage_config: bool,
     },
     Doctor,
     Recover {

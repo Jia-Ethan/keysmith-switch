@@ -182,7 +182,11 @@
     "hintCleanup": "点左下角的“清理”可以清掉这条过期的部署记录，你的 config.toml 会保留。但清理也会永久删除这个 Agent 的会话历史和登录，删除后无法恢复。想保留聊天记录的话，请先备份整个 .codex 文件夹，再决定要不要清理。",
     "hintReconcile": "可以先点左下角的“整理配置”，整理好之后再继续部署。",
     "reconciled": "配置已整理好，可以继续部署了。",
-    "theAgent": "这个 Agent"
+    "theAgent": "这个 Agent",
+    "confirmSalvage": "保留当前配置并停用",
+    "salvageButton": "保留当前配置并停用…",
+    "friendlySalvage": "{{tool}} 的部署前配置备份已经不在了，没法按原样还原。停用会保持 config.toml 现在的样子，只移除 Keysmith 写入的那一段；提示词文件和 hooks 照常还原。",
+    "salvageNotice": "部署前的配置备份已经找不到（可能被清理删掉了），所以「从备份恢复」也无从恢复。你可以保留当前配置并停用。"
   },
   "history": {
     "title": "版本历史",

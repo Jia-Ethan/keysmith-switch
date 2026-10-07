@@ -182,7 +182,11 @@
     "hintCleanup": "\"Clean up\" at the bottom left clears this stale deployment record and keeps your config.toml. It also permanently deletes this agent's session history and login, and that cannot be undone. To keep your chats, back up the whole .codex folder first, then decide whether to clean up.",
     "hintReconcile": "Use \"Tidy config\" at the bottom left first, then deploy.",
     "reconciled": "Config tidied. You can deploy now.",
-    "theAgent": "This agent"
+    "theAgent": "This agent",
+    "confirmSalvage": "Keep current config and turn off",
+    "salvageButton": "Keep current config and turn off…",
+    "friendlySalvage": "The config backup {{tool}} saved before deploying is gone, so it can't be put back exactly. Turning off keeps config.toml as it is now and removes only the part Keysmith wrote; the prompt file and hooks are restored as usual.",
+    "salvageNotice": "The config backup from before deploying can't be found (cleanup may have removed it), so restoring from backup has nothing to restore. You can keep your current config and turn off instead."
   },
   "history": {
     "title": "Version history",

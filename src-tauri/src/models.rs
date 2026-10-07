@@ -38,7 +38,7 @@ impl ToolKind {
         match self {
             Self::Claude => "7.2",
             Self::Codex => "0.6.0",
-            Self::Grok => "0.6.1",
+            Self::Grok => "0.6.2",
             Self::Zcode => "0.3.2",
         }
     }
@@ -533,6 +533,10 @@ pub struct PlanDeactivateInput {
     pub tool: ToolKind,
     pub scope: Scope,
     pub project_dir: Option<PathBuf>,
+    /// Grok only: the person chose to keep config.toml as it is because its managed backup
+    /// is lost. The adapter still refuses unless that is the only drift.
+    #[serde(default)]
+    pub salvage_config: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

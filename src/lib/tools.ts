@@ -23,7 +23,7 @@ export const TOOL_CATALOG: ToolInfo[] = [
   {
     id: "grok",
     name: "Grok Build",
-    adapterVersion: "0.6.1",
+    adapterVersion: "0.6.2",
     available: true,
     unavailableReason: null,
     supportedScopes: ["user"],

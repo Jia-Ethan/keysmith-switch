@@ -60,7 +60,7 @@ export interface PlanPreviewProps {
   envelope: Envelope;
   /** With the agent and the titles involved, the preview reads as a sentence instead of a report. */
   tool?: ToolId;
-  kind?: "activate" | "deactivate" | "recover" | "reconcile";
+  kind?: "activate" | "deactivate" | "salvage" | "recover" | "reconcile";
   /** What the agent runs now, when known. */
   fromTitle?: string | null;
   /** What it will run after the plan. */
@@ -91,8 +91,8 @@ export function PlanPreview({ envelope, tool, kind = "activate", fromTitle, toTi
 
   return (
     <div className="space-y-4" data-testid="plan-preview">
-      {tool && (kind === "activate" || kind === "deactivate") ? (
-        <PlanFlow tool={tool} kind={kind} fromTitle={fromTitle} toTitle={toTitle} ready={ready} />
+      {tool && (kind === "activate" || kind === "deactivate" || kind === "salvage") ? (
+        <PlanFlow tool={tool} kind={kind === "salvage" ? "deactivate" : kind} fromTitle={fromTitle} toTitle={toTitle} ready={ready} />
       ) : null}
 
       {ready ? (
@@ -100,6 +100,8 @@ export function PlanPreview({ envelope, tool, kind = "activate", fromTitle, toTi
           <FriendlyLine>
             {kind === "reconcile"
               ? t("plan.friendlyReconcile", { tool: toolName })
+              : kind === "salvage"
+                ? t("plan.friendlySalvage", { tool: toolName })
               : kind === "deactivate"
                 ? t("plan.friendlyOff", { tool: toolName })
                 : fromTitle
@@ -107,7 +109,7 @@ export function PlanPreview({ envelope, tool, kind = "activate", fromTitle, toTi
                   : t("plan.friendlyFresh", { tool: toolName })}
           </FriendlyLine>
           {envelope.backups.length > 0 && kind !== "reconcile" ? <FriendlyLine>{t("plan.friendlySafe")}</FriendlyLine> : null}
-          {envelope.reloadRequired && kind !== "deactivate" && kind !== "reconcile" ? (
+          {envelope.reloadRequired && kind !== "deactivate" && kind !== "salvage" && kind !== "reconcile" ? (
             <FriendlyLine>{t("plan.friendlyReload", { tool: toolName })}</FriendlyLine>
           ) : null}
         </ul>

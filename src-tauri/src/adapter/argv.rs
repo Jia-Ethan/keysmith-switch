@@ -112,6 +112,7 @@ fn claude_args(command: &AdapterCommand) -> Result<PreparedCommand> {
             scope,
             project_dir,
             name,
+            ..
         }
         | AdapterCommand::Deactivate {
             scope,
@@ -271,12 +272,21 @@ fn grok_args(command: &AdapterCommand, home: Option<&Path>) -> Result<PreparedCo
             args.push("--yes".into());
             preview = false;
         }
-        AdapterCommand::PlanDeactivate { .. } => args.push("--uninstall".into()),
+        AdapterCommand::PlanDeactivate { salvage_config, .. } => {
+            args.push("--uninstall".into());
+            if *salvage_config {
+                args.push("--salvage-config".into());
+            }
+        }
         AdapterCommand::Deactivate {
             expected_preview_token,
+            salvage_config,
             ..
         } => {
             args.push("--uninstall".into());
+            if *salvage_config {
+                args.push("--salvage-config".into());
+            }
             push_grok_token(&mut args, expected_preview_token.as_deref())?;
             args.push("--yes".into());
             preview = false;

@@ -487,6 +487,7 @@ pub async fn remove_harness(
             tool,
             scope: Scope::User,
             project_dir: None,
+            salvage_config: false,
         },
         opts,
     )

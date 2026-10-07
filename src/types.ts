@@ -91,6 +91,8 @@ export interface Envelope {
   reloadHint: string | null;
   error: string | null;
   redactedStderr: string;
+  /** Grok: deactivating can keep config.toml as it is because its managed backup is lost. */
+  salvageAvailable?: boolean;
 }
 
 export interface ToolInfo {

@@ -598,7 +598,7 @@ describe("Workspace: prompt library", () => {
   it("explains Grok's config drift in words and repairs it, then plans the deploy again", async () => {
     const drift = "config content does not match managed after-state";
     listTools.mockResolvedValue({
-      tools: [{ id: "grok", name: "Grok Build", adapterVersion: "0.6.1", available: true, unavailableReason: null, supportedScopes: ["user"], cliPath: null }],
+      tools: [{ id: "grok", name: "Grok Build", adapterVersion: "0.6.2", available: true, unavailableReason: null, supportedScopes: ["user"], cliPath: null }],
     });
     getHarnessState.mockResolvedValue({ tool: "grok", deployed: false, error: null });
     listPrompts.mockResolvedValue({ prompts: [prompt({ id: "g1", tool: "grok", title: "Spare" })] });
@@ -632,6 +632,38 @@ describe("Workspace: prompt library", () => {
     await waitFor(() => expect(planActivate).toHaveBeenCalledTimes(2));
     expect(await screen.findByRole("dialog", { name: "部署到 Grok Build" })).toBeInTheDocument();
     await waitFor(() => expect(screen.getByTestId("quick-deploy-confirm")).toBeEnabled());
+  });
+
+  it("lets Grok be turned off keeping its config when the config backup is gone (#95)", async () => {
+    const drift = ["config content does not match managed after-state", "managed config backup is missing or abnormal"];
+    listTools.mockResolvedValue({
+      tools: [{ id: "grok", name: "Grok Build", adapterVersion: "0.6.2", available: true, unavailableReason: null, supportedScopes: ["user"], cliPath: null }],
+    });
+    getHarnessState.mockResolvedValue({ tool: "grok", deployed: true, error: null });
+    planDeactivate
+      .mockResolvedValueOnce({
+        operationId: "blocked",
+        envelope: { ...envelope, tool: "grok", ok: false, status: "drift", recoveryRequired: true, blockers: drift, salvageAvailable: true },
+      })
+      .mockResolvedValueOnce({ operationId: "salvage", envelope: { ...envelope, tool: "grok", command: "plan-deactivate" } });
+    deactivate.mockResolvedValue({ envelope: { ...envelope, tool: "grok", ok: true, preview: false } });
+
+    await renderPage({ tool: "grok" } as never);
+    fireEvent.click(await screen.findByTestId("quick-deploy-remove"));
+    expect(await screen.findByTestId("plan-salvage-notice")).toHaveTextContent("备份已经找不到");
+    // Restoring cannot help without the backup, so it is not offered here.
+    expect(screen.queryByTestId("plan-recover")).not.toBeInTheDocument();
+    expect(screen.getByTestId("quick-deploy-confirm")).toBeDisabled();
+
+    fireEvent.click(screen.getByTestId("plan-salvage"));
+    await waitFor(() =>
+      expect(planDeactivate).toHaveBeenLastCalledWith({ tool: "grok", scope: "user", salvageConfig: true }),
+    );
+    expect(await screen.findByTestId("plan-friendly")).toHaveTextContent("只移除 Keysmith 写入的那一段");
+    await waitFor(() => expect(screen.getByTestId("quick-deploy-confirm")).toBeEnabled());
+    expect(screen.getByTestId("quick-deploy-confirm")).toHaveTextContent("保留当前配置并停用");
+    fireEvent.click(screen.getByTestId("quick-deploy-confirm"));
+    await waitFor(() => expect(deactivate).toHaveBeenCalledWith("salvage"));
   });
 
   it("shows the real reason after a failed deploy and asks for a new plan, never a second confirm", async () => {
