@@ -160,7 +160,12 @@ function AgentRowView({
 function statusText(row: AgentRow, agent: string, t: (key: string, options?: Record<string, unknown>) => string) {
   switch (row.status) {
     case "active":
-      return row.unrouted > 0 ? t("rewrite.status.unrouted", { count: row.unrouted }) : t("rewrite.status.active");
+      return row.unrouted > 0
+        ? t("rewrite.status.unrouted", {
+            count: row.unrouted,
+            what: t(row.tool === "grok" ? "rewrite.status.unroutedModel" : "rewrite.status.unroutedProvider"),
+          })
+        : t("rewrite.status.active");
     case "paused":
       return t("rewrite.status.paused");
     case "unlinked":

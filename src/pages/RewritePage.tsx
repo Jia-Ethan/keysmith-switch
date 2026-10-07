@@ -18,6 +18,8 @@ function connectCall(tool: ToolId): (() => Promise<RewriteView>) | undefined {
       return api.rewriteConnectClaude;
     case "zcode":
       return api.rewriteConnectZcode;
+    case "grok":
+      return api.rewriteConnectGrok;
     default:
       return undefined;
   }
@@ -31,6 +33,8 @@ function disconnectCall(tool: ToolId): (() => Promise<RewriteView>) | undefined 
       return api.rewriteDisconnectClaude;
     case "zcode":
       return api.rewriteDisconnectZcode;
+    case "grok":
+      return api.rewriteDisconnectGrok;
     default:
       return undefined;
   }

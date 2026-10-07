@@ -15,6 +15,8 @@ const rewriteDisconnectCodex = vi.fn();
 const rewriteConnectClaude = vi.fn();
 const rewriteDisconnectClaude = vi.fn();
 const rewriteConnectZcode = vi.fn();
+const rewriteConnectGrok = vi.fn();
+const rewriteDisconnectGrok = vi.fn();
 const rewriteDisconnectZcode = vi.fn();
 const rewriteSetTableTools = vi.fn();
 
@@ -31,6 +33,8 @@ vi.mock("../api", () => ({
   rewriteConnectClaude: (...a: unknown[]) => rewriteConnectClaude(...a),
   rewriteDisconnectClaude: (...a: unknown[]) => rewriteDisconnectClaude(...a),
   rewriteConnectZcode: (...a: unknown[]) => rewriteConnectZcode(...a),
+  rewriteConnectGrok: (...a: unknown[]) => rewriteConnectGrok(...a),
+  rewriteDisconnectGrok: (...a: unknown[]) => rewriteDisconnectGrok(...a),
   rewriteDisconnectZcode: (...a: unknown[]) => rewriteDisconnectZcode(...a),
   rewriteSetTableTools: (...a: unknown[]) => rewriteSetTableTools(...a),
 }));
@@ -90,6 +94,13 @@ const view = (over: Partial<RewriteView> = {}): RewriteView => ({
     unsupported: null,
     configPath: "/home/.zcode/v2/provider_config.json",
   },
+  grok: {
+    link: { state: "unlinked" },
+    service: { installed: false, running: false },
+    hosts: ["cli-chat-proxy.grok.com"],
+    unsupported: null,
+    configPath: "/home/.grok/config.toml",
+  },
   ...over,
 });
 
@@ -122,7 +133,7 @@ describe("RewritePage", () => {
       expect(screen.getByTestId(`rewrite-agent-${tool}`)).toBeInTheDocument();
     }
     expect(screen.getByTestId("rewrite-agent-codex")).toHaveAttribute("data-state", "unlinked");
-    expect(screen.getByTestId("rewrite-agent-grok")).toHaveAttribute("data-state", "unsupported");
+    expect(screen.getByTestId("rewrite-agent-grok")).toHaveAttribute("data-state", "unlinked");
     // No switch for an empty table or an unconnected agent.
     expect(screen.queryByTestId("rewrite-toggle-user")).not.toBeInTheDocument();
     expect(screen.queryByTestId("rewrite-toggle-agent-codex")).not.toBeInTheDocument();
@@ -244,6 +255,35 @@ describe("RewritePage", () => {
     render(<RewritePage toast={toast as never} />);
     expect(await screen.findByTestId("rewrite-status-zcode")).toHaveTextContent("2 个新加的 provider");
     expect(screen.getByTestId("rewrite-reconnect-zcode")).toBeInTheDocument();
+  });
+
+  it("connects Grok, saying what it writes and that the sign-in token passes through", async () => {
+    rewriteConnectGrok.mockResolvedValue(
+      view({ grok: { ...view().grok, link: { state: "linked", unrouted: 0 }, service: { installed: true, running: true } } }),
+    );
+    render(<RewritePage toast={toast as never} />);
+    fireEvent.click(await screen.findByTestId("rewrite-connect-grok"));
+    expect(screen.getByText(/model\.\*\.base_url/)).toBeInTheDocument();
+    expect(screen.getByText(/登录令牌会经过本机中转/)).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("rewrite-connect-confirm"));
+    await waitFor(() => expect(rewriteConnectGrok).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByTestId("rewrite-agent-grok")).toHaveAttribute("data-state", "paused"));
+  });
+
+  it("asks Grok users to reconnect when new models are not routed", async () => {
+    rewriteState.mockResolvedValue(
+      view({ enabled: true, grok: { ...view().grok, link: { state: "linked", unrouted: 2 }, service: { installed: true, running: true } } }),
+    );
+    render(<RewritePage toast={toast as never} />);
+    expect(await screen.findByTestId("rewrite-status-grok")).toHaveTextContent("2 个新加的 模型");
+    expect(screen.getByTestId("rewrite-reconnect-grok")).toBeInTheDocument();
+  });
+
+  it("tells Grok users to run Grok once when it has no model list yet", async () => {
+    rewriteState.mockResolvedValue(view({ grok: { ...view().grok, hosts: [], unsupported: "no-catalog" } }));
+    render(<RewritePage toast={toast as never} />);
+    expect(await screen.findByTestId("rewrite-status-grok")).toHaveTextContent("请先运行一次 Grok");
+    expect(screen.getByTestId("rewrite-connect-grok")).toBeDisabled();
   });
 
   it("disconnect is a danger action that asks first and says rules stay", async () => {

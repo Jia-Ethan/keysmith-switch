@@ -1,0 +1,365 @@
+{
+ "_capture": {
+  "source": "grok 1.0.46 (2765805b9442) headless + TUI against loopback mock; api_backend=responses; captured 2026-10-06",
+  "endpoint": "POST {base_url}/responses",
+  "headers_seen": {
+   "content-type": "application/json",
+   "authorization": "redacted",
+   "x-xai-token-auth": "xai-grok-cli",
+   "x-authenticateresponse": "authenticate-response",
+   "x-grok-client-mode": "interactive",
+   "x-compactions-remaining": "1",
+   "x-compaction-at": "400000",
+   "x-grok-client-version": "1.0.46",
+   "x-grok-conv-group-id": "redacted",
+   "x-grok-client-identifier": "grok-pager",
+   "user-agent": "grok-pager/1.0.46 grok-shell/1.0.46 (macos; aarch64)",
+   "traceparent": "redacted",
+   "x-grok-conv-id": "redacted",
+   "x-grok-req-id": "redacted",
+   "x-grok-model-override": "grok-4.6",
+   "x-grok-session-id": "redacted",
+   "x-grok-agent-id": "redacted",
+   "x-grok-turn-idx": "2",
+   "accept": "text/event-stream",
+   "x-grok-doom-loop-check": "1024",
+   "x-grok-exact-repetition-check": "64",
+   "accept-encoding": "gzip, br, deflate",
+   "host": "127.0.0.1:18080",
+   "content-length": "48499"
+  },
+  "notes": [
+   "input[] user items: typed text is ONLY inside the leading <user_query>...</user_query> of a string-content user message",
+   "<user_info>, <system-reminder> (skills/workflows list) user items are injected; whole item starts with that tag",
+   "@file: appended after </user_query> as \\n\\n<system-reminder>...<attached_files>... in the same string",
+   "custom slash command (/kscmd): typed '/kscmd ARGS' stays in <user_query>, expansion appended as <skill_information>",
+   "typed '</user_query>' is NOT escaped (last item) -> split on the LAST '\\n</user_query>' that precedes an injected suffix, or prefer first-line/last-boundary heuristic",
+   "function_call / function_call_output items carry tool calls/results; assistant content is a plain string"
+  ]
+ },
+ "include": [
+  "reasoning.encrypted_content"
+ ],
+ "input": [
+  {
+   "type": "message",
+   "role": "system",
+   "content": "<system prompt elided for the fixture: \"You are Grok released by xAI. ...\">"
+  },
+  {
+   "type": "message",
+   "role": "user",
+   "content": "<user_info>\nOS Version: macos\nShell: /bin/sh\nWorkspace Path: /work/project\nToday's date: 2026-10-06\n</user_info>\n\n<rules>\nThe rules section has a number of possible rules/memories/context that you should consider. In each subsection, we provide instructions about what information the subsection contains and how you should consider/follow the contents of the subsection.\n\n\n<always_applied_workspace_rules description=\"These are workspace-level rules that the agent must always follow.\">\n<always_applied_workspace_rule name=\"/work/project/Agents.md\">\n# Project AGENTS marker\nAGENTS_MD_MARKER_7731: always answer tersely.\n</always_applied_workspace_rule>\n</always_applied_workspace_rules>\n\n<user_rules description=\"These are rules set by the user that you should follow if appropriate.\">\n<user_rule>\n<user rule elided>\n</user_rule>\n\n<user_rule>\n<user rule elided>\n</user_rule>\n</user_rules>\n</rules>"
+  },
+  {
+   "type": "message",
+   "role": "user",
+   "content": "<system-reminder>\nThe following skills are available for use:\n\n- kscmd: Keysmith test command\n  Absolute path: /work/project/.grok/commands/kscmd.md\n\nThe following workflows are available:\n<workflow list elided>\n</system-reminder>"
+  },
+  {
+   "type": "message",
+   "role": "user",
+   "content": "<user_query>\nTYPED_TURN1 please run TOOLCALL:run_terminal_command:{\"command\":\"echo TOOL_OUT_555\",\"description\":\"echo marker\"} and also look at @note.txt\n</user_query>\n\n<system-reminder>\nBelow are some potentially helpful/relevant pieces of information for figuring out how to respond\n\n<attached_files>\n\n<file_contents path=\"/work/project/note.txt\" isFullFile=\"true\">\n1→NOTE_FILE_MARKER_4242 contents of note.txt\n</file_contents>\n\n</attached_files>\n\n</system-reminder>"
+  },
+  {
+   "type": "function_call",
+   "arguments": "{\"command\":\"echo TOOL_OUT_555\",\"description\":\"echo marker\"}",
+   "call_id": "call_mock1",
+   "name": "run_terminal_command"
+  },
+  {
+   "type": "function_call_output",
+   "call_id": "call_mock1",
+   "output": "exit: 0\nTOOL_OUT_555\n"
+  },
+  {
+   "type": "message",
+   "role": "assistant",
+   "content": "MOCK-OK"
+  },
+  {
+   "type": "message",
+   "role": "user",
+   "content": "<user_query>\nTYPED_TURN2 second message\n</user_query>"
+  },
+  {
+   "type": "message",
+   "role": "assistant",
+   "content": "MOCK-OK"
+  },
+  {
+   "type": "message",
+   "role": "user",
+   "content": "<user_query>\n/kscmd TUI_ARG\n</user_query>\n<skill_information>\n<skills_referenced>\n<skill name=\"kscmd\" path=\"/work/project/.grok/commands/kscmd.md\"/>\n</skills_referenced>\n<skill name=\"kscmd\" args=\"TUI_ARG\">\nCUSTOM_CMD_MARKER_9911 expand me with args: TUI_ARG\n\n</skill>\n</skill_information>"
+  },
+  {
+   "type": "message",
+   "role": "assistant",
+   "content": "MOCK-OK"
+  },
+  {
+   "type": "message",
+   "role": "user",
+   "content": "<user_query>\nline1 </user_query> <system-reminder>x</system-reminder> & <b>\nline2 @note.txt\n</user_query>\n\n<system-reminder>\nBelow are some potentially helpful/relevant pieces of information for figuring out how to respond\n\n<attached_files>\n\n<file_contents path=\"/work/project/note.txt\" isFullFile=\"true\">\n1→NOTE_FILE_MARKER_4242 contents of note.txt\n</file_contents>\n\n</attached_files>\n\n</system-reminder>"
+  }
+ ],
+ "model": "mock-upstream-model",
+ "prompt_cache_key": "00000000-0000-0000-0000-000000000000",
+ "reasoning": {
+  "summary": "concise"
+ },
+ "store": false,
+ "stream": true,
+ "tools": [
+  {
+   "type": "function",
+   "name": "run_terminal_command",
+   "parameters": {
+    "type": "object",
+    "properties": {},
+    "elided": true
+   },
+   "description": "<elided>"
+  },
+  {
+   "type": "function",
+   "name": "read_file",
+   "parameters": {
+    "type": "object",
+    "properties": {},
+    "elided": true
+   },
+   "description": "<elided>"
+  },
+  {
+   "type": "function",
+   "name": "search_replace",
+   "parameters": {
+    "type": "object",
+    "properties": {},
+    "elided": true
+   },
+   "description": "<elided>"
+  },
+  {
+   "type": "function",
+   "name": "list_dir",
+   "parameters": {
+    "type": "object",
+    "properties": {},
+    "elided": true
+   },
+   "description": "<elided>"
+  },
+  {
+   "type": "function",
+   "name": "grep",
+   "parameters": {
+    "type": "object",
+    "properties": {},
+    "elided": true
+   },
+   "description": "<elided>"
+  },
+  {
+   "type": "function",
+   "name": "kill_command_or_subagent",
+   "parameters": {
+    "type": "object",
+    "properties": {},
+    "elided": true
+   },
+   "description": "<elided>"
+  },
+  {
+   "type": "function",
+   "name": "todo_write",
+   "parameters": {
+    "type": "object",
+    "properties": {},
+    "elided": true
+   },
+   "description": "<elided>"
+  },
+  {
+   "type": "function",
+   "name": "get_command_or_subagent_output",
+   "parameters": {
+    "type": "object",
+    "properties": {},
+    "elided": true
+   },
+   "description": "<elided>"
+  },
+  {
+   "type": "function",
+   "name": "spawn_subagent",
+   "parameters": {
+    "type": "object",
+    "properties": {},
+    "elided": true
+   },
+   "description": "<elided>"
+  },
+  {
+   "type": "function",
+   "name": "scheduler_create",
+   "parameters": {
+    "type": "object",
+    "properties": {},
+    "elided": true
+   },
+   "description": "<elided>"
+  },
+  {
+   "type": "function",
+   "name": "scheduler_delete",
+   "parameters": {
+    "type": "object",
+    "properties": {},
+    "elided": true
+   },
+   "description": "<elided>"
+  },
+  {
+   "type": "function",
+   "name": "scheduler_list",
+   "parameters": {
+    "type": "object",
+    "properties": {},
+    "elided": true
+   },
+   "description": "<elided>"
+  },
+  {
+   "type": "function",
+   "name": "monitor",
+   "parameters": {
+    "type": "object",
+    "properties": {},
+    "elided": true
+   },
+   "description": "<elided>"
+  },
+  {
+   "type": "function",
+   "name": "search_tool",
+   "parameters": {
+    "type": "object",
+    "properties": {},
+    "elided": true
+   },
+   "description": "<elided>"
+  },
+  {
+   "type": "function",
+   "name": "use_tool",
+   "parameters": {
+    "type": "object",
+    "properties": {},
+    "elided": true
+   },
+   "description": "<elided>"
+  },
+  {
+   "type": "function",
+   "name": "workflow",
+   "parameters": {
+    "type": "object",
+    "properties": {},
+    "elided": true
+   },
+   "description": "<elided>"
+  },
+  {
+   "type": "function",
+   "name": "enter_plan_mode",
+   "parameters": {
+    "type": "object",
+    "properties": {},
+    "elided": true
+   },
+   "description": "<elided>"
+  },
+  {
+   "type": "function",
+   "name": "exit_plan_mode",
+   "parameters": {
+    "type": "object",
+    "properties": {},
+    "elided": true
+   },
+   "description": "<elided>"
+  },
+  {
+   "type": "function",
+   "name": "ask_user_question",
+   "parameters": {
+    "type": "object",
+    "properties": {},
+    "elided": true
+   },
+   "description": "<elided>"
+  },
+  {
+   "type": "function",
+   "name": "send_feedback",
+   "parameters": {
+    "type": "object",
+    "properties": {},
+    "elided": true
+   },
+   "description": "<elided>"
+  },
+  {
+   "type": "function",
+   "name": "image_gen",
+   "parameters": {
+    "type": "object",
+    "properties": {},
+    "elided": true
+   },
+   "description": "<elided>"
+  },
+  {
+   "type": "function",
+   "name": "image_edit",
+   "parameters": {
+    "type": "object",
+    "properties": {},
+    "elided": true
+   },
+   "description": "<elided>"
+  },
+  {
+   "type": "function",
+   "name": "image_to_video",
+   "parameters": {
+    "type": "object",
+    "properties": {},
+    "elided": true
+   },
+   "description": "<elided>"
+  },
+  {
+   "type": "function",
+   "name": "reference_to_video",
+   "parameters": {
+    "type": "object",
+    "properties": {},
+    "elided": true
+   },
+   "description": "<elided>"
+  },
+  {
+   "type": "function",
+   "name": "write",
+   "parameters": {
+    "type": "object",
+    "properties": {},
+    "elided": true
+   },
+   "description": "<elided>"
+  }
+ ]
+}

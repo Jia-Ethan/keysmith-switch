@@ -147,6 +147,7 @@ const rewrite = {
   link: (rewriteMode === "states" ? { state: "linked", provider: "custom" } : { state: "unlinked" }) as any,
   claudeLink: (rewriteMode === "states" ? { state: "bypassed" } : { state: "unlinked" }) as any,
   zcodeLink: (rewriteMode === "states" ? { state: "linked", unrouted: 1 } : { state: "unlinked" }) as any,
+  grokLink: (rewriteMode === "states" ? { state: "linked", unrouted: 0 } : { state: "unlinked" }) as any,
   running: rewriteMode === "states",
 };
 
@@ -164,6 +165,13 @@ function rewriteView() {
       upstreamHost: "api.anthropic.com",
       unsupported: null,
       settingsPath: "~/.claude/settings.json",
+    },
+    grok: {
+      link: rewrite.grokLink,
+      service: { installed: rewrite.running, running: rewrite.running },
+      hosts: ["cli-chat-proxy.grok.com"],
+      unsupported: null,
+      configPath: "~/.grok/config.toml",
     },
     zcode: {
       link: rewrite.zcodeLink,
@@ -253,6 +261,13 @@ async function handle(cmd: string, args: Record<string, any> = {}): Promise<unkn
       return delay(rewriteView(), 700);
     case "rewrite_disconnect_zcode":
       rewrite.zcodeLink = { state: "unlinked" };
+      return delay(rewriteView(), 500);
+    case "rewrite_connect_grok":
+      rewrite.grokLink = { state: "linked", unrouted: 0 };
+      rewrite.running = true;
+      return delay(rewriteView(), 700);
+    case "rewrite_disconnect_grok":
+      rewrite.grokLink = { state: "unlinked" };
       return delay(rewriteView(), 500);
     case "rewrite_set_table_tools":
       rewrite.tables = rewrite.tables.map((t) => (t.id === args.id ? { ...t, tools: args.tools } : t));

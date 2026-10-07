@@ -46,6 +46,8 @@ export function agentRows(view: RewriteView): AgentRow[] {
   const claudeLinked = claude.link.state === "linked";
   const zcode = view.zcode;
   const zcodeLinked = zcode.link.state === "linked";
+  const grok = view.grok;
+  const grokLinked = grok.link.state === "linked";
   const rows: Record<ToolId, AgentRow> = {
     codex: {
       tool: "codex",
@@ -91,17 +93,17 @@ export function agentRows(view: RewriteView): AgentRow[] {
     },
     grok: {
       tool: "grok",
-      status: "unsupported",
+      status: status(view, view.grokEnabled, grokLinked, grok.link.state === "bypassed", grok.service.running),
       enabled: view.grokEnabled,
-      connected: false,
-      canConnect: false,
-      unsupported: "grok.pending",
-      bypassed: null,
-      file: null,
-      field: null,
-      hosts: [],
-      oauthNote: false,
-      unrouted: 0,
+      connected: grok.link.state !== "unlinked",
+      canConnect: !grok.unsupported || grok.link.state !== "unlinked",
+      unsupported: grok.unsupported && grok.link.state === "unlinked" ? `grok.${grok.unsupported}` : null,
+      bypassed: grok.link.state === "bypassed" ? "grok" : null,
+      file: grok.configPath,
+      field: "model.*.base_url",
+      hosts: grok.hosts,
+      oauthNote: true,
+      unrouted: grok.link.state === "linked" ? grok.link.unrouted : 0,
     },
   };
   return REWRITE_AGENTS.map((tool) => rows[tool]);

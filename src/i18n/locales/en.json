@@ -620,7 +620,9 @@
       "bypassed": "Bypassed",
       "notRunning": "The relay isn't running; {{agent}} can't reach the model",
       "unsupported": "Not supported yet",
-      "unrouted": "New providers ({{count}}) don't go through the relay yet; reconnect"
+      "unrouted": "{{count}} new {{what}} don't go through the relay yet; reconnect",
+      "unroutedProvider": "providers",
+      "unroutedModel": "models"
     },
     "action": {
       "connect": "Connect…",
@@ -635,7 +637,8 @@
       "upstream": "Sends to {{host}} (restored when you disconnect)",
       "upstreams": "Sends to: {{hosts}}",
       "oauth": "Your sign-in token passes through the local relay and is never stored or logged.",
-      "providerField": "baseUrl of each personal provider"
+      "providerField": "baseUrl of each personal provider",
+      "grokField": "base_url of each model"
     },
     "connect": {
       "title": "Connect {{agent}}",
@@ -649,7 +652,8 @@
     "bypassed": {
       "codex": "Another tool switched Codex's provider",
       "claude": "The address in settings.json changed, or a project setting overrides it",
-      "zcode": "A provider's address was changed in ZCode"
+      "zcode": "A provider's address was changed in ZCode",
+      "grok": "The Keysmith region in config.toml was edited or removed"
     },
     "unsupported": {
       "codex": {
@@ -673,7 +677,9 @@
         "no-provider": "Only Coding Plan sign-in is set up, which isn't supported yet. Add a provider that uses an API key."
       },
       "grok": {
-        "pending": "Coming once the Grok Keysmith adapter supports it: its uninstall restores the whole config.toml and would drop the connection."
+        "no-config": "Grok's folder was not found. Run Grok once first.",
+        "no-catalog": "Grok hasn't fetched its model list yet. Run Grok once first.",
+        "bad-region": "The Keysmith region in config.toml is incomplete. Fix it first."
       }
     },
     "rules": {

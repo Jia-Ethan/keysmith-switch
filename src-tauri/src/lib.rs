@@ -148,6 +148,8 @@ pub fn run() {
             commands::rewrite_disconnect_claude,
             commands::rewrite_connect_zcode,
             commands::rewrite_disconnect_zcode,
+            commands::rewrite_connect_grok,
+            commands::rewrite_disconnect_grok,
         ]);
 
     builder

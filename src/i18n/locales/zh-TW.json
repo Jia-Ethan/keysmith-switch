@@ -620,7 +620,9 @@
       "bypassed": "被繞過",
       "notRunning": "中轉未執行，{{agent}} 目前連不上模型",
       "unsupported": "暫不支援",
-      "unrouted": "有 {{count}} 個新加入的 provider 未經過中轉，請重新連線"
+      "unrouted": "有 {{count}} 個新加入的 {{what}} 未經過中轉，請重新連線",
+      "unroutedProvider": "provider",
+      "unroutedModel": "模型"
     },
     "action": {
       "connect": "連線…",
@@ -635,7 +637,8 @@
       "upstream": "送往 {{host}}（中斷時改回）",
       "upstreams": "送往：{{hosts}}",
       "oauth": "登入權杖會經過本機中轉，不保存、不記錄。",
-      "providerField": "每個個人 provider 的 baseUrl"
+      "providerField": "每個個人 provider 的 baseUrl",
+      "grokField": "每個模型的 base_url"
     },
     "connect": {
       "title": "連線 {{agent}}",
@@ -649,7 +652,8 @@
     "bypassed": {
       "codex": "Codex 的 provider 被其他工具切換了",
       "claude": "settings.json 裡的位址被改過，或專案設定覆蓋了它",
-      "zcode": "在 ZCode 裡改過 provider 的位址"
+      "zcode": "在 ZCode 裡改過 provider 的位址",
+      "grok": "config.toml 裡 Keysmith 的標記區域被改動或刪除了"
     },
     "unsupported": {
       "codex": {
@@ -673,7 +677,9 @@
         "no-provider": "只有帳號登入的 Coding Plan，暫不支援；請新增使用 API key 的 provider。"
       },
       "grok": {
-        "pending": "等 Grok 的 Keysmith 轉接器支援後開放：它在解除安裝時會整份還原 config.toml，會把連線一起刪掉。"
+        "no-config": "找不到 Grok 的設定資料夾，請先執行一次 Grok。",
+        "no-catalog": "Grok 還沒有取得模型清單，請先執行一次 Grok。",
+        "bad-region": "config.toml 裡 Keysmith 的標記區域不完整，請先修好。"
       }
     },
     "rules": {

@@ -185,13 +185,81 @@ fn zcode_custom_command_expansion_is_skipped() {
     assert_eq!(body["messages"][1]["content"], "plain y");
 }
 
+const GROK: &str = include_str!("fixtures/grok-1.0.46-responses.json");
+
 #[test]
-fn grok_is_never_rewritten_yet() {
+fn grok_changes_only_the_typed_query() {
+    // Untouched: <user_info>/<rules>, the skills reminder, tool calls and output, assistant
+    // turns, the @-file contents and skill expansion Grok appends after a query, and /kscmd
+    // (a slash command, skipped whole).
+    let body: Value = serde_json::from_str(GROK).unwrap();
+    let first = body["input"][3]["content"].as_str().unwrap().to_string();
+    assert_eq!(
+        changes(
+            GROK,
+            Protocol::Responses,
+            Tool::Grok,
+            Rule::new("TYPED_TURN", "WORDS_TURN")
+        ),
+        vec![
+            (
+                first.clone(),
+                first.replacen("TYPED_TURN1", "WORDS_TURN1", 1)
+            ),
+            pair(
+                "<user_query>\nTYPED_TURN2 second message\n</user_query>",
+                "<user_query>\nWORDS_TURN2 second message\n</user_query>"
+            ),
+        ]
+    );
+}
+
+#[test]
+fn grok_finds_the_real_end_of_a_query_with_a_literal_closing_tag() {
+    let m = Matcher::new(&[Rule::new("line", "row")]);
+    let text = "<user_query>\nline1 </user_query> <x> & <b>\nline2 @note.txt\n</user_query>\n\n<system-reminder>\nline in a file\n</system-reminder>";
+    let mut body = serde_json::json!({"input": [{"role": "user", "content": text}]});
+    assert_eq!(
+        rewrite_request(Protocol::Responses, Tool::Grok, &m, &mut body),
+        1
+    );
+    assert_eq!(
+        body["input"][0]["content"],
+        "<user_query>\nrow1 </user_query> <x> & <b>\nrow2 @note.txt\n</user_query>\n\n<system-reminder>\nline in a file\n</system-reminder>"
+    );
+}
+
+#[test]
+fn grok_leaves_its_own_context_and_unwrapped_text_alone() {
     let m = Matcher::new(&[Rule::new("x", "y")]);
-    let mut body = serde_json::json!({"input": [{"role": "user", "content": "x"}]});
+    let mut body = serde_json::json!({"input": [
+        {"role": "user", "content": "<user_info>\nx\n</user_info>"},
+        {"role": "user", "content": "<system-reminder>\nx\n</system-reminder>"},
+        {"role": "user", "content": "x without a wrapper (--verbatim)"},
+        {"role": "user", "content": "<user_query>\n/cmd x\n</user_query>"},
+        {"role": "user", "content": "<user_query>\nx but never closed"}
+    ]});
     assert_eq!(
         rewrite_request(Protocol::Responses, Tool::Grok, &m, &mut body),
         0
+    );
+}
+
+#[test]
+fn grok_chat_completions_use_the_same_wrapper() {
+    let m = Matcher::new(&[Rule::new("提示词", "指令")]);
+    let mut body = serde_json::json!({"messages": [
+        {"role": "system", "content": "提示词"},
+        {"role": "user", "content": "<user_query>\nhello 提示词\n</user_query>"},
+        {"role": "assistant", "content": "提示词"}
+    ]});
+    assert_eq!(
+        rewrite_request(Protocol::Chat, Tool::Grok, &m, &mut body),
+        1
+    );
+    assert_eq!(
+        body["messages"][1]["content"],
+        "<user_query>\nhello 指令\n</user_query>"
     );
 }
 

@@ -625,6 +625,17 @@ export interface ZcodeRewriteView {
   configPath: string | null;
 }
 
+export interface GrokRewriteView {
+  /** `unrouted`: catalog models added since connecting that do not go through the relay. */
+  link: { state: "linked"; unrouted: number } | { state: "bypassed" } | { state: "unlinked" };
+  service: { installed: boolean; running: boolean };
+  /** Hosts the catalog models really talk to. */
+  hosts: string[];
+  /** "no-config", "no-catalog" (run Grok once) or "bad-region". */
+  unsupported: string | null;
+  configPath: string | null;
+}
+
 export interface RewriteView {
   enabled: boolean;
   codexEnabled: boolean;
@@ -635,4 +646,5 @@ export interface RewriteView {
   codex: CodexRewriteView;
   claude: ClaudeRewriteView;
   zcode: ZcodeRewriteView;
+  grok: GrokRewriteView;
 }

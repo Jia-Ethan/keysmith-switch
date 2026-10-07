@@ -456,6 +456,14 @@ export function rewriteDisconnectZcode(): Promise<RewriteView> {
   return call("rewrite_disconnect_zcode", {});
 }
 
+export function rewriteConnectGrok(): Promise<RewriteView> {
+  return call("rewrite_connect_grok", {});
+}
+
+export function rewriteDisconnectGrok(): Promise<RewriteView> {
+  return call("rewrite_disconnect_grok", {});
+}
+
 export function rewriteSetTableTools(id: string, tools: ToolId[] | null): Promise<RewriteView> {
   return call("rewrite_set_table_tools", { id, tools });
 }

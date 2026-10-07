@@ -38,7 +38,7 @@ impl ToolKind {
         match self {
             Self::Claude => "7.2",
             Self::Codex => "0.6.0",
-            Self::Grok => "0.6.2",
+            Self::Grok => "0.7.0",
             Self::Zcode => "0.3.2",
         }
     }
