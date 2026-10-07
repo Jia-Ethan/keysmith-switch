@@ -220,7 +220,10 @@ fn connect_send_disconnect() {
             .unwrap();
         assert_eq!(String::from_utf8_lossy(&out.stdout), "data: ok\n\n");
         let body = received.lock().unwrap().clone();
-        assert!(body.contains("<user_info>提示词</user_info>") && body.contains("改指令"), "{body}");
+        assert!(
+            body.contains("<user_info>提示词</user_info>") && body.contains("改指令"),
+            "{body}"
+        );
         rewrite::disconnect_grok(&paths).unwrap();
         assert_eq!(
             std::fs::read_to_string(grok.join("config.toml")).unwrap(),
