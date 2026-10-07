@@ -598,7 +598,7 @@ describe("Workspace: prompt library", () => {
   it("explains Grok's config drift in words and repairs it, then plans the deploy again", async () => {
     const drift = "config content does not match managed after-state";
     listTools.mockResolvedValue({
-      tools: [{ id: "grok", name: "Grok Build", adapterVersion: "0.6.2", available: true, unavailableReason: null, supportedScopes: ["user"], cliPath: null }],
+      tools: [{ id: "grok", name: "Grok Build", adapterVersion: "0.7.0", available: true, unavailableReason: null, supportedScopes: ["user"], cliPath: null }],
     });
     getHarnessState.mockResolvedValue({ tool: "grok", deployed: false, error: null });
     listPrompts.mockResolvedValue({ prompts: [prompt({ id: "g1", tool: "grok", title: "Spare" })] });
@@ -637,7 +637,7 @@ describe("Workspace: prompt library", () => {
   it("lets Grok be turned off keeping its config when the config backup is gone (#95)", async () => {
     const drift = ["config content does not match managed after-state", "managed config backup is missing or abnormal"];
     listTools.mockResolvedValue({
-      tools: [{ id: "grok", name: "Grok Build", adapterVersion: "0.6.2", available: true, unavailableReason: null, supportedScopes: ["user"], cliPath: null }],
+      tools: [{ id: "grok", name: "Grok Build", adapterVersion: "0.7.0", available: true, unavailableReason: null, supportedScopes: ["user"], cliPath: null }],
     });
     getHarnessState.mockResolvedValue({ tool: "grok", deployed: true, error: null });
     planDeactivate

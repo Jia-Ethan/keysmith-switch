@@ -21,9 +21,7 @@ pub fn rewrite_text(
         Tool::Codex => codex(matcher, text),
         Tool::Claude => claude(matcher, text, previous),
         Tool::Zcode => zcode(matcher, text),
-        // Grok is not connected yet; its typed text sits inside a `<user_query>` wrapper this
-        // module does not take apart.
-        Tool::Grok => None,
+        Tool::Grok => grok(matcher, text),
     }
 }
 
@@ -148,6 +146,33 @@ fn zcode(matcher: &Matcher, text: &str) -> Option<String> {
         return None;
     }
     owned(matcher.rewrite(text))
+}
+
+// ----- Grok Build -------------------------------------------------------------------
+
+const GROK_OPEN: &str = "<user_query>\n";
+const GROK_CLOSE: &str = "\n</user_query>";
+/// Blocks Grok appends after the query in the same message: @-file contents and the skill a
+/// custom command expanded to.
+const GROK_APPENDED: &[&str] = &["<system-reminder>", "<skill_information>"];
+
+/// Grok wraps what the person typed as `<user_query>\n…\n</user_query>` and may append
+/// blocks after it. Typed text is not escaped, so a literal `</user_query>` can appear inside:
+/// the query ends at the last closing tag that only Grok's own blocks (or nothing) follow.
+/// Everything else in a user turn (`<user_info>`, `<system-reminder>`, summaries) is Grok's.
+fn grok(matcher: &Matcher, text: &str) -> Option<String> {
+    let body = text.strip_prefix(GROK_OPEN)?;
+    let mut end = None;
+    for (at, _) in body.match_indices(GROK_CLOSE) {
+        let rest = body[at + GROK_CLOSE.len()..].trim_start();
+        if rest.is_empty() || GROK_APPENDED.iter().any(|block| rest.starts_with(block)) {
+            end = Some(at);
+        }
+    }
+    let end = end?;
+    let typed = &body[..end];
+    let rewritten = owned(matcher.rewrite(typed))?;
+    Some(format!("{GROK_OPEN}{rewritten}{}", &body[end..]))
 }
 
 #[cfg(test)]

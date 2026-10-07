@@ -7,6 +7,7 @@
 //! what connecting did.
 
 pub mod claude;
+pub mod grok;
 pub mod link;
 pub mod service;
 pub mod zcode;
@@ -77,6 +78,18 @@ pub struct RewriteView {
     pub codex: CodexView,
     pub claude: ClaudeView,
     pub zcode: ZcodeView,
+    pub grok: GrokView,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GrokView {
+    pub link: grok::GrokLinkState,
+    pub service: service::ServiceStatus,
+    /// Hosts the catalog models really talk to.
+    pub hosts: Vec<String>,
+    pub unsupported: Option<String>,
+    pub config_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -137,6 +150,7 @@ pub fn view_with(store: &Store, home: Option<&Path>) -> Result<RewriteView> {
         codex: codex_view(store.paths(), home),
         claude: claude_view(store.paths(), home),
         zcode: zcode_view(store.paths(), home),
+        grok: grok_view(store.paths(), home),
     })
 }
 
@@ -232,6 +246,7 @@ fn stop_service_if_unused(paths: &AppPaths) -> Result<()> {
     if read_link_record(paths).is_none()
         && read_claude_record(paths).is_none()
         && read_zcode_record(paths).is_none()
+        && read_grok_record(paths).is_none()
     {
         service::uninstall(paths)?;
     }
@@ -464,6 +479,113 @@ pub fn disconnect_zcode(paths: &AppPaths) -> Result<zcode::ZcodeUnlinkReport> {
     Ok(report)
 }
 
+// ----- Grok Build -------------------------------------------------------------------
+
+fn grok_record_path(paths: &AppPaths) -> PathBuf {
+    rewrite_dir(paths).join("grok-link.json")
+}
+
+pub fn read_grok_record(paths: &AppPaths) -> Option<grok::GrokLinkRecord> {
+    std::fs::read(grok_record_path(paths))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+}
+
+/// The relay upstream id for one real base URL: one route per distinct address.
+fn grok_upstream_id(base_url: &str) -> String {
+    let digest = sha2_hex(base_url.as_bytes());
+    format!("u{}", &digest[..12])
+}
+
+fn sha2_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    format!("{:x}", hasher.finalize())
+}
+
+fn grok_view(paths: &AppPaths, home: Option<&Path>) -> GrokView {
+    let record = read_grok_record(paths);
+    let dir = record
+        .as_ref()
+        .map(|record| record.grok_dir.clone())
+        .or_else(|| grok::grok_dir(home));
+    let Some(dir) = dir else {
+        return GrokView {
+            link: grok::GrokLinkState::Unlinked,
+            service: service::status(paths),
+            hosts: Vec::new(),
+            unsupported: Some("no-config".into()),
+            config_path: None,
+        };
+    };
+    let link = grok::state(record.as_ref(), &dir);
+    let (hosts, unsupported) = match grok::routable(&dir) {
+        Ok(models) => {
+            let mut hosts: Vec<String> = models
+                .iter()
+                .filter_map(|model| claude::upstream_host(&model.base_url))
+                .collect();
+            hosts.sort();
+            hosts.dedup();
+            (hosts, None)
+        }
+        Err(reason) => (Vec::new(), Some(reason.code().to_string())),
+    };
+    GrokView {
+        link,
+        service: service::status(paths),
+        hosts,
+        unsupported,
+        config_path: Some(dir.join("config.toml").display().to_string()),
+    }
+}
+
+/// Start the relay and route every catalog model through it.
+pub fn connect_grok(paths: &AppPaths, home: Option<&Path>) -> Result<()> {
+    let record = read_grok_record(paths);
+    let dir = record
+        .as_ref()
+        .map(|record| record.grok_dir.clone())
+        .or_else(|| grok::grok_dir(home))
+        .ok_or_else(|| Error::unavailable("no-config: cannot find the Grok folder"))?;
+    let models = grok::routable(&dir).map_err(|reason| {
+        Error::unavailable(format!("{}: Grok cannot be linked", reason.code()))
+    })?;
+    // Routes first: Grok may start a request the moment the file changes.
+    let mut config = service::ensure_config(paths)?;
+    config.routes.retain(|key, _| !key.starts_with("grok/"));
+    let mut table = BTreeMap::new();
+    for model in &models {
+        let upstream = grok_upstream_id(&model.base_url);
+        config
+            .routes
+            .insert(format!("grok/{upstream}"), model.base_url.clone());
+        table.insert(
+            model.id.clone(),
+            service::route_url(&config, "grok", &upstream),
+        );
+    }
+    service::write_config(paths, &config)?;
+    service::install(paths)?;
+    let new_record = grok::link(&dir, table)?;
+    atomic_write(
+        &grok_record_path(paths),
+        &serde_json::to_string_pretty(&new_record)?,
+    )
+}
+
+/// Remove the region. Rules stay; the relay stops when no agent uses it.
+pub fn disconnect_grok(paths: &AppPaths) -> Result<grok::GrokUnlinkReport> {
+    let report = match read_grok_record(paths) {
+        Some(record) => grok::unlink(&record)?,
+        None => grok::GrokUnlinkReport::default(),
+    };
+    let _ = std::fs::remove_file(grok_record_path(paths));
+    stop_service_if_unused(paths)?;
+    Ok(report)
+}
+
 /// Disconnect one agent if it is connected; true when it was. Cleanup calls this before it
 /// saves that agent's settings, so a rollback never brings back an address pointing at a
 /// relay that is gone.
@@ -480,6 +602,10 @@ pub fn disconnect_tool(paths: &AppPaths, tool: crate::models::ToolKind) -> Resul
         }
         ToolKind::Zcode if read_zcode_record(paths).is_some() => {
             disconnect_zcode(paths)?;
+            Ok(true)
+        }
+        ToolKind::Grok if read_grok_record(paths).is_some() => {
+            disconnect_grok(paths)?;
             Ok(true)
         }
         _ => Ok(false),

@@ -81,6 +81,16 @@ fn connect_send_disconnect() {
     );
     std::fs::write(claude.join("settings.json"), &claude_settings).unwrap();
 
+    let grok = home.join(".grok");
+    std::fs::create_dir_all(&grok).unwrap();
+    let grok_config = "[models]\ndefault = \"grok-4.6\"\n".to_string();
+    std::fs::write(grok.join("config.toml"), &grok_config).unwrap();
+    std::fs::write(
+        grok.join("models_cache.json"),
+        format!(r#"{{"models":{{"grok-4.6":{{"info":{{"base_url":"http://127.0.0.1:{up_port}/v1"}}}}}}}}"#),
+    )
+    .unwrap();
+
     let zcode = home.join(".zcode").join("v2");
     std::fs::create_dir_all(&zcode).unwrap();
     let zcode_config = format!(
@@ -190,6 +200,34 @@ fn connect_send_disconnect() {
         assert_eq!(
             std::fs::read_to_string(zcode.join("provider_config.json")).unwrap(),
             zcode_config
+        );
+
+        // Grok: every catalog model goes through the relay, inside one marked region.
+        rewrite::connect_grok(&paths, Some(&home)).unwrap();
+        let view = rewrite::view_with(&store, Some(&home)).unwrap();
+        assert_eq!(
+            view.grok.link,
+            keysmith_switch_lib::rewrite::grok::GrokLinkState::Linked { unrouted: 0 }
+        );
+        let grok_text = std::fs::read_to_string(grok.join("config.toml")).unwrap();
+        let region = grok_text.split("base_url = \"").nth(1).unwrap();
+        let gbase = region.split('"').next().unwrap().to_string();
+        let out = std::process::Command::new("curl")
+            .args(["-sS", "-X", "POST", &format!("{gbase}/responses")])
+            .args(["-H", "content-type: application/json", "--data-binary"])
+            .arg(r#"{"input":[{"role":"user","content":"<user_info>提示词</user_info>"},{"role":"user","content":"<user_query>\n改提示词\n</user_query>"}]}"#)
+            .output()
+            .unwrap();
+        assert_eq!(String::from_utf8_lossy(&out.stdout), "data: ok\n\n");
+        let body = received.lock().unwrap().clone();
+        assert!(
+            body.contains("<user_info>提示词</user_info>") && body.contains("改指令"),
+            "{body}"
+        );
+        rewrite::disconnect_grok(&paths).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(grok.join("config.toml")).unwrap(),
+            grok_config
         );
 
         // Disconnecting Codex leaves the relay running for Claude Code.
