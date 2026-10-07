@@ -304,6 +304,7 @@ npx tauri build --target aarch64-apple-darwin --config src-tauri/tauri.preview.m
 
 | 版本 | 更新内容 |
 | --- | --- |
+| [`v0.5.1`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.5.1) | 修复 Grok Build 部署后无法停用：配置备份丢失时，停用弹窗会提供「保留当前配置并停用」，只移除 Keysmith 写入的那一段；「清理」不再删除 Grok 适配器自己的配置备份。Grok 适配器更新到 v0.6.2。[#112](https://github.com/Jia-Ethan/keysmith-switch/pull/112) |
 | [`v0.5.0`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.5.0) | 「输入替换」现在支持 Claude Code 和 ZCode：每个 Agent 一键连接，只改一个配置项，断开时只改回这一项。规则表可以只对部分 Agent 生效，规则包可以面向任意 Agent。输入替换页重新设计：用开关代替复选框，每个 Agent 一行显示状态，支持筛选和搜索规则。Grok Build 暂缓。[#104](https://github.com/Jia-Ethan/keysmith-switch/pull/104)–[#109](https://github.com/Jia-Ethan/keysmith-switch/pull/109) |
 | [`v0.4.0`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.4.0) | 新模块「输入替换」：在 Codex 里照常打字，发给模型前按你的规则替换字面文字，输入框和会话历史仍显示原文。由本机只监听 127.0.0.1 的中转服务完成替换，可一键连接或断开；规则表默认为空，也可以从拓展安装规则包（已启用的规则包更新前需要你确认）。[#96](https://github.com/Jia-Ethan/keysmith-switch/pull/96)–[#100](https://github.com/Jia-Ethan/keysmith-switch/pull/100) |
 | [`v0.3.9`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.3.9) | Codex 部署被拦截时，引导点「清理」的提示现在写明：清理会永久删除会话历史和登录，想保留聊天记录请先备份 `.codex` 文件夹。[#92](https://github.com/Jia-Ethan/keysmith-switch/pull/92) |
