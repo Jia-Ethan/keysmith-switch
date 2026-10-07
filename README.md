@@ -75,7 +75,7 @@
 <td valign="top" colspan="2">
 
 ### ⇄ 输入替换
-在 Claude Code、Codex、ZCode 里照常打字，发给模型前按你的规则做字面替换；输入框和会话历史里仍是原文。规则默认为空，可以只对部分 Agent 生效，也可以随时关闭或断开。详见[输入替换](#-输入替换)。
+在 Claude Code、Codex、ZCode、Grok Build 里照常打字，发给模型前按你的规则做字面替换；输入框和会话历史里仍是原文。规则默认为空，可以只对部分 Agent 生效，也可以随时关闭或断开。详见[输入替换](#-输入替换)。
 
 </td>
 </tr>
@@ -218,6 +218,7 @@ flowchart LR
   | Claude Code | `~/.claude/settings.json` 的 `env.ANTHROPIC_BASE_URL`（有 `CLAUDE_CONFIG_DIR` 时用那个目录） |
   | Codex | `~/.codex/config.toml`：新增 `[model_providers.keysmith-relay]`（复制你原来的 provider，只改 `base_url`），并把顶层 `model_provider` 指向它 |
   | ZCode | `~/.zcode/v2/provider_config.json`：每个个人 provider 的 `baseUrl` |
+| Grok Build | `~/.grok/config.toml` 末尾，一对 `# === keysmith-switch input rewrite ===` 标记之间：给每个模型加一张 `[model."<id>"] base_url`。grok-keysmith 0.7.0 起把这一段视为 Keysmith Switch 的区域 |
 
 - **只改你打的字。** 只替换你自己输入的文字，包括历史里你之前说过的话。以下内容都不动：
   - 助手回复和工具输出；
@@ -230,7 +231,7 @@ flowchart LR
 - **不存会话。** 中转服务不保存、不记录请求内容、规则或鉴权信息。订阅登录时，登录令牌会经过本机中转，同样不保存。
 - **规则包。** 拓展仓库也可以发布规则包，用 `tools` 声明默认适用的 Agent。安装前会先列出全部规则；已启用的规则包有更新时，需要你确认后才会切换。
 - **目前的限制。**
-  - Grok Build 暂不支持：它的 Keysmith 适配器在卸载时会整份还原 `config.toml`，会把连接一起删掉。
+  - Grok Build 需要先运行过一次，让它拉取过模型列表，才能连接；以后新增的模型要重新连接才会经过中转。
   - Claude Code 不支持 Bedrock 和 Vertex。
   - ZCode 不支持账号登录的 Coding Plan。
   - Codex 需要使用自定义 provider（`wire_api = "responses"`）。
@@ -304,6 +305,7 @@ npx tauri build --target aarch64-apple-darwin --config src-tauri/tauri.preview.m
 
 | 版本 | 更新内容 |
 | --- | --- |
+| [`v0.6.0`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.6.0) | 「输入替换」现在也支持 Grok Build，四个 Agent 全部可用：逐个模型写入中转地址，放在 `config.toml` 里一对标记之间，断开时整段删除。Grok 适配器更新到 v0.7.0，把这一段视为 Keysmith Switch 的区域，不再判为漂移，也不会被撤销部署时删掉。[#116](https://github.com/Jia-Ethan/keysmith-switch/pull/116) |
 | [`v0.5.1`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.5.1) | 修复 Grok Build 部署后无法停用：配置备份丢失时，停用弹窗会提供「保留当前配置并停用」，只移除 Keysmith 写入的那一段；「清理」不再删除 Grok 适配器自己的配置备份。Grok 适配器更新到 v0.6.2。[#112](https://github.com/Jia-Ethan/keysmith-switch/pull/112) |
 | [`v0.5.0`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.5.0) | 「输入替换」现在支持 Claude Code 和 ZCode：每个 Agent 一键连接，只改一个配置项，断开时只改回这一项。规则表可以只对部分 Agent 生效，规则包可以面向任意 Agent。输入替换页重新设计：用开关代替复选框，每个 Agent 一行显示状态，支持筛选和搜索规则。Grok Build 暂缓。[#104](https://github.com/Jia-Ethan/keysmith-switch/pull/104)–[#109](https://github.com/Jia-Ethan/keysmith-switch/pull/109) |
 | [`v0.4.0`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.4.0) | 新模块「输入替换」：在 Codex 里照常打字，发给模型前按你的规则替换字面文字，输入框和会话历史仍显示原文。由本机只监听 127.0.0.1 的中转服务完成替换，可一键连接或断开；规则表默认为空，也可以从拓展安装规则包（已启用的规则包更新前需要你确认）。[#96](https://github.com/Jia-Ethan/keysmith-switch/pull/96)–[#100](https://github.com/Jia-Ethan/keysmith-switch/pull/100) |

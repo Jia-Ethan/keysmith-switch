@@ -1,1 +1,1 @@
-Keysmith Switch v0.5.1：修复 Grok Build 在配置备份丢失后无法停用的问题（#95）；「清理」不再删除 Grok 适配器自己的配置备份。
+Keysmith Switch v0.6.0：「输入替换」现在也支持 Grok Build，四个 Agent 全部可用；Grok 适配器更新到 v0.7.0。
