@@ -25,11 +25,18 @@ const INSTRUCTIONS_REPOINTED =
   /model_instructions_file ownership conflict: the current field is set to another path; expected it to still reference (\S+)/;
 const DRY_RUN = /dry-run found (\d+) confirmed blocker\(s\); no files were changed\.?/;
 
+// Windows ERROR_ACCESS_DENIED (code 5) surfaced by the adapter's ACL / file-handle operations.
+// ctypes.FormatError(5) returns the OS locale's text ("拒绝访问。", "Access is denied.", …),
+// so the raw error is always mixed-language. Match on the English labels instead.
+const PERM_DENIED =
+  /\[Errno 5\]|cannot open filesystem handle|cannot create private directory|cannot apply private ACL|cannot build private ACL/;
+
 /**
  * The adapter speaks English whatever the interface language is. Say the reasons people
  * actually hit in their own language; anything unknown passes through unchanged.
  */
 export function localizeReason(reason: string, t: TFunction): string {
+  if (PERM_DENIED.test(reason)) return t("plan.blockerPermissionDenied");
   const dry = DRY_RUN.exec(reason);
   if (dry) return t("plan.blockerDryRun", { count: Number(dry[1]) });
   if (!reason.startsWith(OWNERSHIP)) return reason;

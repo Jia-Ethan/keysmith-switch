@@ -179,6 +179,7 @@
     "blockerDryRun": "预检发现 {{count}} 个阻塞问题，没有改动任何文件。",
     "blockerInstructionsRepointed": "配置里的 model_instructions_file 现在指向了别的文件，预期仍是 {{ref}}。Keysmith 不会覆盖它。",
     "blockerOwnership": "部署记录与现有配置不一致：{{detail}}",
+    "blockerPermissionDenied": "权限不足：当前用户对 Agent 主目录没有完全控制权限（Windows ACL 限制）。请以管理员 PowerShell 授予完全控制权限后重试。",
     "hintCleanup": "点左下角的“清理”可以清掉这条过期的部署记录，你的 config.toml 会保留。但清理也会永久删除这个 Agent 的会话历史和登录，删除后无法恢复。想保留聊天记录的话，请先备份整个 .codex 文件夹，再决定要不要清理。",
     "hintReconcile": "可以先点左下角的“整理配置”，整理好之后再继续部署。",
     "reconciled": "配置已整理好，可以继续部署了。",
