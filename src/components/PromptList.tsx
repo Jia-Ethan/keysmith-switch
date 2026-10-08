@@ -39,6 +39,11 @@ export interface PromptListProps {
    * sheet opening over it (and the pointer leaving) does not make it jump back.
    */
   engagedId?: string | null;
+  /**
+   * A right-click on a card (Shift+F10 or the menu key on a focused one too): the page shows
+   * the card's actions at `point`. Omitted: right-click does nothing on the cards.
+   */
+  onCardMenu?: (item: PromptSummary, point: { x: number; y: number }) => void;
 }
 
 export function PromptList({
@@ -56,6 +61,7 @@ export function PromptList({
   deployDisabled = false,
   deployingId = null,
   engagedId = null,
+  onCardMenu,
 }: PromptListProps) {
   const { t } = useTranslation();
 
@@ -122,7 +128,7 @@ export function PromptList({
         {showLive ? (
           <Group title={t("prompts.active")} items={[]} selectedId={selectedId} onSelect={onSelect} activeGroup unrecordedLive onAdoptLive={onAdoptLive} adoptingLive={adoptingLive} deployDisabled={deployDisabled} />
         ) : null}
-        <Group title={t("prompts.allPrompts")} items={prompts} selectedId={selectedId} onSelect={onSelect} />
+        <Group title={t("prompts.allPrompts")} items={prompts} selectedId={selectedId} onSelect={onSelect} engagedId={engagedId} onCardMenu={onCardMenu} />
       </div>
     );
   }
@@ -144,6 +150,8 @@ export function PromptList({
           onAdoptLive={onAdoptLive}
           adoptingLive={adoptingLive}
           deployDisabled={deployDisabled}
+          engagedId={engagedId}
+          onCardMenu={onCardMenu}
         />
       ) : null}
       <Group
@@ -155,6 +163,7 @@ export function PromptList({
         deployDisabled={deployDisabled}
         deployingId={deployingId}
         engagedId={engagedId}
+        onCardMenu={onCardMenu}
       />
     </div>
   );
@@ -173,6 +182,7 @@ function Group({
   deployDisabled = false,
   deployingId = null,
   engagedId = null,
+  onCardMenu,
 }: {
   title: string;
   items: PromptSummary[];
@@ -186,6 +196,7 @@ function Group({
   deployDisabled?: boolean;
   deployingId?: string | null;
   engagedId?: string | null;
+  onCardMenu?: PromptListProps["onCardMenu"];
 }) {
   const { t, i18n } = useTranslation();
   return (
@@ -213,6 +224,14 @@ function Group({
                 style={{ animationDelay: `${Math.min(index, 8) * 35}ms` }}
                 data-engaged={engagedId === item.id || deployingId === item.id ? "" : undefined}
                 onPointerMove={trackPointer}
+                onContextMenu={
+                  onCardMenu
+                    ? (event) => {
+                        event.preventDefault();
+                        onCardMenu(item, { x: event.clientX, y: event.clientY });
+                      }
+                    : undefined
+                }
               >
                 <button
                   type="button"

@@ -4,9 +4,12 @@ import App from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import "./i18n";
 import "./index.css";
+import { installContextMenuGuard } from "./lib/contextMenu";
 import { applyPlatformAttributes } from "./lib/platform";
 
 applyPlatformAttributes();
+// Dev builds keep the native menu, for Inspect Element.
+if (!import.meta.env.DEV) installContextMenuGuard();
 
 // Design preview: `npm run dev`, then open /?mock=1. Dev builds only.
 if (import.meta.env.DEV && new URLSearchParams(window.location.search).has("mock")) {

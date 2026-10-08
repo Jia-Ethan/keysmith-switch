@@ -332,7 +332,7 @@ export function PromptViewPage({
                       if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
                       event.preventDefault();
                       const items = Array.from(
-                        menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [],
+                        menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not([disabled])') ?? [],
                       );
                       if (!items.length) return;
                       const current = items.indexOf(document.activeElement as HTMLElement);
@@ -375,6 +375,8 @@ export function PromptViewPage({
                     <MenuItem
                       testId="prompt-delete"
                       danger
+                      disabled={isActiveHere === true}
+                      note={isActiveHere === true ? t("prompts.deleteLiveBlocked") : undefined}
                       onSelect={() => {
                         setMenuOpen(false);
                         setDeleteOpen(true);
@@ -500,11 +502,16 @@ function MenuItem({
   children,
   onSelect,
   danger,
+  disabled,
+  note,
   testId,
 }: {
   children: React.ReactNode;
   onSelect: () => void;
   danger?: boolean;
+  /** Shown dimmed, with `note` saying why. */
+  disabled?: boolean;
+  note?: string;
   testId?: string;
 }) {
   return (
@@ -512,16 +519,20 @@ function MenuItem({
       type="button"
       role="menuitem"
       data-testid={testId}
+      disabled={disabled}
       onClick={onSelect}
       className={cx(
-        "flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors",
+        "flex w-full flex-col rounded-lg px-2.5 py-1.5 text-left text-[13px] transition-colors",
         "focus-visible:bg-muted focus-visible:outline-none",
-        danger
-          ? "text-destructive hover:bg-destructive/10"
-          : "text-foreground hover:bg-muted",
+        disabled
+          ? "cursor-not-allowed text-muted-foreground/70"
+          : danger
+            ? "text-destructive hover:bg-destructive/10"
+            : "text-foreground hover:bg-muted",
       )}
     >
-      {children}
+      <span className="flex w-full items-center gap-2">{children}</span>
+      {note ? <span className="pl-[22px] pt-0.5 text-[11.5px] leading-snug text-muted-foreground">{note}</span> : null}
     </button>
   );
 }

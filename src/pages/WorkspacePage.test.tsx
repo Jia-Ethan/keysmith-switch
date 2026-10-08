@@ -21,6 +21,10 @@ const planReconcile = vi.fn();
 const confirmReconcile = vi.fn();
 const planCleanup = vi.fn();
 const confirmCleanup = vi.fn();
+const getPrompt = vi.fn();
+const createPrompt = vi.fn();
+const copyPrompt = vi.fn();
+const deletePrompt = vi.fn();
 
 vi.mock("../components/MarkdownEditor", () => ({
   MarkdownEditor: ({ value, onChange, ariaLabel }: { value: string; onChange: (value: string) => void; ariaLabel?: string }) => (
@@ -47,6 +51,10 @@ vi.mock("../api", () => ({
   confirmReconcile: (...args: unknown[]) => confirmReconcile(...args),
   planCleanup: (...args: unknown[]) => planCleanup(...args),
   confirmCleanup: (...args: unknown[]) => confirmCleanup(...args),
+  getPrompt: (...args: unknown[]) => getPrompt(...args),
+  createPrompt: (...args: unknown[]) => createPrompt(...args),
+  copyPrompt: (...args: unknown[]) => copyPrompt(...args),
+  deletePrompt: (...args: unknown[]) => deletePrompt(...args),
 }));
 
 const envelope = {
@@ -684,5 +692,160 @@ describe("Workspace: prompt library", () => {
     await waitFor(() => expect(planActivate).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.getByTestId("quick-deploy-confirm")).toBeEnabled());
     expect(screen.queryByTestId("plan-failure")).not.toBeInTheDocument();
+  });
+});
+
+describe("Workspace: card menu", () => {
+  const toast = { toasts: [], dismiss: vi.fn(), info: vi.fn(), ok: vi.fn(), err: vi.fn() };
+
+  beforeEach(() => {
+    resetHarnessStatuses();
+    vi.clearAllMocks();
+    setup();
+  });
+
+  async function openMenu(id: string) {
+    fireEvent.contextMenu(await screen.findByTestId(`prompt-item-${id}`), { clientX: 30, clientY: 40 });
+    return screen.findByTestId("card-menu");
+  }
+
+  it("offers the card's actions on right-click, and keeps the card highlighted while open", async () => {
+    listPrompts.mockResolvedValue({ prompts: [prompt({ id: "b", title: "Spare" })] });
+    await renderPage();
+    const menu = await openMenu("b");
+    expect(menu).toHaveAccessibleName("Spare 的操作");
+    const labels = within(menu).getAllByRole("menuitem").map((item) => item.textContent);
+    expect(labels).toEqual(["打开", "编辑", "部署", "复制", "Claude Code", "Grok Build", "ZCode", "删除"]);
+    expect(within(menu).getByRole("group", { name: "复制到其他工具" })).toBeInTheDocument();
+    expect(screen.getByTestId("prompt-item-b").closest("li")).toHaveAttribute("data-engaged");
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByTestId("card-menu")).not.toBeInTheDocument());
+    expect(screen.getByTestId("prompt-item-b").closest("li")).not.toHaveAttribute("data-engaged");
+  });
+
+  it("opens and edits a prompt from the menu", async () => {
+    listPrompts.mockResolvedValue({ prompts: [prompt({ id: "b" })] });
+    const onNavigate = vi.fn();
+    await renderPage({ onNavigate });
+    await openMenu("b");
+    fireEvent.click(screen.getByTestId("card-menu-open"));
+    expect(onNavigate).toHaveBeenLastCalledWith({ kind: "prompt-view", tool: "codex", promptId: "b", scope: "user", projectDir: "" });
+    expect(screen.queryByTestId("card-menu")).not.toBeInTheDocument();
+    await openMenu("b");
+    fireEvent.click(screen.getByTestId("card-menu-edit"));
+    expect(onNavigate).toHaveBeenLastCalledWith({
+      kind: "prompt-edit",
+      tool: "codex",
+      promptId: "b",
+      creating: false,
+      scope: "user",
+      projectDir: "",
+    });
+  });
+
+  it("deploys from the menu through the same reviewed plan as the card button", async () => {
+    listPrompts.mockResolvedValue({ prompts: [prompt({ id: "b", title: "Spare" })] });
+    await renderPage();
+    await openMenu("b");
+    fireEvent.click(screen.getByTestId("card-menu-deploy"));
+    await waitFor(() => expect(planActivate).toHaveBeenCalledWith({ promptId: "b", scope: "user" }));
+    expect(await screen.findByRole("dialog", { name: "部署到 Codex" })).toHaveTextContent("Spare");
+    expect(activate).not.toHaveBeenCalled();
+  });
+
+  it("deletes only after the confirmation, then reloads the library", async () => {
+    listPrompts.mockResolvedValue({ prompts: [prompt({ id: "b", title: "Spare" })] });
+    deletePrompt.mockResolvedValue({ ok: true });
+    await renderPage({ toast });
+    await openMenu("b");
+    fireEvent.click(screen.getByTestId("card-menu-delete"));
+    const dialog = await screen.findByRole("dialog", { name: "删除" });
+    expect(dialog).toHaveTextContent("Spare");
+    expect(deletePrompt).not.toHaveBeenCalled();
+    // The card stays highlighted while its delete is being confirmed.
+    expect(screen.getByTestId("prompt-item-b").closest("li")).toHaveAttribute("data-engaged");
+    const loads = listPrompts.mock.calls.length;
+    fireEvent.click(screen.getByTestId("card-delete-confirm"));
+    await waitFor(() => expect(deletePrompt).toHaveBeenCalledWith("b"));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "删除" })).not.toBeInTheDocument());
+    expect(toast.ok).toHaveBeenCalledWith("已删除");
+    await waitFor(() => expect(listPrompts.mock.calls.length).toBeGreaterThan(loads));
+  });
+
+  it("keeps the confirmation open and says why when the delete fails", async () => {
+    listPrompts.mockResolvedValue({ prompts: [prompt({ id: "b", title: "Spare" })] });
+    deletePrompt.mockRejectedValue(new Error("disk is read-only"));
+    await renderPage({ toast });
+    await openMenu("b");
+    fireEvent.click(screen.getByTestId("card-menu-delete"));
+    fireEvent.click(await screen.findByTestId("card-delete-confirm"));
+    await waitFor(() => expect(toast.err).toHaveBeenCalledWith("disk is read-only"));
+    expect(screen.getByRole("dialog", { name: "删除" })).toBeInTheDocument();
+    expect(screen.getByTestId("card-delete-confirm")).toBeEnabled();
+  });
+
+  it("does not delete the live prompt, and offers turning it off instead of deploying", async () => {
+    getHarnessState.mockResolvedValue({ tool: "codex", deployed: true, error: null, promptId: "a", promptTitle: "Live one" });
+    listPrompts.mockResolvedValue({ prompts: [prompt({ id: "a", title: "Live one" })] });
+    await renderPage();
+    await waitFor(() => expect(screen.getByTestId("workspace-page")).toHaveAttribute("data-machine", "deployed"));
+    const menu = await openMenu("a");
+    const remove = within(menu).getByTestId("card-menu-delete");
+    expect(remove).toHaveAttribute("aria-disabled", "true");
+    expect(remove).toHaveTextContent("正在部署中，请先停用");
+    fireEvent.click(remove);
+    expect(screen.queryByRole("dialog", { name: "删除" })).not.toBeInTheDocument();
+    expect(deletePrompt).not.toHaveBeenCalled();
+    expect(within(menu).queryByTestId("card-menu-deploy")).not.toBeInTheDocument();
+    fireEvent.click(within(menu).getByTestId("card-menu-turn-off"));
+    await waitFor(() => expect(planDeactivate).toHaveBeenCalledWith({ tool: "codex", scope: "user" }));
+    expect(await screen.findByRole("dialog", { name: "停用 Codex 的提示词" })).toBeInTheDocument();
+  });
+
+  it("gives pack prompts only what the app may do with them: deploy and delete", async () => {
+    listPrompts.mockResolvedValue({ prompts: [prompt({ id: "x", title: "Pack prompt", locked: true })] });
+    deletePrompt.mockResolvedValue({ ok: true });
+    await renderPage({ toast });
+    const menu = await openMenu("x");
+    const labels = within(menu).getAllByRole("menuitem").map((item) => item.textContent);
+    expect(labels).toEqual(["部署", "删除"]);
+    fireEvent.click(within(menu).getByTestId("card-menu-delete"));
+    fireEvent.click(await screen.findByTestId("card-delete-confirm"));
+    await waitFor(() => expect(deletePrompt).toHaveBeenCalledWith("x"));
+  });
+
+  it("duplicates into this agent's library and copies to another agent", async () => {
+    listPrompts.mockResolvedValue({ prompts: [prompt({ id: "b", title: "Spare", tags: ["ops"] })] });
+    getPrompt.mockResolvedValue({ ...prompt({ id: "b", title: "Spare", tags: ["ops"] }), content: "Be brief." });
+    createPrompt.mockResolvedValue({ id: "b2" });
+    copyPrompt.mockResolvedValue({ id: "c1" });
+    await renderPage({ toast });
+    await openMenu("b");
+    fireEvent.click(screen.getByTestId("card-menu-duplicate"));
+    await waitFor(() =>
+      expect(createPrompt).toHaveBeenCalledWith({ tool: "codex", title: "Spare copy", content: "Be brief.", tags: ["ops"] }),
+    );
+    await waitFor(() => expect(toast.ok).toHaveBeenCalledWith("已创建"));
+    await openMenu("b");
+    fireEvent.click(screen.getByTestId("card-menu-copy-claude"));
+    await waitFor(() => expect(copyPrompt).toHaveBeenCalledWith("b", "claude"));
+    await waitFor(() => expect(toast.ok).toHaveBeenCalledWith("已复制到目标工具"));
+    // A copy into this same agent is the duplicate above, not a "copy to".
+    await openMenu("b");
+    expect(screen.queryByTestId("card-menu-copy-codex")).not.toBeInTheDocument();
+  });
+
+  it("dims what would change things while another action is under way", async () => {
+    listPrompts.mockResolvedValue({ prompts: [prompt({ id: "a", title: "Alpha" }), prompt({ id: "b", title: "Spare" })] });
+    // A deploy plan for "a" is still being prepared.
+    planActivate.mockReturnValue(new Promise(() => undefined));
+    await renderPage();
+    fireEvent.click(await screen.findByTestId("prompt-deploy-a"));
+    await waitFor(() => expect(planActivate).toHaveBeenCalled());
+    const menu = await openMenu("b");
+    for (const id of ["card-menu-deploy", "card-menu-duplicate", "card-menu-copy-claude", "card-menu-delete"]) {
+      expect(within(menu).getByTestId(id)).toHaveAttribute("aria-disabled", "true");
+    }
+    expect(within(menu).getByTestId("card-menu-open")).not.toHaveAttribute("aria-disabled");
   });
 });
