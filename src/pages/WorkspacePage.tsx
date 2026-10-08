@@ -5,6 +5,7 @@ import { AgentHero } from "../components/AgentHero";
 import type { AppPage } from "../components/AppShell";
 import { CleanupDialog } from "../components/CleanupDialog";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { ContextMenu, type MenuEntry } from "../components/ContextMenu";
 import { DeployCelebration } from "../components/DeployCelebration";
 import { Dropdown } from "../components/Dropdown";
 import { EmptyState } from "../components/EmptyState";
@@ -14,7 +15,17 @@ import { QuickDeployPanel } from "../components/QuickDeployPanel";
 import { ToolLogo } from "../components/ToolLogos";
 import { PinnedAnnouncements } from "../components/PinnedAnnouncements";
 import { ZCodeBanner } from "../components/ZCodeBanner";
-import { IconAlert, IconPlus, IconSearch } from "../components/icons";
+import {
+  IconAlert,
+  IconCopy,
+  IconEye,
+  IconPencil,
+  IconPlus,
+  IconPower,
+  IconRocket,
+  IconSearch,
+  IconTrash,
+} from "../components/icons";
 import { Button, Disclosure, Input, Mono, cx } from "../components/ui";
 import type { ToastApi } from "../hooks/useToasts";
 import { applyHarnessOutcome, getHarnessStatus, loadHarnessStatus, useHarnessStatus } from "../lib/harnessState";
@@ -35,6 +46,7 @@ import type {
   ToolId,
   ToolInfo,
 } from "../types";
+import { TOOL_IDS } from "../types";
 
 type PlanKind = "activate" | "deactivate" | "salvage" | "recover" | "reconcile";
 
@@ -119,6 +131,10 @@ export function WorkspacePage({
   const [pending, setPending] = useState<string | null>(null);
   const [celebration, setCelebration] = useState<{ kind: "deployed" | "removed"; subtitle: string } | null>(null);
   const [cleanupOpen, setCleanupOpen] = useState(false);
+  /** The card whose right-click menu is open, and where. */
+  const [cardMenu, setCardMenu] = useState<{ item: PromptSummary; x: number; y: number } | null>(null);
+  /** The prompt waiting for its delete to be confirmed. */
+  const [deleting, setDeleting] = useState<PromptSummary | null>(null);
   const promptSeq = useRef(0);
 
   const unavailable = isZcodeUnavailable(toolInfo) || !toolInfo.available;
@@ -557,6 +573,54 @@ export function WorkspacePage({
     onNavigate?.({ kind: "prompt-view", tool, promptId: id, scope: "user", projectDir: "" });
   };
 
+  const editPrompt = (id: string) => {
+    onNavigate?.({ kind: "prompt-edit", tool, promptId: id, creating: false, scope: "user", projectDir: "" });
+  };
+
+  /** A second copy in this agent's library, named like the one the prompt page makes. */
+  const duplicatePrompt = async (item: PromptSummary) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const detail = await api.getPrompt(item.id);
+      await api.createPrompt({ tool, title: `${detail.title} copy`, content: detail.content, tags: detail.tags });
+      toast?.ok(t("prompts.created"));
+      setLocalEpoch((value) => value + 1);
+    } catch (reason) {
+      fail(reason, t("errors.saveFailed"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const copyPromptTo = async (item: PromptSummary, target: ToolId) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await api.copyPrompt(item.id, target);
+      toast?.ok(t("prompts.copied"));
+    } catch (reason) {
+      fail(reason, t("errors.saveFailed"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removePrompt = async () => {
+    if (!deleting || busy) return;
+    setBusy(true);
+    try {
+      await api.deletePrompt(deleting.id);
+      toast?.ok(t("prompts.deleted"));
+      setDeleting(null);
+      setLocalEpoch((value) => value + 1);
+    } catch (reason) {
+      fail(reason, t("errors.saveFailed"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const filtered = Boolean(query.trim() || tag);
   const locked = busy || Boolean(plan);
   const toolName = t(`nav.${tool}`);
@@ -574,6 +638,76 @@ export function WorkspacePage({
     setPlan(null);
     setPlanFailure(null);
     setCleanupOpen(true);
+  };
+
+  /**
+   * What a right-click on a card offers. The live prompt cannot be deleted while the agent
+   * runs it — the list would then show it as a prompt missing from the library — so it gets
+   * "turn off" in place of "deploy" and a dimmed delete that says why. Pack prompts keep only
+   * what the backend allows for them: deploying, and deleting.
+   */
+  const cardMenuEntries = (item: PromptSummary): MenuEntry[] => {
+    const live = Boolean(activeIds?.includes(item.id));
+    const deleteEntry: MenuEntry = {
+      kind: "item",
+      key: "delete",
+      label: t("prompts.delete"),
+      icon: <IconTrash size={13} />,
+      danger: true,
+      disabled: locked || live,
+      note: live ? t("prompts.deleteLiveBlocked") : undefined,
+      testId: "card-menu-delete",
+      run: () => setDeleting(item),
+    };
+    const switchEntry: MenuEntry = live
+      ? {
+          kind: "item",
+          key: "turn-off",
+          label: t("quickDeploy.remove"),
+          icon: <IconPower size={13} />,
+          disabled: locked,
+          testId: "card-menu-turn-off",
+          run: () => void openRemovePlan(),
+        }
+      : {
+          kind: "item",
+          key: "deploy",
+          label: t("prompts.deploy"),
+          icon: <IconRocket size={13} />,
+          disabled: locked,
+          testId: "card-menu-deploy",
+          run: () => void deployFromLibrary(item.id),
+        };
+    if (item.locked) return [switchEntry, { kind: "divider", key: "d1" }, deleteEntry];
+    return [
+      { kind: "item", key: "open", label: t("prompts.open"), icon: <IconEye size={13} />, testId: "card-menu-open", run: () => selectPrompt(item.id) },
+      { kind: "item", key: "edit", label: t("prompts.edit"), icon: <IconPencil size={13} />, testId: "card-menu-edit", run: () => editPrompt(item.id) },
+      switchEntry,
+      { kind: "divider", key: "d1" },
+      {
+        kind: "item",
+        key: "duplicate",
+        label: t("prompts.copy"),
+        icon: <IconCopy size={13} />,
+        disabled: locked,
+        testId: "card-menu-duplicate",
+        run: () => void duplicatePrompt(item),
+      },
+      {
+        kind: "group",
+        key: "copy-to",
+        label: t("prompts.copyTo"),
+        items: TOOL_IDS.filter((target) => target !== tool).map((target) => ({
+          key: target,
+          label: t(`nav.${target}`),
+          disabled: locked,
+          testId: `card-menu-copy-${target}`,
+          run: () => void copyPromptTo(item, target),
+        })),
+      },
+      { kind: "divider", key: "d2" },
+      deleteEntry,
+    ];
   };
 
   return (
@@ -711,7 +845,8 @@ export function WorkspacePage({
             onDeploy={(id) => void deployFromLibrary(id)}
             deployDisabled={locked}
             deployingId={pending?.startsWith("deploy:") ? pending.slice("deploy:".length) : null}
-            engagedId={plan?.kind === "activate" ? plan.promptId : null}
+            engagedId={cardMenu?.item.id ?? deleting?.id ?? (plan?.kind === "activate" ? plan.promptId : null)}
+            onCardMenu={(item, point) => setCardMenu({ item, ...point })}
             emptyAction={
               <Button variant="primary" onClick={openComposer} data-testid="prompt-empty-compose">
                 <IconPlus size={15} />
@@ -875,6 +1010,38 @@ export function WorkspacePage({
           onDone={() => setCelebration(null)}
         />
       ) : null}
+
+      {cardMenu ? (
+        <ContextMenu
+          // Opened again elsewhere, it is a new menu: it appears afresh at the new spot.
+          key={`${cardMenu.item.id}@${cardMenu.x},${cardMenu.y}`}
+          x={cardMenu.x}
+          y={cardMenu.y}
+          label={t("prompts.menuLabel", { title: cardMenu.item.title })}
+          entries={cardMenuEntries(cardMenu.item)}
+          testId="card-menu"
+          onClose={() => setCardMenu(null)}
+        />
+      ) : null}
+
+      <ConfirmDialog
+        open={Boolean(deleting)}
+        title={t("prompts.delete")}
+        description={t("prompts.deleteConfirm")}
+        confirmLabel={busy ? t("common.busy") : t("prompts.delete")}
+        cancelLabel={t("common.cancel")}
+        closeLabel={t("common.close")}
+        danger
+        busy={busy}
+        confirmDisabled={busy}
+        confirmTestId="card-delete-confirm"
+        onClose={() => {
+          if (!busy) setDeleting(null);
+        }}
+        onConfirm={() => void removePrompt()}
+      >
+        <p className="text-sm font-medium text-foreground">{deleting?.title}</p>
+      </ConfirmDialog>
     </section>
   );
 }

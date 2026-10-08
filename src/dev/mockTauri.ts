@@ -197,6 +197,10 @@ let grokDrift = new URLSearchParams(window.location.search).get("grok") === "dri
 
 const delay = <T,>(value: T, ms = 260) => new Promise<T>((resolve) => setTimeout(() => resolve(value), ms));
 
+// Ids stay unique after a delete; the library length cannot be reused for that.
+let lastId = SEED.length;
+const nextId = () => `p${++lastId}`;
+
 function summary(p: PromptDetail) {
   const { content: _content, ...rest } = p;
   return rest;
@@ -302,7 +306,7 @@ async function handle(cmd: string, args: Record<string, any> = {}): Promise<unkn
     case "adopt_live_prompt": {
       const live = store.live[args.tool as ToolId];
       if (!live || live.id) throw new Error("the live prompt cannot be read back");
-      const created: PromptDetail = { id: `p${store.prompts.length + 1}`, tool: args.tool, title: args.title, content: live.body, tags: ["imported"], active: false, lastUsedAt: null, updatedAt: now(), createdAt: now(), excerpt: live.body.slice(0, 60) };
+      const created: PromptDetail = { id: nextId(), tool: args.tool, title: args.title, content: live.body, tags: ["imported"], active: false, lastUsedAt: null, updatedAt: now(), createdAt: now(), excerpt: live.body.slice(0, 60) };
       store.prompts.push(created);
       live.id = created.id;
       live.title = created.title;
@@ -328,9 +332,24 @@ async function handle(cmd: string, args: Record<string, any> = {}): Promise<unkn
     case "get_prompt":
       return store.prompts.find((p) => p.id === args.id);
     case "create_pasted_prompt": {
-      const created: PromptDetail = { id: `p${store.prompts.length + 1}`, tool: args.tool, title: args.title, content: args.content, tags: [], active: false, lastUsedAt: null, updatedAt: now(), createdAt: now(), excerpt: String(args.content).slice(0, 60) };
+      const created: PromptDetail = { id: nextId(), tool: args.tool, title: args.title, content: args.content, tags: [], active: false, lastUsedAt: null, updatedAt: now(), createdAt: now(), excerpt: String(args.content).slice(0, 60) };
       store.prompts.push(created);
       return created;
+    }
+    case "create_prompt": {
+      const created: PromptDetail = { id: nextId(), tool: args.tool, title: args.title, content: args.content, tags: args.tags ?? [], active: false, lastUsedAt: null, updatedAt: now(), createdAt: now(), excerpt: String(args.content).slice(0, 60) };
+      store.prompts.push(created);
+      return delay(created);
+    }
+    case "copy_prompt": {
+      const source = store.prompts.find((p) => p.id === args.id)!;
+      const created: PromptDetail = { ...source, id: nextId(), tool: args.targetTool, lastUsedAt: null, updatedAt: now(), createdAt: now() };
+      store.prompts.push(created);
+      return delay(created);
+    }
+    case "delete_prompt": {
+      store.prompts = store.prompts.filter((p) => p.id !== args.id);
+      return delay({ ok: true });
     }
     case "plan_activate": {
       const prompt = store.prompts.find((p) => p.id === args.promptId)!;

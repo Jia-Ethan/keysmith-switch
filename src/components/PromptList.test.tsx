@@ -179,3 +179,58 @@ describe("PromptList extension-pack prompts", () => {
     expect(onSelect).toHaveBeenCalledWith("m");
   });
 });
+
+describe("PromptList card menu", () => {
+  it("asks the page for its menu at the pointer, in place of the system one", () => {
+    const onCardMenu = vi.fn();
+    render(
+      <PromptList
+        prompts={[prompt({ id: "a", title: "Alpha" }), prompt({ id: "b", title: "Beta" })]}
+        selectedId={null}
+        activeIds={["a"]}
+        onSelect={() => undefined}
+        onDeploy={() => undefined}
+        onCardMenu={onCardMenu}
+      />,
+    );
+    const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 40, clientY: 50 });
+    screen.getByTestId("prompt-item-b").dispatchEvent(event);
+    // The system menu (Reload, Share…) does not show over a card.
+    expect(event.defaultPrevented).toBe(true);
+    expect(onCardMenu).toHaveBeenLastCalledWith(expect.objectContaining({ id: "b" }), { x: 40, y: 50 });
+    // The live card, and the deploy button on a card, open it too.
+    fireEvent.contextMenu(screen.getByTestId("prompt-item-a"), { clientX: 5, clientY: 6 });
+    expect(onCardMenu).toHaveBeenLastCalledWith(expect.objectContaining({ id: "a" }), { x: 5, y: 6 });
+    fireEvent.contextMenu(screen.getByTestId("prompt-deploy-b"), { clientX: 7, clientY: 8 });
+    expect(onCardMenu).toHaveBeenLastCalledWith(expect.objectContaining({ id: "b" }), { x: 7, y: 8 });
+  });
+
+  it("opens it for pack prompts too, which do not open on click", () => {
+    const onCardMenu = vi.fn();
+    render(
+      <PromptList
+        prompts={[prompt({ id: "x", locked: true })]}
+        selectedId={null}
+        onSelect={() => undefined}
+        onCardMenu={onCardMenu}
+      />,
+    );
+    fireEvent.contextMenu(screen.getByTestId("prompt-item-x"), { clientX: 1, clientY: 1 });
+    expect(onCardMenu).toHaveBeenCalledWith(expect.objectContaining({ id: "x" }), { x: 1, y: 1 });
+  });
+
+  it("opens it in the single list shown when activation state is unknown", () => {
+    const onCardMenu = vi.fn();
+    render(<PromptList prompts={[prompt({ id: "a" })]} selectedId={null} activeIds={null} onSelect={() => undefined} onCardMenu={onCardMenu} engagedId="a" />);
+    fireEvent.contextMenu(screen.getByTestId("prompt-item-a"), { clientX: 2, clientY: 3 });
+    expect(onCardMenu).toHaveBeenCalledWith(expect.objectContaining({ id: "a" }), { x: 2, y: 3 });
+    expect(screen.getByTestId("prompt-item-a").closest("li")).toHaveAttribute("data-engaged");
+  });
+
+  it("leaves right-click alone when the page offers no menu", () => {
+    render(<PromptList prompts={[prompt({ id: "a" })]} selectedId={null} activeIds={[]} onSelect={() => undefined} />);
+    const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true });
+    screen.getByTestId("prompt-item-a").dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+  });
+});

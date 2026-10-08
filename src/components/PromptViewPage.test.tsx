@@ -323,3 +323,47 @@ describe("PromptViewPage", () => {
     expect(screen.getByText("known diff")).toBeInTheDocument();
   });
 });
+
+describe("PromptViewPage delete of the live prompt", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getPrompt.mockResolvedValue(mockDetail);
+    promptHistory.mockResolvedValue({ versions: [] });
+  });
+
+  const renderPage = (isActiveHere: boolean | null) =>
+    render(
+      <PromptViewPage
+        promptId="prompt-1"
+        tool="claude"
+        isActiveHere={isActiveHere}
+        disabled={false}
+        busy={false}
+        toast={mockToast}
+        onClose={vi.fn()}
+        onEdit={vi.fn()}
+        onActivate={vi.fn()}
+        onDeactivate={vi.fn()}
+        onDeleted={vi.fn()}
+      />,
+    );
+
+  it("asks for the prompt to be turned off before it can be deleted", async () => {
+    renderPage(true);
+    fireEvent.click(await screen.findByTestId("prompt-menu"));
+    const remove = screen.getByTestId("prompt-delete");
+    expect(remove).toBeDisabled();
+    expect(remove).toHaveTextContent("正在部署中，请先停用");
+    fireEvent.click(remove);
+    expect(screen.queryByRole("dialog", { name: "删除" })).not.toBeInTheDocument();
+    expect(deletePrompt).not.toHaveBeenCalled();
+  });
+
+  it("still deletes a prompt that is not deployed, or whose state is unknown", async () => {
+    renderPage(null);
+    fireEvent.click(await screen.findByTestId("prompt-menu"));
+    expect(screen.getByTestId("prompt-delete")).toBeEnabled();
+    fireEvent.click(screen.getByTestId("prompt-delete"));
+    expect(screen.getByRole("dialog", { name: "删除" })).toBeInTheDocument();
+  });
+});
