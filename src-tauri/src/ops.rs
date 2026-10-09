@@ -355,6 +355,10 @@ pub async fn plan_deactivate(
     )
     .await?;
     let salvage = input.salvage_config && input.tool == ToolKind::Grok;
+    // Grok keeps nothing of a deployment once its manifest and rule are gone (a cleanup of a
+    // drifted deployment leaves it so), and its uninstall refuses without them. Only Switch's
+    // own record still says active: turning off then just puts that record right.
+    let record_only = input.tool == ToolKind::Grok && nothing_deployed(&status);
     // A drifted Grok deployment whose only problem is a lost config backup can still be
     // removed when the person asks for it; the adapter checks that and refuses otherwise.
     let drifted = !salvage && (status.status == ToolStatus::Drift || status.recovery_required);
@@ -389,6 +393,12 @@ pub async fn plan_deactivate(
             .push("unmanaged edits detected; deactivate refused, recover instead".into());
         blocked.error = Some("drift; recovery required".into());
         blocked
+    } else if record_only {
+        let mut nothing = status;
+        nothing.command = OperationKind::PlanDeactivate.as_str().to_string();
+        nothing.preview = true;
+        nothing.ok = true;
+        nothing
     } else {
         run_adapter_with(
             input.tool,
@@ -414,6 +424,7 @@ pub async fn plan_deactivate(
         "name": name,
         "drift": drifted,
         "salvageConfig": salvage,
+        "recordOnly": record_only,
     });
     let operation = store_preview(
         store,
@@ -450,6 +461,7 @@ pub async fn confirm_deactivate(
             "deactivate refused because unmanaged edits were detected",
         ));
     }
+    let record_only = request.get("recordOnly").and_then(|value| value.as_bool()) == Some(true);
     let mut preview_token = None;
     if let Some(plan_env) = plan.envelope_json.as_deref() {
         if let Ok(preview) = serde_json::from_str::<Envelope>(plan_env) {
@@ -465,7 +477,7 @@ pub async fn confirm_deactivate(
                         .unwrap_or_else(|| "preview reported blockers".into()),
                 ));
             }
-            if plan.tool == ToolKind::Grok {
+            if plan.tool == ToolKind::Grok && !record_only {
                 preview_token = preview.confirmation_token.clone();
                 if preview_token.is_none() {
                     return Err(Error::command_failed(
@@ -481,21 +493,50 @@ pub async fn confirm_deactivate(
         .get("name")
         .and_then(|value| value.as_str())
         .map(str::to_string);
-    let envelope = run_adapter_with(
-        plan.tool,
-        AdapterCommand::Deactivate {
-            scope,
-            project_dir: project_dir.clone(),
-            name,
-            expected_preview_token: preview_token,
-            salvage_config: request
-                .get("salvageConfig")
-                .and_then(|value| value.as_bool())
-                .unwrap_or(false),
-        },
-        opts,
-    )
-    .await?;
+    let envelope = if record_only {
+        // Read again, under the lock: only when there is still nothing to remove is the
+        // record all that changes.
+        let mut now = run_adapter_with(
+            plan.tool,
+            AdapterCommand::Status {
+                scope,
+                project_dir: project_dir.clone(),
+                name,
+            },
+            opts,
+        )
+        .await?;
+        now.command = OperationKind::Deactivate.as_str().to_string();
+        now.preview = false;
+        if !nothing_deployed(&now) {
+            store.update_operation(
+                operation_id,
+                OperationStatus::Cancelled,
+                None,
+                Some("deployment changed since the preview"),
+            )?;
+            return Err(Error::user_cancel(
+                "plan already used: things changed since the preview",
+            ));
+        }
+        now
+    } else {
+        run_adapter_with(
+            plan.tool,
+            AdapterCommand::Deactivate {
+                scope,
+                project_dir: project_dir.clone(),
+                name,
+                expected_preview_token: preview_token,
+                salvage_config: request
+                    .get("salvageConfig")
+                    .and_then(|value| value.as_bool())
+                    .unwrap_or(false),
+            },
+            opts,
+        )
+        .await?
+    };
     let execute_id = persist_execute(store, &plan, OperationKind::Deactivate, &envelope, request)?;
     if envelope.ok {
         if let Some(mut existing) = store.find_activation(
@@ -769,6 +810,32 @@ pub async fn tool_status(
 
 pub async fn doctor_tool(tool: ToolKind, opts: &AdapterOptions) -> Result<Envelope> {
     run_adapter_with(tool, AdapterCommand::Doctor, opts).await
+}
+
+/// The adapter read the agent cleanly and found no deployment of its own there.
+fn nothing_deployed(status: &Envelope) -> bool {
+    status.ok && status.status == ToolStatus::NotInstalled && !status.recovery_required
+}
+
+/// Mark the user-scope deployment record inactive when the agent has none left.
+pub(crate) async fn forget_removed_deployment(
+    store: &Store,
+    tool: ToolKind,
+    opts: &AdapterOptions,
+) -> Result<()> {
+    let status = tool_status(store, tool, Scope::User, None, opts).await?;
+    if !nothing_deployed(&status) {
+        return Ok(());
+    }
+    let _lock = HomeLock::acquire(store.paths())?;
+    if let Some(mut existing) = store.find_activation(tool, Scope::User, None)? {
+        if existing.status == ToolStatus::Active {
+            existing.status = ToolStatus::Inactive;
+            existing.updated_at = now_rfc3339();
+            store.upsert_activation(&existing)?;
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn require_preview(
