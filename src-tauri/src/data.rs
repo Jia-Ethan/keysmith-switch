@@ -308,29 +308,36 @@ fn import_markdown_content(
         return Ok(false);
     }
     let content_hash = sha256_hex(content);
-    let same_content = store
-        .list_prompts(tool, None, None, PromptSort::Updated)?
-        .into_iter()
-        .any(|prompt| prompt.sha256 == content_hash);
-    let same_source = match source_tag {
-        Some(tag) => store.has_prompt_tag(tool, tag)?,
-        None => false,
+    let known = || -> Result<bool> {
+        let same_content = store
+            .list_prompts(tool, None, None, PromptSort::Updated)?
+            .into_iter()
+            .any(|prompt| prompt.sha256 == content_hash);
+        let same_source = match source_tag {
+            Some(tag) => store.has_prompt_tag(tool, tag)?,
+            None => false,
+        };
+        Ok(same_content || same_source)
     };
-    if same_content || same_source {
+    // Already in the library, as it is on every Settings visit after the first: no lock needed.
+    if known()? {
+        return Ok(false);
+    }
+    // Two imports can run at once (Settings opened twice). The second look and the insert share
+    // the home lock, so they cannot both find nothing and add the same prompt twice.
+    let _lock = HomeLock::acquire(store.paths())?;
+    if known()? {
         return Ok(false);
     }
     let title = title_from_markdown(content, path);
-    ops::create_prompt(
-        store,
-        CreatePromptInput {
-            tool,
-            title,
-            content: content.to_string(),
-            tags: source_tag
-                .map(|tag| vec!["official".into(), "imported".into(), tag.to_string()])
-                .unwrap_or_else(|| vec!["imported".into()]),
-        },
-    )?;
+    if title.trim().is_empty() {
+        return Err(Error::invalid("title is required"));
+    }
+    let tags: Vec<String> = source_tag
+        .map(|tag| vec!["official".into(), "imported".into(), tag.to_string()])
+        .unwrap_or_else(|| vec!["imported".into()]);
+    let id = uuid::Uuid::new_v4().to_string();
+    store.insert_prompt(&id, tool, title.trim(), content, &tags, false)?;
     Ok(true)
 }
 

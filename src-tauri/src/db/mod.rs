@@ -722,21 +722,14 @@ impl Store {
     }
 
     pub fn get_settings(&self) -> Result<Settings> {
-        let conn = self.conn()?;
-        let mut settings = Settings::default();
-        let mut stmt = conn.prepare("SELECT key, value FROM settings")?;
-        let rows = stmt.query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-        })?;
-        for row in rows {
-            let (key, value) = row?;
-            apply_setting(&mut settings, &key, &value);
-        }
-        Ok(settings)
+        read_settings(&*self.conn()?)
     }
 
+    /// Read, patch and write under one hold of the connection: two changes at once (the Settings
+    /// page and the Input rewrite page) both land, and neither writes back what the other replaced.
     pub fn update_settings(&self, patch: SettingsPatch) -> Result<Settings> {
-        let mut settings = self.get_settings()?;
+        let conn = self.conn()?;
+        let mut settings = read_settings(&conn)?;
         if let Some(language) = patch.language {
             settings.language = language;
         }
@@ -782,7 +775,6 @@ impl Store {
         if let Some(value) = patch.rewrite_zcode_enabled {
             settings.rewrite_zcode_enabled = value;
         }
-        let conn = self.conn()?;
         write_settings(&conn, &settings)?;
         Ok(settings)
     }
@@ -1083,6 +1075,19 @@ fn seed_settings(conn: &Connection) -> Result<()> {
         write_settings(conn, &Settings::default())?;
     }
     Ok(())
+}
+
+fn read_settings(conn: &Connection) -> Result<Settings> {
+    let mut settings = Settings::default();
+    let mut stmt = conn.prepare("SELECT key, value FROM settings")?;
+    let rows = stmt.query_map([], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+    for row in rows {
+        let (key, value) = row?;
+        apply_setting(&mut settings, &key, &value);
+    }
+    Ok(settings)
 }
 
 fn write_settings(conn: &Connection, settings: &Settings) -> Result<()> {

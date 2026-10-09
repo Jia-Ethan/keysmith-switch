@@ -311,3 +311,31 @@ fn sidecar_dir_prefers_frozen_binary() {
     );
     assert!(cli.cli_path().contains("keysmith-claude"));
 }
+
+/// Settings now builds its About card off the interface's thread, so two imports of the
+/// official examples can run at once (Settings opened twice). Each example is still added once.
+#[test]
+fn official_examples_imported_at_once_are_added_once() {
+    let (_tmp, store) = store();
+    let examples = fs::read_dir(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../third_party/keysmith/claude/examples"),
+    )
+    .unwrap()
+    .flatten()
+    .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "md"))
+    .count();
+    let imported: usize = std::thread::scope(|scope| {
+        let workers: Vec<_> = (0..8)
+            .map(|_| scope.spawn(|| import_official_examples(&store, ToolKind::Claude).unwrap()))
+            .collect();
+        workers
+            .into_iter()
+            .map(|worker| worker.join().unwrap())
+            .sum()
+    });
+    assert_eq!(imported, examples);
+    let listed = store
+        .list_prompts(ToolKind::Claude, None, None, PromptSort::Title)
+        .unwrap();
+    assert_eq!(listed.len(), examples, "{listed:?}");
+}
