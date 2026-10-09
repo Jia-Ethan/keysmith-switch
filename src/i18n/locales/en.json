@@ -626,7 +626,8 @@
       "unsupported": "Not supported yet",
       "unrouted": "{{count}} new {{what}} don't go through the relay yet; reconnect",
       "unroutedProvider": "providers",
-      "unroutedModel": "models"
+      "unroutedModel": "models",
+      "clashing": "A custom model uses a connected model as its upstream, so the sign-in token would go to its address; reconnect"
     },
     "action": {
       "connect": "Connect…",
@@ -641,6 +642,7 @@
       "upstream": "Sends to {{host}} (restored when you disconnect)",
       "upstreams": "Sends to: {{hosts}}",
       "oauth": "Your sign-in token passes through the local relay and is never stored or logged.",
+      "leftOut": "Not through the relay: {{models}} (your custom models use them as their upstream, so input rewrite doesn't apply to them)",
       "providerField": "baseUrl of each personal provider",
       "grokField": "base_url of each model"
     },
@@ -683,7 +685,8 @@
       "grok": {
         "no-config": "Grok's folder was not found. Run Grok once first.",
         "no-catalog": "Grok hasn't fetched its model list yet. Run Grok once first.",
-        "bad-region": "The Keysmith region in config.toml is incomplete. Fix it first."
+        "bad-region": "The Keysmith region in config.toml is incomplete. Fix it first.",
+        "no-models": "Every model already has a setup of your own or is the upstream of a custom model, so none can be connected."
       }
     },
     "rules": {

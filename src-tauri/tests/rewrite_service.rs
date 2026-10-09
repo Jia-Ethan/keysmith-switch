@@ -207,7 +207,10 @@ fn connect_send_disconnect() {
         let view = rewrite::view_with(&store, Some(&home)).unwrap();
         assert_eq!(
             view.grok.link,
-            keysmith_switch_lib::rewrite::grok::GrokLinkState::Linked { unrouted: 0 }
+            keysmith_switch_lib::rewrite::grok::GrokLinkState::Linked {
+                unrouted: 0,
+                clashing: 0
+            }
         );
         let grok_text = std::fs::read_to_string(grok.join("config.toml")).unwrap();
         let region = grok_text.split("base_url = \"").nth(1).unwrap();

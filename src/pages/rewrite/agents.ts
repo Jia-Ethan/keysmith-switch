@@ -30,6 +30,10 @@ export interface AgentRow {
   hosts: string[];
   oauthNote: boolean;
   unrouted: number;
+  /** Grok: routed models a custom model now uses as its upstream, so the sign-in token would go to it. */
+  clashing: number;
+  /** Grok: catalog models kept off the relay for that reason. */
+  leftOut: string[];
 }
 
 function status(view: RewriteView, enabled: boolean, linked: boolean, bypassed: boolean, running: boolean): AgentStatus {
@@ -62,6 +66,8 @@ export function agentRows(view: RewriteView): AgentRow[] {
       hosts: codex.provider ? [hostOf(codex.provider.baseUrl)].filter(Boolean) as string[] : [],
       oauthNote: false,
       unrouted: 0,
+      clashing: 0,
+      leftOut: [],
     },
     claude: {
       tool: "claude",
@@ -76,6 +82,8 @@ export function agentRows(view: RewriteView): AgentRow[] {
       hosts: claude.upstreamHost ? [claude.upstreamHost] : [],
       oauthNote: true,
       unrouted: 0,
+      clashing: 0,
+      leftOut: [],
     },
     zcode: {
       tool: "zcode",
@@ -90,6 +98,8 @@ export function agentRows(view: RewriteView): AgentRow[] {
       hosts: [...new Set(zcode.providers.map((provider) => provider.host).filter((host): host is string => !!host))],
       oauthNote: false,
       unrouted: zcode.link.state === "linked" ? zcode.link.unrouted : 0,
+      clashing: 0,
+      leftOut: [],
     },
     grok: {
       tool: "grok",
@@ -104,6 +114,8 @@ export function agentRows(view: RewriteView): AgentRow[] {
       hosts: grok.hosts,
       oauthNote: true,
       unrouted: grok.link.state === "linked" ? grok.link.unrouted : 0,
+      clashing: grok.link.state === "linked" ? grok.link.clashing : 0,
+      leftOut: grok.leftOut,
     },
   };
   return REWRITE_AGENTS.map((tool) => rows[tool]);

@@ -626,12 +626,17 @@ export interface ZcodeRewriteView {
 }
 
 export interface GrokRewriteView {
-  /** `unrouted`: catalog models added since connecting that do not go through the relay. */
-  link: { state: "linked"; unrouted: number } | { state: "bypassed" } | { state: "unlinked" };
+  /**
+   * `unrouted`: catalog models added since connecting that do not go through the relay.
+   * `clashing`: routed models that a custom model has since taken as its upstream.
+   */
+  link: { state: "linked"; unrouted: number; clashing: number } | { state: "bypassed" } | { state: "unlinked" };
   service: { installed: boolean; running: boolean };
   /** Hosts the catalog models really talk to. */
   hosts: string[];
-  /** "no-config", "no-catalog" (run Grok once) or "bad-region". */
+  /** Catalog models kept off the relay because a custom model of the person's uses them as its upstream. */
+  leftOut: string[];
+  /** "no-config", "no-catalog" (run Grok once), "bad-region" or "no-models". */
   unsupported: string | null;
   configPath: string | null;
 }

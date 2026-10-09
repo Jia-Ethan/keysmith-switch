@@ -88,6 +88,9 @@ pub struct GrokView {
     pub service: service::ServiceStatus,
     /// Hosts the catalog models really talk to.
     pub hosts: Vec<String>,
+    /// Catalog models kept out of the relay because a custom model of the person's names them
+    /// as its upstream.
+    pub left_out: Vec<String>,
     pub unsupported: Option<String>,
     pub config_path: Option<String>,
 }
@@ -515,6 +518,7 @@ fn grok_view(paths: &AppPaths, home: Option<&Path>) -> GrokView {
             link: grok::GrokLinkState::Unlinked,
             service: service::status(paths),
             hosts: Vec::new(),
+            left_out: Vec::new(),
             unsupported: Some("no-config".into()),
             config_path: None,
         };
@@ -536,6 +540,7 @@ fn grok_view(paths: &AppPaths, home: Option<&Path>) -> GrokView {
         link,
         service: service::status(paths),
         hosts,
+        left_out: grok::left_out(&dir),
         unsupported,
         config_path: Some(dir.join("config.toml").display().to_string()),
     }

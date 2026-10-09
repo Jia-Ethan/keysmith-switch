@@ -147,7 +147,7 @@ const rewrite = {
   link: (rewriteMode === "states" ? { state: "linked", provider: "custom" } : { state: "unlinked" }) as any,
   claudeLink: (rewriteMode === "states" ? { state: "bypassed" } : { state: "unlinked" }) as any,
   zcodeLink: (rewriteMode === "states" ? { state: "linked", unrouted: 1 } : { state: "unlinked" }) as any,
-  grokLink: (rewriteMode === "states" ? { state: "linked", unrouted: 0 } : { state: "unlinked" }) as any,
+  grokLink: (rewriteMode === "states" ? { state: "linked", unrouted: 0, clashing: 0 } : { state: "unlinked" }) as any,
   running: rewriteMode === "states",
 };
 
@@ -170,6 +170,7 @@ function rewriteView() {
       link: rewrite.grokLink,
       service: { installed: rewrite.running, running: rewrite.running },
       hosts: ["cli-chat-proxy.grok.com"],
+      leftOut: [],
       unsupported: null,
       configPath: "~/.grok/config.toml",
     },
@@ -267,7 +268,7 @@ async function handle(cmd: string, args: Record<string, any> = {}): Promise<unkn
       rewrite.zcodeLink = { state: "unlinked" };
       return delay(rewriteView(), 500);
     case "rewrite_connect_grok":
-      rewrite.grokLink = { state: "linked", unrouted: 0 };
+      rewrite.grokLink = { state: "linked", unrouted: 0, clashing: 0 };
       rewrite.running = true;
       return delay(rewriteView(), 700);
     case "rewrite_disconnect_grok":

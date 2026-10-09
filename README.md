@@ -232,6 +232,7 @@ flowchart LR
 - **规则包。** 拓展仓库也可以发布规则包，用 `tools` 声明默认适用的 Agent。安装前会先列出全部规则；已启用的规则包有更新时，需要你确认后才会切换。
 - **目前的限制。**
   - Grok Build 需要先运行过一次，让它拉取过模型列表，才能连接；以后新增的模型要重新连接才会经过中转。
+  - Grok Build 里如果有你自己配置的模型，把某个 Grok 自带的模型当作上游（`[model.xxx]` 里写了 `model = "grok-4.7"`），连接时会把那个自带模型留在中转之外，输入替换对它不生效，页面的详情里会列出。原因是 Grok 按上游模型名去找同名的表；找到一张只有 `base_url`、没有 key 的表，就会把登录令牌而不是你配置的 `api_key` 发给你的自定义地址。
   - Claude Code 不支持 Bedrock 和 Vertex。
   - ZCode 不支持账号登录的 Coding Plan。
   - Codex 需要使用自定义 provider（`wire_api = "responses"`）。
