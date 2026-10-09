@@ -24,6 +24,8 @@ const INSTRUCTIONS_MISSING =
 const INSTRUCTIONS_REPOINTED =
   /model_instructions_file ownership conflict: the current field is set to another path; expected it to still reference (\S+)/;
 const DRY_RUN = /dry-run found (\d+) confirmed blocker\(s\); no files were changed\.?/;
+/** Grok's adapter finds no readable deployment record (its manifest): gone or damaged. */
+const NO_MANIFEST = "no valid deployment manifest";
 
 // Windows ERROR_ACCESS_DENIED (code 5) surfaced by the adapter's ACL / file-handle operations.
 // ctypes.FormatError(5) returns the OS locale's text ("拒绝访问。", "Access is denied.", …),
@@ -37,6 +39,7 @@ const PERM_DENIED =
  */
 export function localizeReason(reason: string, t: TFunction): string {
   if (PERM_DENIED.test(reason)) return t("plan.blockerPermissionDenied");
+  if (reason === NO_MANIFEST) return t("plan.blockerNoManifest");
   const dry = DRY_RUN.exec(reason);
   if (dry) return t("plan.blockerDryRun", { count: Number(dry[1]) });
   if (!reason.startsWith(OWNERSHIP)) return reason;

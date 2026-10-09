@@ -333,3 +333,94 @@ async fn real_grok_drift_is_repaired_by_reconcile_then_a_deploy_goes_through() {
         .unwrap();
     assert!(deployed.envelope.ok, "{:?}", deployed.envelope);
 }
+
+/// The real Grok adapter, asked to turn off a deployment it has no record of (its manifest is
+/// gone, as after a cleanup), refuses before it can plan. The refusal must carry its reason, not
+/// just `ok=false` / `exit 1` (#115).
+#[tokio::test]
+async fn real_grok_refusal_without_a_manifest_says_why() {
+    if !python3_available() {
+        return;
+    }
+    let Some(cli) = vendor("grok/grok-keysmith.py") else {
+        return;
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let user_home = tmp.path().join("home");
+    std::fs::create_dir_all(user_home.join(".grok")).unwrap();
+    let opts = AdapterOptions {
+        home: Some(user_home),
+        cli_override: Some(cli),
+        ..AdapterOptions::default()
+    };
+    let envelope = keysmith_switch_lib::adapter::run_adapter_with(
+        ToolKind::Grok,
+        keysmith_switch_lib::adapter::AdapterCommand::PlanDeactivate {
+            scope: Scope::User,
+            project_dir: None,
+            name: None,
+            salvage_config: false,
+        },
+        &opts,
+    )
+    .await
+    .unwrap();
+    assert!(!envelope.ok);
+    assert_eq!(
+        envelope.blockers,
+        vec!["no valid deployment manifest".to_string()]
+    );
+}
+
+/// The real ZCode adapter prints why it stopped on stderr, with no JSON on stdout. A deploy
+/// planned where ZCode is not installed must say that, not just `ok=false` / `exit 2` (#115).
+/// Only the dry run is used: it reads, and writes nothing.
+#[tokio::test]
+async fn real_zcode_refusal_on_stderr_says_why() {
+    if !python3_available() {
+        return;
+    }
+    let Some(cli) = vendor("zcode/zcode-keysmith.py") else {
+        return;
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let user_home = tmp.path().join("home");
+    std::fs::create_dir_all(&user_home).unwrap();
+    let prompt = tmp.path().join("prompt.md");
+    std::fs::write(&prompt, "# Rules\nBe careful.\n").unwrap();
+    let opts = AdapterOptions {
+        home: Some(user_home),
+        cli_override: Some(cli),
+        // Wherever this runs, ZCode is not in this folder.
+        extra_env: [(
+            "ZCODE_APP_PATH".to_string(),
+            tmp.path().join("ZCode.app").display().to_string(),
+        )]
+        .into_iter()
+        .collect(),
+        ..AdapterOptions::default()
+    };
+    let envelope = keysmith_switch_lib::adapter::run_adapter_with(
+        ToolKind::Zcode,
+        keysmith_switch_lib::adapter::AdapterCommand::PlanActivate {
+            file: prompt,
+            scope: Scope::User,
+            project_dir: None,
+            name: None,
+            runtime: false,
+            append_file: None,
+            max_tokens: None,
+        },
+        &opts,
+    )
+    .await
+    .unwrap();
+    assert!(!envelope.ok);
+    assert_eq!(envelope.exit_code, 2);
+    assert_eq!(envelope.blockers.len(), 1, "{:?}", envelope.blockers);
+    assert!(
+        envelope.blockers[0].starts_with("ZCode runtime not found: "),
+        "{:?}",
+        envelope.blockers
+    );
+}
