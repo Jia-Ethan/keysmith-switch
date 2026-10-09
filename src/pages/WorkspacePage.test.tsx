@@ -702,6 +702,34 @@ describe("Workspace: prompt library", () => {
     expect(screen.getByTestId("quick-deploy-confirm")).toBeDisabled();
   });
 
+  it("does not point to Tidy config from a tidy that was itself refused", async () => {
+    const drift = ["config content does not match managed after-state", "managed config backup is missing or abnormal"];
+    listTools.mockResolvedValue({
+      tools: [{ id: "grok", name: "Grok Build", adapterVersion: "0.7.0", available: true, unavailableReason: null, supportedScopes: ["user"], cliPath: null }],
+    });
+    getHarnessState.mockResolvedValue({ tool: "grok", deployed: false, error: null });
+    listPrompts.mockResolvedValue({ prompts: [prompt({ id: "g1", tool: "grok", title: "Spare" })] });
+    planActivate.mockResolvedValue({
+      operationId: "blocked",
+      envelope: { ...envelope, tool: "grok", ok: false, exitCode: 1, blockers: [drift[0]], warnings: [drift[0]] },
+    });
+    // The adapter's tidy refuses before it can plan; its reasons now reach the dialog.
+    planReconcile.mockResolvedValue({
+      operationId: "tidy",
+      envelope: { ...envelope, tool: "grok", command: "reconcile", ok: false, exitCode: 1, blockers: drift, warnings: drift },
+    });
+
+    await renderPage({ tool: "grok" } as never);
+    fireEvent.click(await screen.findByTestId("prompt-deploy-g1"));
+    expect(await screen.findByRole("dialog")).toHaveTextContent("整理好之后再继续部署");
+    fireEvent.click(screen.getByTestId("plan-reconcile"));
+
+    const tidy = await screen.findByRole("dialog", { name: "整理 Grok Build 的配置" });
+    expect(tidy).toHaveTextContent("在上次部署之后被改过");
+    expect(tidy).not.toHaveTextContent("整理好之后再继续部署");
+    expect(screen.getByTestId("quick-deploy-confirm")).toBeDisabled();
+  });
+
   it("shows the real reason after a failed deploy and asks for a new plan, never a second confirm", async () => {
     listPrompts.mockResolvedValue({ prompts: [prompt({ id: "b", title: "Spare" })] });
     activate.mockResolvedValue({

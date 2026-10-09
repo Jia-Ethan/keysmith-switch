@@ -129,7 +129,7 @@ export function PlanPreview({ envelope, tool, kind = "activate", fromTitle, toTi
               <li key={index}>{reason}</li>
             ))}
           </ul>
-          {tool && needsReconcile(tool, envelope) ? <p className="mt-1.5 font-medium">{t("plan.hintReconcile")}</p> : null}
+          {tool && kind === "activate" && needsReconcile(tool, envelope) ? <p className="mt-1.5 font-medium">{t("plan.hintReconcile")}</p> : null}
           {tool && needsCleanup(tool, envelope) ? <p className="mt-1.5 font-medium">{t("plan.hintCleanup")}</p> : null}
         </Callout>
       ) : null}
