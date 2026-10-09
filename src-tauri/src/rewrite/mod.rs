@@ -58,7 +58,13 @@ pub fn build_snapshot(store: &Store) -> Result<Snapshot> {
 }
 
 /// Write the snapshot the relay reads. Called after every change to rules or switches.
+/// Changes arrive from more than one thread: building and writing hold one lock, so the file
+/// always ends with the latest settings, never an older snapshot that finished last.
 pub fn publish(store: &Store) -> Result<()> {
+    static PUBLISH: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _turn = PUBLISH
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     let snapshot = build_snapshot(store)?;
     atomic_write(
         &snapshot_path(store.paths()),

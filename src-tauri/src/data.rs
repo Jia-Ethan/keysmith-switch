@@ -307,6 +307,9 @@ fn import_markdown_content(
     if content.trim().is_empty() {
         return Ok(false);
     }
+    // The look for an existing copy and the insert share the home lock: two imports at once
+    // (Settings opened twice) must not both find nothing and add the same prompt twice.
+    let _lock = HomeLock::acquire(store.paths())?;
     let content_hash = sha256_hex(content);
     let same_content = store
         .list_prompts(tool, None, None, PromptSort::Updated)?
@@ -320,17 +323,14 @@ fn import_markdown_content(
         return Ok(false);
     }
     let title = title_from_markdown(content, path);
-    ops::create_prompt(
-        store,
-        CreatePromptInput {
-            tool,
-            title,
-            content: content.to_string(),
-            tags: source_tag
-                .map(|tag| vec!["official".into(), "imported".into(), tag.to_string()])
-                .unwrap_or_else(|| vec!["imported".into()]),
-        },
-    )?;
+    if title.trim().is_empty() {
+        return Err(Error::invalid("title is required"));
+    }
+    let tags: Vec<String> = source_tag
+        .map(|tag| vec!["official".into(), "imported".into(), tag.to_string()])
+        .unwrap_or_else(|| vec!["imported".into()]);
+    let id = uuid::Uuid::new_v4().to_string();
+    store.insert_prompt(&id, tool, title.trim(), content, &tags, false)?;
     Ok(true)
 }
 

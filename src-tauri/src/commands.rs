@@ -859,93 +859,101 @@ pub fn update_settings(
     Ok(settings)
 }
 
+/// Runs every agent's `--version` and asks npm, so it is kept off the interface's thread.
 #[tauri::command(rename_all = "camelCase")]
-pub fn get_about(state: State<'_, AppState>) -> Result<AboutInfo> {
-    let settings = state.store.get_settings()?;
-    let adapters = ToolKind::ALL
+pub async fn get_about(app: tauri::AppHandle) -> Result<AboutInfo> {
+    blocking(app, |state| {
+        let settings = state.store.get_settings()?;
+        let adapters = ToolKind::ALL
+            .into_iter()
+            .map(|tool| {
+                let resolved = resolve_cli(tool, &opts()).ok();
+                let path = resolved
+                    .as_ref()
+                    .map(|cli| cli.cli_path())
+                    .or_else(|| find_vendored_script(tool).map(|path| path.display().to_string()));
+                let bundled = resolved
+                    .as_ref()
+                    .map(|cli| cli.frozen)
+                    .unwrap_or(path.is_some());
+                AdapterVersionInfo {
+                    tool,
+                    version: tool.expected_version().to_string(),
+                    bundled,
+                    path,
+                }
+            })
+            .collect();
+        let official = [
+            OfficialProduct::Claude,
+            OfficialProduct::Codex,
+            OfficialProduct::Grok,
+            OfficialProduct::Zcode,
+        ]
         .into_iter()
-        .map(|tool| {
-            let resolved = resolve_cli(tool, &opts()).ok();
-            let path = resolved
-                .as_ref()
-                .map(|cli| cli.cli_path())
-                .or_else(|| find_vendored_script(tool).map(|path| path.display().to_string()));
-            let bundled = resolved
-                .as_ref()
-                .map(|cli| cli.frozen)
-                .unwrap_or(path.is_some());
-            AdapterVersionInfo {
-                tool,
-                version: tool.expected_version().to_string(),
-                bundled,
-                path,
+        .map(|product| {
+            let plan = official_plan(product, OfficialAction::Install);
+            if plan.installed {
+                if let Some(tool) = official_tool_kind(product) {
+                    if let Err(error) = crate::data::import_official_examples(&state.store, tool) {
+                        let _ = crate::logging::write_line("official-import", &error.to_string());
+                    }
+                }
+            }
+            let unavailable = plan.blockers.first().cloned();
+            OfficialCard {
+                product,
+                current_version: plan.current_version,
+                latest_version: plan.latest_version,
+                installed: plan.installed,
+                executable_path: plan.executable_path,
+                source: plan.source,
+                argv: plan.argv,
+                dest: plan.dest,
+                available: plan.blockers.is_empty(),
+                unavailable_reason: unavailable,
             }
         })
         .collect();
-    let official = [
-        OfficialProduct::Claude,
-        OfficialProduct::Codex,
-        OfficialProduct::Grok,
-        OfficialProduct::Zcode,
-    ]
-    .into_iter()
-    .map(|product| {
-        let plan = official_plan(product, OfficialAction::Install);
-        if plan.installed {
-            if let Some(tool) = official_tool_kind(product) {
-                if let Err(error) = crate::data::import_official_examples(&state.store, tool) {
-                    let _ = crate::logging::write_line("official-import", &error.to_string());
-                }
-            }
-        }
-        let unavailable = plan.blockers.first().cloned();
-        OfficialCard {
-            product,
-            current_version: plan.current_version,
-            latest_version: plan.latest_version,
-            installed: plan.installed,
-            executable_path: plan.executable_path,
-            source: plan.source,
-            argv: plan.argv,
-            dest: plan.dest,
-            available: plan.blockers.is_empty(),
-            unavailable_reason: unavailable,
-        }
+        Ok(AboutInfo {
+            app: AboutApp {
+                name: "Keysmith Switch".into(),
+                version: APP_VERSION.into(),
+                channel: settings.update_channel,
+                preview: true,
+                signed: false,
+                identifier: "com.jia-ethan.keysmith-switch".into(),
+                website: "https://github.com/Jia-Ethan/keysmith-switch".into(),
+                github: "https://github.com/Jia-Ethan/keysmith-switch".into(),
+            },
+            adapters,
+            official,
+        })
     })
-    .collect();
-    Ok(AboutInfo {
-        app: AboutApp {
-            name: "Keysmith Switch".into(),
-            version: APP_VERSION.into(),
-            channel: settings.update_channel,
-            preview: true,
-            signed: false,
-            identifier: "com.jia-ethan.keysmith-switch".into(),
-            website: "https://github.com/Jia-Ethan/keysmith-switch".into(),
-            github: "https://github.com/Jia-Ethan/keysmith-switch".into(),
-        },
-        adapters,
-        official,
-    })
+    .await
 }
 
+/// Fetches the release metadata (up to 30 s), so it is kept off the interface's thread.
 #[tauri::command(rename_all = "camelCase")]
-pub fn check_app_update(
-    state: State<'_, AppState>,
+pub async fn check_app_update(
+    app: tauri::AppHandle,
     channel: Option<String>,
 ) -> Result<UpdateCheck> {
-    let settings = state.store.get_settings()?;
-    let req = UpdateRequest {
-        channel: channel
-            .as_deref()
-            .and_then(UpdateChannel::parse)
-            .or_else(|| UpdateChannel::parse(&settings.update_channel)),
-        settings_channel: UpdateChannel::parse(&settings.update_channel),
-        settings_endpoint_override: settings.updater_endpoint_override.clone(),
-        endpoint: settings.updater_endpoint_override.clone(),
-        ..UpdateRequest::default()
-    };
-    Ok(check_update(&req))
+    blocking(app, move |state| {
+        let settings = state.store.get_settings()?;
+        let req = UpdateRequest {
+            channel: channel
+                .as_deref()
+                .and_then(UpdateChannel::parse)
+                .or_else(|| UpdateChannel::parse(&settings.update_channel)),
+            settings_channel: UpdateChannel::parse(&settings.update_channel),
+            settings_endpoint_override: settings.updater_endpoint_override.clone(),
+            endpoint: settings.updater_endpoint_override.clone(),
+            ..UpdateRequest::default()
+        };
+        Ok(check_update(&req))
+    })
+    .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -2127,99 +2135,125 @@ pub async fn extension_preview_rules(
 
 // ----- input rewrite -------------------------------------------------------------------
 
+/// The view asks the system whether the relay is registered and answering (on Windows, `reg`
+/// for each agent), so it and the changes that return it stay off the interface's thread.
 #[tauri::command(rename_all = "camelCase")]
-pub fn rewrite_state(state: State<'_, AppState>) -> Result<crate::rewrite::RewriteView> {
-    crate::rewrite::view_with(&state.store, opts().home.as_deref())
+pub async fn rewrite_state(app: tauri::AppHandle) -> Result<crate::rewrite::RewriteView> {
+    blocking(app, |state| {
+        crate::rewrite::view_with(&state.store, opts().home.as_deref())
+    })
+    .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn rewrite_set_switches(
-    state: State<'_, AppState>,
+pub async fn rewrite_set_switches(
+    app: tauri::AppHandle,
     enabled: Option<bool>,
     codex_enabled: Option<bool>,
     claude_enabled: Option<bool>,
     grok_enabled: Option<bool>,
     zcode_enabled: Option<bool>,
 ) -> Result<crate::rewrite::RewriteView> {
-    crate::rewrite::change(&state.store, |store| {
-        store.update_settings(SettingsPatch {
-            rewrite_enabled: enabled,
-            rewrite_codex_enabled: codex_enabled,
-            rewrite_claude_enabled: claude_enabled,
-            rewrite_grok_enabled: grok_enabled,
-            rewrite_zcode_enabled: zcode_enabled,
-            ..Default::default()
-        })?;
-        Ok(())
+    blocking(app, move |state| {
+        crate::rewrite::change(&state.store, |store| {
+            store.update_settings(SettingsPatch {
+                rewrite_enabled: enabled,
+                rewrite_codex_enabled: codex_enabled,
+                rewrite_claude_enabled: claude_enabled,
+                rewrite_grok_enabled: grok_enabled,
+                rewrite_zcode_enabled: zcode_enabled,
+                ..Default::default()
+            })?;
+            Ok(())
+        })
     })
+    .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn rewrite_set_table_tools(
-    state: State<'_, AppState>,
+pub async fn rewrite_set_table_tools(
+    app: tauri::AppHandle,
     id: String,
     tools: Option<Vec<keysmith_rewrite::Tool>>,
 ) -> Result<crate::rewrite::RewriteView> {
-    crate::rewrite::change(&state.store, |store| {
-        store.set_rule_table_tools(&id, tools.as_deref())?;
-        Ok(())
+    blocking(app, move |state| {
+        crate::rewrite::change(&state.store, |store| {
+            store.set_rule_table_tools(&id, tools.as_deref())?;
+            Ok(())
+        })
     })
+    .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn rewrite_save_user_rules(
-    state: State<'_, AppState>,
+pub async fn rewrite_save_user_rules(
+    app: tauri::AppHandle,
     rules: Vec<keysmith_rewrite::Rule>,
 ) -> Result<crate::rewrite::RewriteView> {
-    crate::rewrite::change(&state.store, |store| {
-        store.save_user_rules(&rules)?;
-        Ok(())
+    blocking(app, move |state| {
+        crate::rewrite::change(&state.store, |store| {
+            store.save_user_rules(&rules)?;
+            Ok(())
+        })
     })
+    .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn rewrite_set_table_enabled(
-    state: State<'_, AppState>,
+pub async fn rewrite_set_table_enabled(
+    app: tauri::AppHandle,
     id: String,
     enabled: bool,
 ) -> Result<crate::rewrite::RewriteView> {
-    crate::rewrite::change(&state.store, |store| {
-        store.set_rule_table_enabled(&id, enabled)?;
-        Ok(())
+    blocking(app, move |state| {
+        crate::rewrite::change(&state.store, |store| {
+            store.set_rule_table_enabled(&id, enabled)?;
+            Ok(())
+        })
     })
+    .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn rewrite_reorder_tables(
-    state: State<'_, AppState>,
+pub async fn rewrite_reorder_tables(
+    app: tauri::AppHandle,
     ids: Vec<String>,
 ) -> Result<crate::rewrite::RewriteView> {
-    crate::rewrite::change(&state.store, |store| {
-        store.reorder_rule_tables(&ids)?;
-        Ok(())
+    blocking(app, move |state| {
+        crate::rewrite::change(&state.store, |store| {
+            store.reorder_rule_tables(&ids)?;
+            Ok(())
+        })
     })
+    .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn rewrite_copy_to_user(
-    state: State<'_, AppState>,
+pub async fn rewrite_copy_to_user(
+    app: tauri::AppHandle,
     id: String,
 ) -> Result<crate::rewrite::RewriteView> {
-    crate::rewrite::change(&state.store, |store| {
-        store.copy_rules_to_user(&id)?;
-        Ok(())
+    blocking(app, move |state| {
+        crate::rewrite::change(&state.store, |store| {
+            store.copy_rules_to_user(&id)?;
+            Ok(())
+        })
     })
+    .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn rewrite_accept_update(
-    state: State<'_, AppState>,
+pub async fn rewrite_accept_update(
+    app: tauri::AppHandle,
     id: String,
 ) -> Result<crate::rewrite::RewriteView> {
-    crate::rewrite::change(&state.store, |store| {
-        store.accept_pack_update(&id)?;
-        Ok(())
+    blocking(app, move |state| {
+        crate::rewrite::change(&state.store, |store| {
+            store.accept_pack_update(&id)?;
+            Ok(())
+        })
     })
+    .await
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -2320,4 +2354,32 @@ pub async fn rewrite_disconnect_grok(
         .await
         .map_err(|error| Error::message(error.to_string()))??;
     crate::rewrite::view_with(&state.store, opts().home.as_deref())
+}
+
+#[cfg(test)]
+mod ui_thread_tests {
+    /// A command that is not `async` runs on the main thread, and on Windows that thread also
+    /// runs the window: while such a command waits on a process or the network, the app reads
+    /// as "Not Responding" (#115). These wait on `--version`, npm, GitHub or `reg`.
+    #[test]
+    fn commands_that_wait_on_processes_or_the_network_are_async() {
+        let source = include_str!("commands.rs");
+        for name in [
+            "get_about",
+            "check_app_update",
+            "rewrite_state",
+            "rewrite_set_switches",
+            "rewrite_set_table_tools",
+            "rewrite_save_user_rules",
+            "rewrite_set_table_enabled",
+            "rewrite_reorder_tables",
+            "rewrite_copy_to_user",
+            "rewrite_accept_update",
+        ] {
+            assert!(
+                source.contains(&format!("pub async fn {name}(")),
+                "{name} must be an async command"
+            );
+        }
+    }
 }
