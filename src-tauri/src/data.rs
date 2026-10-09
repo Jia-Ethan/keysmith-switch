@@ -307,19 +307,26 @@ fn import_markdown_content(
     if content.trim().is_empty() {
         return Ok(false);
     }
-    // The look for an existing copy and the insert share the home lock: two imports at once
-    // (Settings opened twice) must not both find nothing and add the same prompt twice.
-    let _lock = HomeLock::acquire(store.paths())?;
     let content_hash = sha256_hex(content);
-    let same_content = store
-        .list_prompts(tool, None, None, PromptSort::Updated)?
-        .into_iter()
-        .any(|prompt| prompt.sha256 == content_hash);
-    let same_source = match source_tag {
-        Some(tag) => store.has_prompt_tag(tool, tag)?,
-        None => false,
+    let known = || -> Result<bool> {
+        let same_content = store
+            .list_prompts(tool, None, None, PromptSort::Updated)?
+            .into_iter()
+            .any(|prompt| prompt.sha256 == content_hash);
+        let same_source = match source_tag {
+            Some(tag) => store.has_prompt_tag(tool, tag)?,
+            None => false,
+        };
+        Ok(same_content || same_source)
     };
-    if same_content || same_source {
+    // Already in the library, as it is on every Settings visit after the first: no lock needed.
+    if known()? {
+        return Ok(false);
+    }
+    // Two imports can run at once (Settings opened twice). The second look and the insert share
+    // the home lock, so they cannot both find nothing and add the same prompt twice.
+    let _lock = HomeLock::acquire(store.paths())?;
+    if known()? {
         return Ok(false);
     }
     let title = title_from_markdown(content, path);
