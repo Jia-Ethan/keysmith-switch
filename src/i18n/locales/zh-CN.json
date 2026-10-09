@@ -626,7 +626,8 @@
       "unsupported": "暂不支持",
       "unrouted": "有 {{count}} 个新加的 {{what}} 未经过中转，请重新连接",
       "unroutedProvider": "provider",
-      "unroutedModel": "模型"
+      "unroutedModel": "模型",
+      "clashing": "有自定义模型把某个已连接的模型当作上游，登录令牌会发到它的地址，请重新连接"
     },
     "action": {
       "connect": "连接…",
@@ -641,6 +642,7 @@
       "upstream": "发往 {{host}}（断开时改回）",
       "upstreams": "发往：{{hosts}}",
       "oauth": "登录令牌会经过本机中转，不保存、不记录。",
+      "leftOut": "未经过中转：{{models}}（你的自定义模型把它们当作上游，输入替换对它们不生效）",
       "providerField": "每个个人 provider 的 baseUrl",
       "grokField": "每个模型的 base_url"
     },
@@ -683,7 +685,8 @@
       "grok": {
         "no-config": "没有找到 Grok 的配置目录，请先运行一次 Grok。",
         "no-catalog": "Grok 还没有拉取模型列表，请先运行一次 Grok。",
-        "bad-region": "config.toml 里 Keysmith 的标记区域不完整，请先修好。"
+        "bad-region": "config.toml 里 Keysmith 的标记区域不完整，请先修好。",
+        "no-models": "所有模型都已有你自己的配置，或被自定义模型当作上游，没有可连接的模型。"
       }
     },
     "rules": {

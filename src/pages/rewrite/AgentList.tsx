@@ -87,8 +87,9 @@ function AgentRowView({
   const rowBusy = busy === `connect:${row.tool}` || busy === `disconnect:${row.tool}` || busy === `switch:${row.tool}`;
   const status = statusText(row, name, t);
   const hasDetails = row.status !== "unsupported";
-  // Connected, but some ZCode providers added since do not go through the relay.
-  const warn = row.unrouted > 0 && (row.status === "active" || row.status === "paused");
+  // Connected, but some models added since do not go through the relay, or a custom model
+  // would be sent the Grok sign-in token.
+  const warn = (row.unrouted > 0 || row.clashing > 0) && (row.status === "active" || row.status === "paused");
 
   return (
     <li data-testid={`rewrite-agent-${row.tool}`} data-state={row.status}>
@@ -151,6 +152,7 @@ function AgentRowView({
           {row.hosts.length === 1 ? <dd>{t("rewrite.details.upstream", { host: row.hosts[0] })}</dd> : null}
           {row.hosts.length > 1 ? <dd>{t("rewrite.details.upstreams", { hosts: row.hosts.join(", ") })}</dd> : null}
           {row.oauthNote ? <dd>{t("rewrite.details.oauth")}</dd> : null}
+          {row.leftOut.length > 0 ? <dd>{t("rewrite.details.leftOut", { models: row.leftOut.join(", ") })}</dd> : null}
         </dl>
       ) : null}
     </li>
@@ -158,6 +160,10 @@ function AgentRowView({
 }
 
 function statusText(row: AgentRow, agent: string, t: (key: string, options?: Record<string, unknown>) => string) {
+  // A credential going to the wrong address outranks everything else a connected row can say.
+  if (row.clashing > 0 && (row.status === "active" || row.status === "paused")) {
+    return t("rewrite.status.clashing");
+  }
   switch (row.status) {
     case "active":
       return row.unrouted > 0
@@ -209,7 +215,7 @@ function AgentAction({
       </Button>
     );
   }
-  const repair = row.status === "bypassed" || row.status === "down" || row.unrouted > 0;
+  const repair = row.status === "bypassed" || row.status === "down" || row.unrouted > 0 || row.clashing > 0;
   return (
     <>
       {repair ? (

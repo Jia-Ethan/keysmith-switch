@@ -16,6 +16,12 @@
 //! through deploys, uninstalls and recovery. A model that already has a `[model.<id>]` table
 //! of the person's own is left alone (two tables with one name would not parse).
 //!
+//! A model that another model of the person's names as its upstream is left out too:
+//! `[model.mine]` with `model = "<id>"` sends `<id>` to its own `base_url` with its own
+//! `api_key`. Grok (1.0.46 and 1.0.50 alike) looks that model up by `<id>`, and when it finds
+//! a `[model."<id>"]` table with no key of its own it sends the Grok sign-in token to the
+//! custom address instead. A region table holds only a `base_url`, so it would do exactly that.
+//!
 //! Where each model really goes comes from Grok's catalog cache (`models_cache.json`); a model
 //! added to the catalog later bypasses the relay until reconnecting picks it up.
 
@@ -24,6 +30,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use toml_edit::{DocumentMut, Item};
 
 use crate::error::{Error, Result};
 use crate::paths::atomic_write;
@@ -42,9 +49,11 @@ pub struct GrokLinkRecord {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase", tag = "state")]
 pub enum GrokLinkState {
-    /// The region is in place. `unrouted` counts catalog models it does not cover yet.
+    /// The region is in place. `unrouted` counts catalog models it does not cover yet;
+    /// `clashing` counts models in it that a custom model has since taken as its upstream.
     Linked {
         unrouted: usize,
+        clashing: usize,
     },
     /// A link record exists but the region is gone or was edited.
     Bypassed,
@@ -58,6 +67,8 @@ pub enum Unsupported {
     NoCatalog,
     /// The region's markers are damaged (one without the other, or twice).
     BadRegion,
+    /// Every catalog model has a table of the person's own or is some model's upstream.
+    NoModels,
 }
 
 impl Unsupported {
@@ -66,6 +77,7 @@ impl Unsupported {
             Self::NoConfig => "no-config",
             Self::NoCatalog => "no-catalog",
             Self::BadRegion => "bad-region",
+            Self::NoModels => "no-models",
         }
     }
 }
@@ -172,6 +184,23 @@ fn own_tables(outside: &str) -> Vec<String> {
         .collect()
 }
 
+/// Model ids that a table of the person's own outside the region names as its upstream
+/// (`[model.mine]` with `model = "<id>"`). Empty when the text does not parse as TOML; linking
+/// then fails on its own parse check.
+fn claimed_upstreams(outside: &str) -> Vec<String> {
+    let Ok(doc) = outside.parse::<DocumentMut>() else {
+        return Vec::new();
+    };
+    let Some(models) = doc.get("model").and_then(Item::as_table_like) else {
+        return Vec::new();
+    };
+    models
+        .iter()
+        .filter_map(|(_, table)| table.get("model")?.as_str())
+        .map(str::to_string)
+        .collect()
+}
+
 fn region_text(models: &BTreeMap<String, String>) -> String {
     let mut out = format!("{BEGIN}\n");
     for (id, url) in models {
@@ -190,31 +219,65 @@ pub fn state(record: Option<&GrokLinkRecord>, grok_dir: &Path) -> GrokLinkState 
     let Some(record) = record else {
         return GrokLinkState::Unlinked;
     };
-    let intact = read_config(grok_dir)
+    let Some((outside, Some(region))) = read_config(grok_dir)
         .ok()
         .and_then(|text| split(&text).ok())
-        .and_then(|(_, region)| region)
-        .is_some_and(|region| region == region_text(&record.models));
-    if !intact {
+    else {
+        return GrokLinkState::Bypassed;
+    };
+    if region != region_text(&record.models) {
         return GrokLinkState::Bypassed;
     }
-    let unrouted = catalog(grok_dir)
+    let claimed = claimed_upstreams(&outside);
+    let clashing = record
+        .models
+        .keys()
+        .filter(|id| claimed.contains(id))
+        .count();
+    let unrouted = routable(grok_dir)
         .unwrap_or_default()
         .iter()
         .filter(|model| !record.models.contains_key(&model.id))
         .count();
-    GrokLinkState::Linked { unrouted }
+    GrokLinkState::Linked { unrouted, clashing }
 }
 
-/// Models to route now: every catalog model without a table of the person's own.
-pub fn routable(grok_dir: &Path) -> std::result::Result<Vec<Model>, Unsupported> {
+/// The config outside the region, where the person's own tables are.
+fn outside_region(grok_dir: &Path) -> std::result::Result<String, Unsupported> {
     let text = read_config(grok_dir).unwrap_or_default();
-    let (outside, _) = split(&text)?;
+    Ok(split(&text)?.0)
+}
+
+/// Models to route now: every catalog model that has no table of the person's own and is not
+/// the upstream of one.
+pub fn routable(grok_dir: &Path) -> std::result::Result<Vec<Model>, Unsupported> {
+    let outside = outside_region(grok_dir)?;
     let own = own_tables(&outside);
-    Ok(catalog(grok_dir)?
+    let claimed = claimed_upstreams(&outside);
+    let models: Vec<Model> = catalog(grok_dir)?
         .into_iter()
-        .filter(|model| !own.contains(&model.id))
-        .collect())
+        .filter(|model| !own.contains(&model.id) && !claimed.contains(&model.id))
+        .collect();
+    if models.is_empty() {
+        return Err(Unsupported::NoModels);
+    }
+    Ok(models)
+}
+
+/// Catalog models kept out of the relay because a model of the person's own names them as its
+/// upstream. Models with a table of their own are not listed: the person set those up.
+pub fn left_out(grok_dir: &Path) -> Vec<String> {
+    let Ok(outside) = outside_region(grok_dir) else {
+        return Vec::new();
+    };
+    let own = own_tables(&outside);
+    let claimed = claimed_upstreams(&outside);
+    catalog(grok_dir)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|model| model.id)
+        .filter(|id| claimed.contains(id) && !own.contains(id))
+        .collect()
 }
 
 /// Write the region for `models` (id → relay address), replacing any earlier one.

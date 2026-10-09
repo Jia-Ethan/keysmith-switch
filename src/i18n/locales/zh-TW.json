@@ -626,7 +626,8 @@
       "unsupported": "暫不支援",
       "unrouted": "有 {{count}} 個新加入的 {{what}} 未經過中轉，請重新連線",
       "unroutedProvider": "provider",
-      "unroutedModel": "模型"
+      "unroutedModel": "模型",
+      "clashing": "有自訂模型把某個已連線的模型當作上游，登入權杖會送到它的位址，請重新連線"
     },
     "action": {
       "connect": "連線…",
@@ -641,6 +642,7 @@
       "upstream": "送往 {{host}}（中斷時改回）",
       "upstreams": "送往：{{hosts}}",
       "oauth": "登入權杖會經過本機中轉，不保存、不記錄。",
+      "leftOut": "未經過中轉：{{models}}（你的自訂模型把它們當作上游，輸入替換對它們不生效）",
       "providerField": "每個個人 provider 的 baseUrl",
       "grokField": "每個模型的 base_url"
     },
@@ -683,7 +685,8 @@
       "grok": {
         "no-config": "找不到 Grok 的設定資料夾，請先執行一次 Grok。",
         "no-catalog": "Grok 還沒有取得模型清單，請先執行一次 Grok。",
-        "bad-region": "config.toml 裡 Keysmith 的標記區域不完整，請先修好。"
+        "bad-region": "config.toml 裡 Keysmith 的標記區域不完整，請先修好。",
+        "no-models": "所有模型都已有你自己的設定，或被自訂模型當作上游，沒有可連線的模型。"
       }
     },
     "rules": {

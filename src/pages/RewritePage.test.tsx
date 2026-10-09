@@ -98,6 +98,7 @@ const view = (over: Partial<RewriteView> = {}): RewriteView => ({
     link: { state: "unlinked" },
     service: { installed: false, running: false },
     hosts: ["cli-chat-proxy.grok.com"],
+    leftOut: [],
     unsupported: null,
     configPath: "/home/.grok/config.toml",
   },
@@ -259,7 +260,7 @@ describe("RewritePage", () => {
 
   it("connects Grok, saying what it writes and that the sign-in token passes through", async () => {
     rewriteConnectGrok.mockResolvedValue(
-      view({ grok: { ...view().grok, link: { state: "linked", unrouted: 0 }, service: { installed: true, running: true } } }),
+      view({ grok: { ...view().grok, link: { state: "linked", unrouted: 0, clashing: 0 }, service: { installed: true, running: true } } }),
     );
     render(<RewritePage toast={toast as never} />);
     fireEvent.click(await screen.findByTestId("rewrite-connect-grok"));
@@ -272,11 +273,49 @@ describe("RewritePage", () => {
 
   it("asks Grok users to reconnect when new models are not routed", async () => {
     rewriteState.mockResolvedValue(
-      view({ enabled: true, grok: { ...view().grok, link: { state: "linked", unrouted: 2 }, service: { installed: true, running: true } } }),
+      view({ enabled: true, grok: { ...view().grok, link: { state: "linked", unrouted: 2, clashing: 0 }, service: { installed: true, running: true } } }),
     );
     render(<RewritePage toast={toast as never} />);
     expect(await screen.findByTestId("rewrite-status-grok")).toHaveTextContent("2 个新加的 模型");
     expect(screen.getByTestId("rewrite-reconnect-grok")).toBeInTheDocument();
+  });
+
+  it("warns Grok users when a custom model would be sent the sign-in token, and offers to reconnect", async () => {
+    rewriteState.mockResolvedValue(
+      view({
+        enabled: true,
+        grok: { ...view().grok, link: { state: "linked", unrouted: 0, clashing: 1 }, service: { installed: true, running: true } },
+      }),
+    );
+    render(<RewritePage toast={toast as never} />);
+    expect(await screen.findByTestId("rewrite-status-grok")).toHaveTextContent("登录令牌会发到它的地址");
+    expect(screen.getByTestId("rewrite-reconnect-grok")).toBeInTheDocument();
+  });
+
+  it("lists the models kept off the relay because a custom model uses them as its upstream", async () => {
+    rewriteState.mockResolvedValue(
+      view({
+        enabled: true,
+        grok: {
+          ...view().grok,
+          link: { state: "linked", unrouted: 0, clashing: 0 },
+          service: { installed: true, running: true },
+          leftOut: ["grok-4.7"],
+        },
+      }),
+    );
+    render(<RewritePage toast={toast as never} />);
+    expect(await screen.findByTestId("rewrite-status-grok")).toHaveTextContent("生效中");
+    fireEvent.click(screen.getByTestId("rewrite-details-grok"));
+    expect(screen.getByTestId("rewrite-details-body-grok")).toHaveTextContent("未经过中转：grok-4.7");
+    expect(screen.queryByTestId("rewrite-reconnect-grok")).not.toBeInTheDocument();
+  });
+
+  it("explains why Grok cannot be connected when every model is spoken for", async () => {
+    rewriteState.mockResolvedValue(view({ grok: { ...view().grok, hosts: [], unsupported: "no-models" } }));
+    render(<RewritePage toast={toast as never} />);
+    expect(await screen.findByTestId("rewrite-status-grok")).toHaveTextContent("没有可连接的模型");
+    expect(screen.getByTestId("rewrite-connect-grok")).toBeDisabled();
   });
 
   it("tells Grok users to run Grok once when it has no model list yet", async () => {
