@@ -10,7 +10,7 @@ use keysmith_switch_lib::cleanup::{
 };
 use keysmith_switch_lib::db::Store;
 use keysmith_switch_lib::harness::{deploy_harness_with, harness_state};
-use keysmith_switch_lib::models::{Scope, ToolKind};
+use keysmith_switch_lib::models::{Scope, ToolKind, ToolStatus};
 use keysmith_switch_lib::ops::tool_status;
 use keysmith_switch_lib::paths::AppPaths;
 
@@ -1248,4 +1248,135 @@ async fn cleanup_keeps_grok_keysmiths_own_config_backup() {
         .join("config.toml.keysmith-backup-20260101T000000-abcdef0123")
         .exists());
     assert!(!grok.join("config.toml.bak-20260813").exists());
+}
+
+/// A Grok deployment made with the real grok-keysmith, whose config was then edited and whose
+/// config backup is gone: what #95 left behind.
+async fn grok_drifted_without_backup() -> World {
+    let world = world("grok/grok-keysmith.py");
+    let grok = world.home.join(".grok");
+    write(
+        grok.join("config.toml"),
+        "[ui]\npermission_mode = \"ask\"\n",
+    );
+    let outcome = deploy_harness_with(
+        &world.store,
+        ToolKind::Grok,
+        &world.opts,
+        Some("# Grok rules\nAsk first.\n".into()),
+    )
+    .await
+    .unwrap();
+    assert!(outcome.ok, "{outcome:?}");
+    let mut config = std::fs::read_to_string(grok.join("config.toml")).unwrap();
+    config.push_str("\n[models]\ndefault = \"grok-4.6\"\n");
+    std::fs::write(grok.join("config.toml"), &config).unwrap();
+    for entry in std::fs::read_dir(&grok).unwrap().flatten() {
+        if entry
+            .file_name()
+            .to_string_lossy()
+            .starts_with("config.toml.keysmith-backup-")
+        {
+            std::fs::remove_file(entry.path()).unwrap();
+        }
+    }
+    let status = tool_status(&world.store, ToolKind::Grok, Scope::User, None, &world.opts)
+        .await
+        .unwrap();
+    assert_eq!(status.status, ToolStatus::Drift, "{status:?}");
+    world
+}
+
+fn grok_record_active(world: &World) -> bool {
+    world
+        .store
+        .find_activation(ToolKind::Grok, Scope::User, None)
+        .unwrap()
+        .is_some_and(|record| record.status == ToolStatus::Active)
+}
+
+/// Cleaning a drifted Grok deployment moves its manifest and rule into the snapshot without the
+/// adapter's uninstall. Switch's own record of it must not stay active: that record is what kept
+/// offering "Turn off", which then failed with `no valid deployment manifest` (#115).
+#[tokio::test]
+async fn cleaning_a_drifted_grok_deployment_leaves_no_live_record() {
+    if !python3_available() {
+        return;
+    }
+    let world = grok_drifted_without_backup().await;
+    assert!(grok_record_active(&world));
+
+    let plan = plan_cleanup(&world.store, ToolKind::Grok, &world.opts)
+        .await
+        .unwrap();
+    assert!(plan.config_drifted && plan.blockers.is_empty(), "{plan:?}");
+    let done = confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
+        .await
+        .unwrap();
+    assert!(!done.deactivated, "{done:?}");
+
+    assert!(!grok_record_active(&world));
+    assert!(!deployed(&world, ToolKind::Grok).await);
+}
+
+/// Someone who already cleaned up with an older version still has the stale record. Turning off
+/// then puts the record right without asking the adapter, which has nothing left to remove.
+#[tokio::test]
+async fn turning_off_a_grok_record_with_nothing_left_on_disk_clears_it() {
+    if !python3_available() {
+        return;
+    }
+    use keysmith_switch_lib::models::PlanDeactivateInput;
+    use keysmith_switch_lib::ops::{confirm_deactivate, plan_deactivate};
+
+    let world = grok_drifted_without_backup().await;
+    let grok = world.home.join(".grok");
+    // What the older cleanup did: the manifest and rule went into the snapshot, and the config
+    // went too (only a copy without the login is kept).
+    std::fs::remove_file(grok.join(".grok-keysmith-manifest.json")).unwrap();
+    std::fs::remove_dir_all(grok.join("rules")).unwrap();
+    std::fs::remove_file(grok.join("config.toml")).unwrap();
+    assert!(grok_record_active(&world));
+
+    let input = PlanDeactivateInput {
+        prompt_id: None,
+        tool: ToolKind::Grok,
+        scope: Scope::User,
+        project_dir: None,
+        salvage_config: false,
+    };
+    let plan = plan_deactivate(&world.store, input.clone(), &world.opts)
+        .await
+        .unwrap();
+    assert!(
+        plan.envelope.ok && plan.envelope.blockers.is_empty(),
+        "{:?}",
+        plan.envelope
+    );
+    let done = confirm_deactivate(&world.store, &plan.operation_id, &world.opts)
+        .await
+        .unwrap();
+    assert!(done.envelope.ok, "{:?}", done.envelope);
+    assert!(!grok_record_active(&world));
+
+    // When something was deployed again since the preview, the record-only plan is not used.
+    let stale = plan_deactivate(&world.store, input, &world.opts)
+        .await
+        .unwrap();
+    let outcome = deploy_harness_with(
+        &world.store,
+        ToolKind::Grok,
+        &world.opts,
+        Some("# Grok rules\nAsk first.\n".into()),
+    )
+    .await
+    .unwrap();
+    assert!(outcome.ok, "{outcome:?}");
+    assert!(
+        confirm_deactivate(&world.store, &stale.operation_id, &world.opts)
+            .await
+            .is_err()
+    );
+    assert!(grok_record_active(&world));
+    assert!(grok.join("rules").join("99-keysmith.md").is_file());
 }

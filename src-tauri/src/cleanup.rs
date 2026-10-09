@@ -1852,6 +1852,14 @@ async fn run_cleanup(
         erased = erase_extras(&home, &to_erase)?;
     }
     let keychain_cleared = erase_keychain(&keychain)?;
+    // A drifted Grok deployment is not removed through its adapter, but the cleanup has just
+    // moved its manifest and rule away: nothing of it is left, so Switch's record says so too.
+    // The cleanup itself is done by now; a failed read here only leaves the record as it was.
+    if tool == ToolKind::Grok && !deactivated {
+        if let Err(error) = ops::forget_removed_deployment(store, tool, opts).await {
+            let _ = crate::logging::write_line("cleanup-record", &error.to_string());
+        }
+    }
     Ok(CleanupResult {
         snapshot_id: snapshot.map(|meta| meta.id),
         deactivated,
