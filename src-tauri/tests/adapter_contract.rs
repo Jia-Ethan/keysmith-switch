@@ -622,3 +622,60 @@ fn codex_dry_run_blocker_behind_an_arrow_is_reported() {
         envelope.blockers
     );
 }
+
+/// A CLI that stops with nothing on stdout but a reason on stderr: the reason reaches the
+/// person. Python's argparse and the ZCode adapter's text mode both write `error: …`; an
+/// uncaught exception leaves its message on the last line of the traceback.
+#[test]
+fn a_refusal_only_on_stderr_is_reported() {
+    let failed = |stderr: &str| {
+        let captured = Captured {
+            stdout: String::new(),
+            stderr: stderr.into(),
+            exit_code: 2,
+            timed_out: false,
+            truncated: false,
+            argv: vec!["install".into(), "--dry-run".into()],
+        };
+        normalize(
+            ToolKind::Zcode,
+            &AdapterCommand::PlanActivate {
+                file: "p.md".into(),
+                scope: Scope::User,
+                project_dir: None,
+                name: None,
+                runtime: false,
+                append_file: None,
+                max_tokens: None,
+            },
+            &captured,
+            Envelope::new(ToolKind::Zcode, "plan-activate"),
+        )
+    };
+
+    let shape = failed(
+        "error: ZCode runtime entrypoint shape was not recognized.\n\
+         Runtime: C:\\ZCode\\resources\\glm\\zcode.cjs\n\
+         The installer expected the runtime context builder anchor used by current ZCode releases.\n",
+    );
+    assert!(!shape.ok);
+    assert_eq!(shape.blockers.len(), 1, "{:?}", shape.blockers);
+    assert!(
+        shape.blockers[0]
+            .starts_with("ZCode runtime entrypoint shape was not recognized. Runtime: "),
+        "{:?}",
+        shape.blockers
+    );
+
+    let traceback = failed(
+        "Traceback (most recent call last):\n  File \"zcode-keysmith.py\", line 1, in <module>\n\
+         PermissionError: [Errno 13] Permission denied: 'zcode.cjs'\n",
+    );
+    assert_eq!(
+        traceback.blockers,
+        vec!["PermissionError: [Errno 13] Permission denied: 'zcode.cjs'".to_string()]
+    );
+
+    // Nothing on stderr either: nothing is made up.
+    assert!(failed("").blockers.is_empty());
+}

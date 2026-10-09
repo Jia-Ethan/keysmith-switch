@@ -20,12 +20,38 @@ pub fn normalize(
         return envelope.fail("CLI timed out");
     }
 
-    match tool {
+    let mut envelope = match tool {
         ToolKind::Claude => normalize_claude(command, captured, envelope),
         ToolKind::Codex => normalize_codex(command, captured, envelope),
         ToolKind::Grok => normalize_grok(command, captured, envelope),
         ToolKind::Zcode => normalize_zcode(command, captured, envelope),
+    };
+    // A CLI that stopped without a reason in its output still gave one on stderr.
+    if !envelope.ok
+        && envelope.exit_code != 0
+        && envelope.blockers.is_empty()
+        && envelope.error.is_none()
+    {
+        if let Some(reason) = stderr_reason(&envelope.redacted_stderr) {
+            envelope.blockers.push(reason);
+        }
     }
+    envelope
+}
+
+/// The `error: …` message a CLI printed (with the lines that follow it), or else its last
+/// line, which is where Python puts the exception of a traceback.
+fn stderr_reason(stderr: &str) -> Option<String> {
+    let lines: Vec<&str> = stderr
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect();
+    let reason = match lines.iter().position(|line| line.starts_with("error: ")) {
+        Some(at) => lines[at..].join(" ")["error: ".len()..].to_string(),
+        None => lines.last()?.to_string(),
+    };
+    Some(reason.chars().take(400).collect())
 }
 
 fn normalize_claude(
@@ -241,6 +267,11 @@ fn normalize_grok(
         .and_then(Value::as_array)
         .map(string_values)
         .unwrap_or_else(|| envelope.conflicts.clone());
+    // Refused before it could plan (no deployment manifest, a lock): the reasons are its
+    // diagnostics.
+    if !envelope.ok && envelope.blockers.is_empty() {
+        envelope.blockers = envelope.warnings.clone();
+    }
     envelope.salvage_available = plan
         .get("salvage_available")
         .and_then(Value::as_bool)

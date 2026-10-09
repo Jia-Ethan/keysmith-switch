@@ -674,6 +674,34 @@ describe("Workspace: prompt library", () => {
     await waitFor(() => expect(deactivate).toHaveBeenCalledWith("salvage"));
   });
 
+  it("says why Grok refused to turn off, not just ok=false and exit 1 (#115)", async () => {
+    listTools.mockResolvedValue({
+      tools: [{ id: "grok", name: "Grok Build", adapterVersion: "0.7.0", available: true, unavailableReason: null, supportedScopes: ["user"], cliPath: null }],
+    });
+    getHarnessState.mockResolvedValue({ tool: "grok", deployed: true, error: null });
+    planDeactivate.mockResolvedValue({
+      operationId: "refused",
+      envelope: {
+        ...envelope,
+        tool: "grok",
+        command: "plan-deactivate",
+        ok: false,
+        exitCode: 1,
+        blockers: ["no valid deployment manifest"],
+        warnings: ["no valid deployment manifest"],
+      },
+    });
+
+    await renderPage({ tool: "grok" } as never);
+    fireEvent.click(await screen.findByTestId("quick-deploy-remove"));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("找不到有效的部署记录");
+    expect(dialog).not.toHaveTextContent("ok=false");
+    expect(dialog).not.toHaveTextContent("exit 1");
+    expect(screen.getByTestId("quick-deploy-confirm")).toBeDisabled();
+  });
+
   it("shows the real reason after a failed deploy and asks for a new plan, never a second confirm", async () => {
     listPrompts.mockResolvedValue({ prompts: [prompt({ id: "b", title: "Spare" })] });
     activate.mockResolvedValue({

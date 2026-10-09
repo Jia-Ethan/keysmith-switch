@@ -179,6 +179,7 @@
     "friendlyReconcile": "Keysmith's managed lines in {{tool}}'s config were moved or rewritten. Tidying backs the file up first, puts those lines back, and leaves your own settings as they are.",
     "blockerConfigDrift": "{{tool}}'s config was changed after the last deploy.",
     "blockerInstructionsMissing": "The model_instructions_file line Keysmith wrote (pointing to {{ref}}) is no longer in this agent's config. It may have been edited by hand or by another tool, so Keysmith cannot tell whether it is safe to overwrite. Your config.toml was not changed.",
+    "blockerNoManifest": "Keysmith can't find a valid deployment record for this agent (it may have been cleaned up or damaged), so it can't turn the deployment off.",
     "blockerDryRun": "The pre-check found {{count}} problem(s) that block this. No files were changed.",
     "blockerInstructionsRepointed": "model_instructions_file in the config now points to a different file; Keysmith expected {{ref}}. It will not overwrite it.",
     "blockerOwnership": "The deployment record does not match the current config: {{detail}}",

@@ -38,6 +38,13 @@ describe("localizeReason", () => {
     expect(result).not.toMatch(/\[Errno|拒绝访问|cannot open filesystem handle/);
   });
 
+  it("says in words that Grok finds no valid deployment record", async () => {
+    await i18n.changeLanguage("zh-CN");
+    const text = localizeReason("no valid deployment manifest", i18n.t);
+    expect(text).toContain("找不到有效的部署记录");
+    expect(text).not.toMatch(/manifest/);
+  });
+
   it("offers Cleanup only for the Codex missing-line case", () => {
     const env = { blockers: [MISSING], error: null } as unknown as Envelope;
     expect(needsCleanup("codex", env)).toBe(true);

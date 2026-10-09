@@ -179,6 +179,7 @@
     "friendlyReconcile": "{{tool}} 的配置文件里，Keysmith 管理的那几行被挪动或改写过。整理会先备份配置文件，再把这几行放回原位，你自己的设置原样保留。",
     "blockerConfigDrift": "{{tool}} 的配置文件在上次部署之后被改过。",
     "blockerInstructionsMissing": "这个 Agent 的配置里，Keysmith 写入的 model_instructions_file（指向 {{ref}}）已经不在了，可能被手动删改或被其他工具改过，所以 Keysmith 不确定现在能不能安全覆盖。你的 config.toml 没有被改动。",
+    "blockerNoManifest": "Keysmith 在这个 Agent 里找不到有效的部署记录（可能已被清理或已损坏），所以没法按记录停用。",
     "blockerDryRun": "预检发现 {{count}} 个阻塞问题，没有改动任何文件。",
     "blockerInstructionsRepointed": "配置里的 model_instructions_file 现在指向了别的文件，预期仍是 {{ref}}。Keysmith 不会覆盖它。",
     "blockerOwnership": "部署记录与现有配置不一致：{{detail}}",
