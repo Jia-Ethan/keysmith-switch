@@ -12,6 +12,7 @@
 [![Platforms](https://img.shields.io/badge/macOS%20%C2%B7%20Windows-555?style=flat-square)](#-下载)
 [![Built with Tauri 2](https://img.shields.io/badge/Tauri%202-24C8DB?style=flat-square&logo=tauri&logoColor=white)](https://tauri.app)
 [![License](https://img.shields.io/badge/PolyForm%20Noncommercial-1.0.0-8B7E74?style=flat-square)](LICENSE)
+[![Telegram](https://img.shields.io/badge/Telegram-%E4%BA%A4%E6%B5%81%E7%BE%A4-26A5E4?style=flat-square&logo=telegram&logoColor=white)](https://t.me/+xBqLYA65JPU1NjFk)
 
 [**下载**](#-下载) · [**功能**](#-功能) · [**工作原理**](#-工作原理) · [**拓展包**](#-拓展包) · [**开发**](#-开发) · [**反馈**](#-反馈)
 
@@ -358,6 +359,8 @@ npx tauri build --target aarch64-apple-darwin --config src-tauri/tauri.preview.m
 Bug、需求与破限建议统一提交到 [GitHub Discussions](https://github.com/Jia-Ethan/keysmith-switch/discussions/3)。
 
 社区：[LINUX DO](https://linux.do)
+
+交流群：[Telegram](https://t.me/+xBqLYA65JPU1NjFk)
 
 > [!WARNING]
 > 请勿公开提交 token、完整配置、提示词正文或其他敏感信息。当前仓库尚未启用 Private Vulnerability Reporting，安全漏洞请勿在 Discussion 中公开披露。
