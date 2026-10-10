@@ -9,6 +9,11 @@ from pathlib import Path
 VERSION = os.environ.get("FIXTURE_VERSION", "0.6.0")
 FAIL = os.environ.get("FIXTURE_FAIL")
 
+# Like the real codex-instruct.py: the status lines use box-drawing characters,
+# which the Windows default console encoding (cp1252) cannot print.
+for _stream in (sys.stdout, sys.stderr):
+    _stream.reconfigure(encoding="utf-8")
+
 
 def codex_dir(argv: list[str]) -> Path:
     if "--codex-dir" in argv:
