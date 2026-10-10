@@ -79,3 +79,15 @@ jobs:
               throw "Required Windows sidecar missing: $path"
             }
           }
+
+  rust-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python scripts/build-sidecars.py
+      - run: cargo test --workspace
+        working-directory: src-tauri
