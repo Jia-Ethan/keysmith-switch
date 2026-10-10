@@ -98,8 +98,8 @@ def main(argv: list[str]) -> int:
     if "--yes" in argv:
         root.mkdir(parents=True, exist_ok=True)
         body = Path(source).read_text(encoding="utf-8") if source != "bundled" and Path(source).exists() else "fixture-codex\n"
-        prompt.write_text(body, encoding="utf-8")
-        (root / ".fixture-state").write_text(body, encoding="utf-8")
+        prompt.write_bytes(body.encode("utf-8"))
+        (root / ".fixture-state").write_bytes(body.encode("utf-8"))
         print("[Done] deployed fixture prompt")
     else:
         print("[Preview] no files were changed; add --yes to deploy")

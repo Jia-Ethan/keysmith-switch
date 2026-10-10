@@ -128,8 +128,8 @@ def main(argv: list[str]) -> int:
     if not preview:
         rule.parent.mkdir(parents=True, exist_ok=True)
         body = Path(source).read_text(encoding="utf-8") if source and Path(source).exists() else "fixture-grok\n"
-        rule.write_text(body, encoding="utf-8")
-        (root / ".fixture-state").write_text(body, encoding="utf-8")
+        rule.write_bytes(body.encode("utf-8"))
+        (root / ".fixture-state").write_bytes(body.encode("utf-8"))
     return emit(
         "deploy",
         preview,
