@@ -9,6 +9,11 @@ from pathlib import Path
 VERSION = os.environ.get("FIXTURE_VERSION", "0.6.0")
 FAIL = os.environ.get("FIXTURE_FAIL")
 
+# Like the real codex-instruct.py: the status lines use box-drawing characters,
+# which the Windows default console encoding (cp1252) cannot print.
+for _stream in (sys.stdout, sys.stderr):
+    _stream.reconfigure(encoding="utf-8")
+
 
 def codex_dir(argv: list[str]) -> Path:
     if "--codex-dir" in argv:
@@ -93,8 +98,8 @@ def main(argv: list[str]) -> int:
     if "--yes" in argv:
         root.mkdir(parents=True, exist_ok=True)
         body = Path(source).read_text(encoding="utf-8") if source != "bundled" and Path(source).exists() else "fixture-codex\n"
-        prompt.write_text(body, encoding="utf-8")
-        (root / ".fixture-state").write_text(body, encoding="utf-8")
+        prompt.write_bytes(body.encode("utf-8"))
+        (root / ".fixture-state").write_bytes(body.encode("utf-8"))
         print("[Done] deployed fixture prompt")
     else:
         print("[Preview] no files were changed; add --yes to deploy")

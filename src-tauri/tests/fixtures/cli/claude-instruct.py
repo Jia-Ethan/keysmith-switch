@@ -146,9 +146,9 @@ def main(argv: list[str]) -> int:
             memory.parent.mkdir(parents=True, exist_ok=True)
             instruction.parent.mkdir(parents=True, exist_ok=True)
             body = Path(source).read_text(encoding="utf-8") if source and Path(source).exists() else "fixture-body\n"
-            instruction.write_text(body, encoding="utf-8")
-            memory.write_text(f"<!-- claude-keysmith:start name={name} -->\n@fixture\n", encoding="utf-8")
-            (instruction.parent / ".fixture-state").write_text(body, encoding="utf-8")
+            instruction.write_bytes(body.encode("utf-8"))
+            memory.write_bytes(f"<!-- claude-keysmith:start name={name} -->\n@fixture\n".encode("utf-8"))
+            (instruction.parent / ".fixture-state").write_bytes(body.encode("utf-8"))
         return dump(
             {
                 "operation": "install",

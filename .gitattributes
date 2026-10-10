@@ -1,0 +1,3 @@
+# Signed test artifacts: their signatures cover these exact bytes, so Git must
+# not turn LF into CRLF when it checks them out on Windows.
+src-tauri/fixtures/updater/artifact-* -text
