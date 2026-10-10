@@ -35,3 +35,5 @@ src-tauri/binaries/*
 *.msi
 *.nsis
 Thumbs.db
+__pycache__/
+*.pyc

@@ -163,6 +163,18 @@ flowchart LR
 
 安装包发布在公开仓库 [`keysmith-switch-releases`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases)。已安装的用户可以在 App 内检查更新，有新版本时设置处会出现红点。
 
+> [!NOTE]
+> **Windows 上杀毒软件提示有病毒？**
+>
+> 火绒等杀毒软件可能把 Keysmith Switch 的组件（例如 `keysmith-codex.exe`）误报为木马并隔离。之后部署提示词时可能会失败。
+>
+> 只要安装包是从上面的官方地址下载的，这就是误报，可以放心使用。处理方法：
+>
+> 1. 打开杀毒软件的「隔离区」，恢复被隔离的文件。
+> 2. 把 Keysmith Switch 加入杀毒软件的「信任区」或「白名单」，以后就不会再被拦截。
+>
+> 不确定的话，可以到 [Telegram 交流群](https://t.me/+xBqLYA65JPU1NjFk)问我们。
+
 <details>
 <summary><b>🤖 复制给智能体安装</b></summary>
 
