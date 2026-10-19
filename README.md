@@ -9,7 +9,7 @@
 粘贴提示词 → 先看部署计划 → 确认后部署到 **Claude Code** · **Codex** · **Grok Build** · **ZCode** · **pi**
 
 [![Latest release](https://img.shields.io/github/v/release/Jia-Ethan/keysmith-switch-releases?label=%E7%A8%B3%E5%AE%9A%E7%89%88&color=C8643B&style=flat-square)](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/latest)
-[![Platforms](https://img.shields.io/badge/macOS%20%C2%B7%20Windows-555?style=flat-square)](#-下载)
+[![Platforms](https://img.shields.io/badge/macOS%20%C2%B7%20Windows%20%C2%B7%20Linux%20%E6%BA%90%E7%A0%81-555?style=flat-square)](#-下载)
 [![Built with Tauri 2](https://img.shields.io/badge/Tauri%202-24C8DB?style=flat-square&logo=tauri&logoColor=white)](https://tauri.app)
 [![License](https://img.shields.io/badge/PolyForm%20Noncommercial-1.0.0-8B7E74?style=flat-square)](LICENSE)
 [![Telegram](https://img.shields.io/badge/Telegram-%E4%BA%A4%E6%B5%81%E7%BE%A4-26A5E4?style=flat-square&logo=telegram&logoColor=white)](https://t.me/+xBqLYA65JPU1NjFk)
@@ -164,6 +164,7 @@ flowchart LR
 | --- | --- |
 | macOS Apple Silicon（M 系列，含 Mac Studio M4 Max） | `Keysmith.Switch_<版本>_aarch64.dmg` |
 | Windows x64 | `Keysmith.Switch_<版本>_x64-setup.exe` |
+| Linux x64 | 暂无安装包，从源码构建；见 [`docs/LINUX.md`](docs/LINUX.md) |
 
 安装包发布在公开仓库 [`keysmith-switch-releases`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases)。已安装的用户可以在 App 内检查更新，有新版本时设置处会出现红点。
 
@@ -228,7 +229,7 @@ flowchart LR
   <img src="docs/images/rewrite-light.png" width="880" alt="输入替换页：每个 Agent 一行，显示状态、开关和连接操作；下方是可按 Agent 筛选的规则表" />
 </picture>
 
-- **改写发生在本机。** Switch 在本机运行 `keysmith-relay`，它只监听 `127.0.0.1`。连接一个 Agent，就是只改它的一个配置项，让它把请求发给中转服务。中转服务按规则改写你输入的文字后，转发到原来的地址，响应原样流式返回。中转服务开机自启（macOS 用 LaunchAgent，Windows 用登录启动项），Switch 不打开也能工作。
+- **改写发生在本机。** Switch 在本机运行 `keysmith-relay`，它只监听 `127.0.0.1`。连接一个 Agent，就是只改它的一个配置项，让它把请求发给中转服务。中转服务按规则改写你输入的文字后，转发到原来的地址，响应原样流式返回。中转服务开机自启（macOS 用 LaunchAgent，Windows 用登录启动项，Linux 用 systemd 用户服务或 XDG 自启动项），Switch 不打开也能工作。
 
   | Agent | 连接时改动的配置 |
   | --- | --- |
@@ -297,7 +298,12 @@ npm run dev   # 然后打开 http://localhost:1420/?mock=1
 
 # macOS Apple Silicon 本地构建（不生成 updater artifact）
 npx tauri build --target aarch64-apple-darwin --config src-tauri/tauri.preview.macos.conf.json
+
+# Linux 本地构建（deb / AppImage，不生成 updater artifact）
+npx tauri build --bundles deb,appimage
 ```
+
+Linux 需要额外的 WebKitGTK / GTK 开发包，构建步骤、中转服务注册方式和限制见 [`docs/LINUX.md`](docs/LINUX.md)。
 
 <details>
 <summary><b>适配器版本</b></summary>

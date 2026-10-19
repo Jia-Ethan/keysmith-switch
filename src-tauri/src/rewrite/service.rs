@@ -3,7 +3,8 @@
 //! The relay binary is copied out of the app bundle into the data folder first, so moving,
 //! updating or removing the app never pulls it from under Codex (and on Windows, so the
 //! installer can replace the app's files while the relay runs). It then starts at sign-in:
-//! a LaunchAgent on macOS, a `Run` registry value on Windows.
+//! a LaunchAgent on macOS, a `Run` registry value on Windows, and a systemd user unit (or,
+//! when no user manager answers, an XDG autostart entry) on Linux.
 
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, SocketAddr, TcpListener, TcpStream};
@@ -404,7 +405,335 @@ mod platform {
     }
 }
 
-#[cfg(not(any(target_os = "macos", windows)))]
+#[cfg(target_os = "linux")]
+mod platform {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+    use std::os::unix::process::CommandExt;
+    use std::path::Path;
+
+    const LABEL: &str = "keysmith-switch-relay";
+
+    fn label() -> String {
+        match std::env::var("KEYSMITH_SWITCH_RELAY_LABEL") {
+            Ok(label) if !label.trim().is_empty() => label.trim().to_string(),
+            _ => LABEL.to_string(),
+        }
+    }
+
+    fn config_home() -> Option<PathBuf> {
+        if let Ok(dir) = std::env::var("XDG_CONFIG_HOME") {
+            let dir = dir.trim();
+            if !dir.is_empty() {
+                return Some(PathBuf::from(dir));
+            }
+        }
+        Some(dirs::home_dir()?.join(".config"))
+    }
+
+    fn unit_dir() -> Option<PathBuf> {
+        if let Ok(dir) = std::env::var("KEYSMITH_SWITCH_SYSTEMD_USER_DIR") {
+            return Some(PathBuf::from(dir));
+        }
+        Some(config_home()?.join("systemd").join("user"))
+    }
+
+    fn unit_path() -> Option<PathBuf> {
+        Some(unit_dir()?.join(format!("{}.service", label())))
+    }
+
+    fn unit_name() -> String {
+        format!("{}.service", label())
+    }
+
+    fn autostart_dir() -> Option<PathBuf> {
+        if let Ok(dir) = std::env::var("KEYSMITH_SWITCH_AUTOSTART_DIR") {
+            return Some(PathBuf::from(dir));
+        }
+        Some(config_home()?.join("autostart"))
+    }
+
+    fn autostart_path() -> Option<PathBuf> {
+        Some(autostart_dir()?.join(format!("{}.desktop", label())))
+    }
+
+    fn launcher_path(paths: &AppPaths) -> PathBuf {
+        super::dir(paths).join("bin").join("keysmith-relay-launch")
+    }
+
+    /// `systemctl --user` needs a user manager; containers and headless sessions often have
+    /// the binary but no bus, so the answer is probed rather than assumed.
+    fn systemd_available() -> bool {
+        run(Command::new("systemctl").args(["--user", "show-environment"]))
+            .is_ok_and(|output| output.status.success())
+    }
+
+    fn use_systemd() -> bool {
+        match std::env::var("KEYSMITH_SWITCH_RELAY_SERVICE") {
+            Ok(value) if value.eq_ignore_ascii_case("systemd") => true,
+            Ok(value) if value.eq_ignore_ascii_case("autostart") => false,
+            _ => systemd_available(),
+        }
+    }
+
+    /// Quote one argument for a systemd unit file. `%%` keeps a literal percent sign from
+    /// being read as a specifier.
+    fn unit_quote(text: &str) -> String {
+        let mut quoted = String::with_capacity(text.len() + 2);
+        quoted.push('"');
+        for ch in text.chars() {
+            match ch {
+                '\\' | '"' => {
+                    quoted.push('\\');
+                    quoted.push(ch);
+                }
+                '%' => quoted.push_str("%%"),
+                _ => quoted.push(ch),
+            }
+        }
+        quoted.push('"');
+        quoted
+    }
+
+    /// Quote the single `Exec=` argument of a desktop entry (freedesktop Exec escaping).
+    fn desktop_quote(text: &str) -> String {
+        let mut quoted = String::with_capacity(text.len() + 2);
+        quoted.push('"');
+        for ch in text.chars() {
+            match ch {
+                '\\' | '"' | '`' | '$' => {
+                    quoted.push('\\');
+                    quoted.push(ch);
+                }
+                _ => quoted.push(ch),
+            }
+        }
+        quoted.push('"');
+        quoted
+    }
+
+    fn shell_quote(path: &Path) -> String {
+        format!("'{}'", path.to_string_lossy().replace('\'', "'\\''"))
+    }
+
+    fn remove_if_exists(path: &Path) -> Result<()> {
+        match std::fs::remove_file(path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(error.into()),
+        }
+    }
+
+    /// A tiny launcher keeps the desktop entry independent of the home path: the entry only
+    /// has to name this file, and the shell handles spaces and logging.
+    fn write_launcher(paths: &AppPaths) -> Result<PathBuf> {
+        let path = launcher_path(paths);
+        let script = format!(
+            "#!/bin/sh\nexec {} --home {} >>{} 2>&1\n",
+            shell_quote(&installed_binary(paths)),
+            shell_quote(&paths.home),
+            shell_quote(&log_path(paths)),
+        );
+        atomic_write(&path, &script)?;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))?;
+        Ok(path)
+    }
+
+    pub(super) fn render_unit(binary: &Path, home: &Path, log: &Path) -> String {
+        let log = unit_quote(&format!("append:{}", log.display()));
+        format!(
+            "[Unit]\n\
+             Description=Keysmith Switch input rewrite relay\n\
+             After=network.target\n\
+             \n\
+             [Service]\n\
+             Type=simple\n\
+             ExecStart={binary} --home {home}\n\
+             Restart=on-failure\n\
+             RestartSec=5\n\
+             StandardOutput={log}\n\
+             StandardError={log}\n\
+             \n\
+             [Install]\n\
+             WantedBy=default.target\n",
+            binary = unit_quote(&binary.to_string_lossy()),
+            home = unit_quote(&home.to_string_lossy()),
+        )
+    }
+
+    fn write_unit(paths: &AppPaths) -> Result<()> {
+        let path = unit_path().ok_or_else(|| Error::message("cannot resolve systemd user dir"))?;
+        let unit = render_unit(&installed_binary(paths), &paths.home, &log_path(paths));
+        atomic_write(&path, &unit)
+    }
+
+    fn write_autostart(paths: &AppPaths) -> Result<()> {
+        let path =
+            autostart_path().ok_or_else(|| Error::message("cannot resolve autostart dir"))?;
+        let launcher = write_launcher(paths)?;
+        let entry = format!(
+            "[Desktop Entry]\n\
+             Type=Application\n\
+             Name=Keysmith Switch Relay\n\
+             Comment=Applies Keysmith input rewrite to agent requests\n\
+             Exec={}\n\
+             Terminal=false\n\
+             NoDisplay=true\n\
+             X-GNOME-Autostart-enabled=true\n",
+            desktop_quote(&launcher.to_string_lossy()),
+        );
+        atomic_write(&path, &entry)
+    }
+
+    pub fn registered(_paths: &AppPaths) -> bool {
+        unit_path().is_some_and(|path| path.is_file())
+            || autostart_path().is_some_and(|path| path.is_file())
+    }
+
+    pub fn register(paths: &AppPaths) -> Result<()> {
+        let unit = unit_path().ok_or_else(|| Error::message("cannot resolve systemd user dir"))?;
+        let autostart =
+            autostart_path().ok_or_else(|| Error::message("cannot resolve autostart dir"))?;
+        if use_systemd() {
+            write_unit(paths)?;
+            remove_if_exists(&autostart)?;
+        } else {
+            write_autostart(paths)?;
+            if unit.is_file() {
+                let _ = run(Command::new("systemctl").args([
+                    "--user",
+                    "disable",
+                    "--now",
+                    &unit_name(),
+                ]));
+            }
+            remove_if_exists(&unit)?;
+        }
+        Ok(())
+    }
+
+    pub fn start(paths: &AppPaths) -> Result<()> {
+        if unit_path().is_some_and(|path| path.is_file()) && systemd_available() {
+            let _ = run(Command::new("systemctl").args(["--user", "daemon-reload"]))?;
+            let enabled = run(Command::new("systemctl").args(["--user", "enable", &unit_name()]))?;
+            if !enabled.status.success() {
+                return Err(Error::command_failed(format!(
+                    "systemctl --user enable failed: {}",
+                    String::from_utf8_lossy(&enabled.stderr).trim()
+                )));
+            }
+            let restarted =
+                run(Command::new("systemctl").args(["--user", "restart", &unit_name()]))?;
+            if !restarted.status.success() {
+                return Err(Error::command_failed(format!(
+                    "systemctl --user restart failed: {}",
+                    String::from_utf8_lossy(&restarted.stderr).trim()
+                )));
+            }
+            return Ok(());
+        }
+        spawn_detached(paths)
+    }
+
+    fn spawn_detached(paths: &AppPaths) -> Result<()> {
+        let log = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(log_path(paths))?;
+        Command::new(installed_binary(paths))
+            .arg("--home")
+            .arg(&paths.home)
+            .stdin(std::process::Stdio::null())
+            .stdout(log.try_clone()?)
+            .stderr(log)
+            .process_group(0)
+            .spawn()
+            .map_err(|error| Error::command_failed(error.to_string()))?;
+        Ok(())
+    }
+
+    pub fn stop(paths: &AppPaths) {
+        let unit = unit_path().filter(|path| path.is_file());
+        if unit.is_some() && systemd_available() {
+            if run(Command::new("systemctl").args(["--user", "stop", &unit_name()]))
+                .is_ok_and(|output| output.status.success())
+            {
+                return;
+            }
+        }
+        let registered = unit.is_some() || autostart_path().is_some_and(|path| path.is_file());
+        if registered {
+            terminate_home_processes(paths);
+        }
+    }
+
+    /// Stop only relay processes started for this app home: `/proc/<pid>/cmdline` is compared
+    /// exactly, so other relays and unrelated processes are left alone.
+    fn terminate_home_processes(paths: &AppPaths) {
+        let binary = installed_binary(paths);
+        let binary = binary.to_string_lossy();
+        let home = paths.home.to_string_lossy();
+        let mut pids = Vec::new();
+        if let Ok(entries) = std::fs::read_dir("/proc") {
+            for entry in entries.flatten() {
+                let Ok(pid) = entry.file_name().to_string_lossy().parse::<i32>() else {
+                    continue;
+                };
+                let Ok(bytes) = std::fs::read(entry.path().join("cmdline")) else {
+                    continue;
+                };
+                let args: Vec<&[u8]> = bytes.split(|byte| *byte == 0).collect();
+                if args.len() < 3 || args[0] != binary.as_bytes() {
+                    continue;
+                }
+                let carries_home = args
+                    .windows(2)
+                    .any(|pair| pair[0] == b"--home" && pair[1] == home.as_bytes());
+                if carries_home {
+                    pids.push(pid);
+                }
+            }
+        }
+        for pid in &pids {
+            // SAFETY: kill has no preconditions; a vanished pid just returns ESRCH.
+            unsafe {
+                libc::kill(*pid, libc::SIGTERM);
+            }
+        }
+        for _ in 0..20 {
+            if pids.iter().all(|pid| unsafe { libc::kill(*pid, 0) } != 0) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        for pid in &pids {
+            unsafe {
+                libc::kill(*pid, libc::SIGKILL);
+            }
+        }
+    }
+
+    pub fn unregister(_paths: &AppPaths) -> Result<()> {
+        if let Some(unit) = unit_path() {
+            if unit.is_file() {
+                let _ = run(Command::new("systemctl").args([
+                    "--user",
+                    "disable",
+                    "--now",
+                    &unit_name(),
+                ]));
+                remove_if_exists(&unit)?;
+                let _ = run(Command::new("systemctl").args(["--user", "daemon-reload"]));
+            }
+        }
+        if let Some(autostart) = autostart_path() {
+            remove_if_exists(&autostart)?;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
 mod platform {
     use super::*;
 
@@ -424,5 +753,23 @@ mod platform {
     pub fn stop(_paths: &AppPaths) {}
     pub fn unregister(_paths: &AppPaths) -> Result<()> {
         Ok(())
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod linux_tests {
+    use super::platform;
+    use std::path::Path;
+
+    #[test]
+    fn unit_quotes_paths_and_keeps_percent_literal() {
+        let unit = platform::render_unit(
+            Path::new("/opt/Key smith/keysmith-relay"),
+            Path::new("/home/a%b"),
+            Path::new("/home/a%b/logs/relay.log"),
+        );
+        assert!(unit.contains("ExecStart=\"/opt/Key smith/keysmith-relay\" --home \"/home/a%%b\""));
+        assert!(unit.contains("StandardOutput=\"append:/home/a%%b/logs/relay.log\""));
+        assert!(unit.contains("WantedBy=default.target"));
     }
 }
