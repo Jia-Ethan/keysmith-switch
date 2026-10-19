@@ -73,8 +73,10 @@ struct Table {
     /// The agent's folder: a wrapper the adapter reports inside it is saved too.
     folder: &'static str,
     /// Where the agent keeps its login besides files (the macOS keychain).
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     keychain: &'static [&'static str],
     /// Background jobs Switch left for this agent (macOS LaunchAgent labels): stopped first.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     launch_agents: &'static [&'static str],
 }
 
