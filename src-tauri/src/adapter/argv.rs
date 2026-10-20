@@ -720,8 +720,18 @@ fn tool_dir(home: Option<&Path>, name: &str) -> Option<String> {
 mod tests {
     use super::*;
 
+    /// A platform-absolute root. `/Users` is not absolute on Windows — no drive letter — so a
+    /// fixture written the Unix way would exercise the fallback instead of the branch under test.
+    fn root(name: &str) -> PathBuf {
+        if cfg!(windows) {
+            PathBuf::from(format!(r"C:\{name}"))
+        } else {
+            PathBuf::from(format!("/{name}"))
+        }
+    }
+
     fn home() -> PathBuf {
-        PathBuf::from("/Users/tester")
+        root("Users").join("tester")
     }
 
     #[test]
@@ -741,9 +751,10 @@ mod tests {
     #[test]
     fn dsh_home_is_honoured_because_dsh_itself_honours_it() {
         let mirasim = home().join(".mirasim");
+        let elsewhere = root("Volumes").join("work").join("dsh");
         assert_eq!(
-            dsh_home_from(Some("/Volumes/work/dsh"), &home(), Some(&mirasim)),
-            PathBuf::from("/Volumes/work/dsh")
+            dsh_home_from(Some(&elsewhere.to_string_lossy()), &home(), Some(&mirasim)),
+            elsewhere
         );
         // `~` is the real home, the way Python's expanduser reads it.
         assert_eq!(
@@ -793,9 +804,10 @@ mod tests {
 
     #[test]
     fn mirasim_home_prefers_an_explicit_value() {
+        let explicit = root("opt").join("mirasim-home");
         assert_eq!(
-            mirasim_home(Some("/opt/mirasim-home"), &home()),
-            Some(PathBuf::from("/opt/mirasim-home"))
+            mirasim_home(Some(&explicit.to_string_lossy()), &home()),
+            Some(explicit)
         );
         // No explicit value and no `~/.mirasim` on disk: nothing is running Mirasim here.
         let empty = tempfile::tempdir().unwrap();
