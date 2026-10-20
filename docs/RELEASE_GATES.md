@@ -2,7 +2,7 @@
 
 本文件记录 `v0.1.4` 及后续版本的发布边界。应用安装包不使用 Apple Developer ID、公证或 Windows Authenticode；应用内更新仍使用独立生产密钥签名并在客户端安装前验证。
 
-当前公开稳定版为 [`v0.8.1`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.8.1)；以下门槛是每次发布的要求。
+当前公开稳定版为 [`v0.8.1`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.8.1)；下一版候选为 `v0.8.2`（准备中）。以下门槛是每次发布的要求。
 
 identifier：`com.jia-ethan.keysmith-switch`
 

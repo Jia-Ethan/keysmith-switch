@@ -4,6 +4,11 @@
 
 阶段：公开稳定版为 [`v0.8.1`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.8.1)，含 macOS Apple Silicon 与 Windows x64 安装包。`v0.1.9`（Quick Deploy，[#28](https://github.com/Jia-Ethan/keysmith-switch/pull/28)）已于 2026-09-28 发布；`v0.2.0`（界面改版，[#30](https://github.com/Jia-Ethan/keysmith-switch/pull/30)）于 2026-09-29 发布；`v0.2.1`（反馈改为预填 issue 表单、设置图标换成齿轮，[#34](https://github.com/Jia-Ethan/keysmith-switch/pull/34)）同日发布；`v0.2.2`（显示当前生效的提示词、去掉范围选择与键盘快捷键、补全操作反馈，[#37](https://github.com/Jia-Ethan/keysmith-switch/pull/37)）于 2026-09-30 发布；`v0.2.3`（“部署中”卡片、ZCode 官方图标、授权改为 PolyForm Noncommercial 1.0.0，[#39](https://github.com/Jia-Ethan/keysmith-switch/pull/39)）同日发布。此文下方 `v0.1.3`／`v0.1.4` 的验证记录是历史记录。
 
+## v0.8.2 发布准备
+
+- #152 已合并：失败的 DSH 写入不再推导成功状态，随包 CLI 跳过不完整 profile 的配置合成，适配器版本显示同步为 0.2.2。
+- 当前公开稳定版仍为 v0.8.1；v0.8.2 正在准备版本声明与发布说明，签名候选构建、公开发布及实体机验收尚未完成。
+
 ## 产品状态
 
 - 首页是每个 Agent 的工作区：顶部显示部署状态与当前生效的提示词（活动记录缺失时按内容指纹在提示词库中匹配，仍无法识别则标注“来源未记录”），下方是提示词库，库中任一提示词可一键生成部署计划。所有部署都是全局（user scope）安装，界面不再提供范围选择；应用也不再提供键盘快捷键。Quick Deploy 以弹出面板打开，可粘贴、导入或拖入 `.md` 文件，将正文保存到本地库，预览计划后确认部署；默认不抓取兄弟仓库的远程提示词。检查更新、移除部署和部署按钮在请求进行中显示加载状态，设置保存以标题旁的轻量提示确认。当前仍由六个随包提供的 legacy adapter 执行写入；Agent registry 与外部 adapter 尚未实现。

@@ -11,7 +11,7 @@ Keysmith Switch.
 | grok | grok/grok-keysmith.py | `d87def09` (`v0.8.0`) | v0.8.0 |
 | zcode | zcode/zcode-keysmith.py | `7348b875` (no `v0.3.2` tag; desktop `desktop-v0.1.0-beta.1`) | 0.3.2 |
 | pi | pi/pi-keysmith.py | `37f69cac` (`v0.2.0`) | v0.2.0 |
-| dsh | dsh/dsh-keysmith.py | `169fcc8` (`v0.2.2`, tag after the release PR lands) | v0.2.2 |
+| dsh | dsh/dsh-keysmith.py | `8879d7b538b856413e7c78b16699fbd2d0f2743d` (merged #2; v0.2.2 tag pending) | v0.2.2 |
 
 `v0.3.1` is the Zcode CLI Latest tag and is not this pin. `v0.2.0` is older. The
 desktop prerelease is the source of the 0.3.2 tree; it is not a CLI release and
@@ -36,3 +36,6 @@ base fields on their own — the older body deleted `personaPrefix`/`personaSuff
 dsh-keysmith bundles its built-in prompt as a source constant and reads no data files, so the
 sidecar needs no `datas`. It also has no preview token — `--yes` is the whole confirmation —
 and its `--json` messages stay English whatever `--lang` says.
+
+The DSH copy also skips composition for incomplete `profiles/web` directories,
+falling back with a warning without asking dsh to create unowned profile files.
