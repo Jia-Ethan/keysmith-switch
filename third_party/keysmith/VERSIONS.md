@@ -11,7 +11,7 @@ Keysmith Switch.
 | grok | grok/grok-keysmith.py | `d87def09` (`v0.8.0`) | v0.8.0 |
 | zcode | zcode/zcode-keysmith.py | `7348b875` (no `v0.3.2` tag; desktop `desktop-v0.1.0-beta.1`) | 0.3.2 |
 | pi | pi/pi-keysmith.py | `37f69cac` (`v0.2.0`) | v0.2.0 |
-| dsh | dsh/dsh-keysmith.py | `4889f2d` (`v0.2.1`) | v0.2.1 |
+| dsh | dsh/dsh-keysmith.py | `169fcc8` (`v0.2.2`, tag after the release PR lands) | v0.2.2 |
 
 `v0.3.1` is the Zcode CLI Latest tag and is not this pin. `v0.2.0` is older. The
 desktop prerelease is the source of the 0.3.2 tree; it is not a CLI release and
@@ -26,9 +26,13 @@ pi 0.2.0 (`Jia-Ethan/pi-keysmith`) emits `pi-keysmith.envelope.v1` with `--json`
 is `docs/json-contract.md` at the same tag. `pi/examples/system-prompt.md` is the CLI's
 bundled default prompt from that tag.
 
-dsh 0.2.1 (`Jia-Ethan/dsh-keysmith`) emits `dsh-keysmith/v1` with `--json` for deploy, `--status`,
+dsh 0.2.2 (`Jia-Ethan/dsh-keysmith`) emits `dsh-keysmith/v1` with `--json` for deploy, `--status`,
 `--uninstall` and `--recover`. Switch requires 0.2.1: 0.2.0 shipped the contract without
-`version`, `state` or `dsh_dir_exists`, so it cannot report drift. dsh-keysmith bundles its
-built-in prompt as a source constant and reads no data files, so the sidecar needs no `datas`.
-It also has no preview token — `--yes` is the whole confirmation — and its `--json` messages
-stay English whatever `--lang` says.
+`version`, `state` or `dsh_dir_exists`, so it cannot report drift. 0.2.2 is taken because it
+restates the `system-prompt` row from `dsh --dump-default-config` instead of writing the three
+base fields on their own — the older body deleted `personaPrefix`/`personaSuffix`, which
+`dsh-web-app` adds to that row and which the home layer then hid from every session. Its
+`--json` shape is unchanged, so the adapter needed no parser change; only the pin moved.
+dsh-keysmith bundles its built-in prompt as a source constant and reads no data files, so the
+sidecar needs no `datas`. It also has no preview token — `--yes` is the whole confirmation —
+and its `--json` messages stay English whatever `--lang` says.

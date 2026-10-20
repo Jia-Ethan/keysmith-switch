@@ -601,7 +601,7 @@ async fn real_dsh_deploys_reads_back_and_leaves_the_rest_of_its_home_alone() {
         status.status,
         keysmith_switch_lib::models::ToolStatus::NotInstalled
     );
-    assert_eq!(status.adapter_version.as_deref(), Some("0.2.1"));
+    assert_eq!(status.adapter_version.as_deref(), Some("0.2.2"));
 
     let body = "# Real dsh prompt\nAsk before deleting.\n";
     let deployed = keysmith_switch_lib::harness::deploy_harness_with(

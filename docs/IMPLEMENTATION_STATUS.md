@@ -13,7 +13,7 @@
 - 设置页区分 loading、empty、retryable error 和 busy 状态。
 - 关于页在应用内更新可用时显示“更新并重启”；低于 updater 门槛或签名 key ID 不匹配时只显示本地化的官方下载入口。
 - 更新安装必须显式确认；安装期间阻止关闭和重复提交，并显示下载/安装进度。
-- 六个 Keysmith sidecar 仍随应用原子交付（pi 自 [#143](https://github.com/Jia-Ethan/keysmith-switch/issues/143) 起接入，pi-keysmith 0.2.0；DSH 对应 [#148](https://github.com/Jia-Ethan/keysmith-switch/issues/148)，dsh-keysmith 0.2.1），GUI 不直接改写托管配置。
+- 六个 Keysmith sidecar 仍随应用原子交付（pi 自 [#143](https://github.com/Jia-Ethan/keysmith-switch/issues/143) 起接入，pi-keysmith 0.2.0；DSH 对应 [#148](https://github.com/Jia-Ethan/keysmith-switch/issues/148)，dsh-keysmith 0.2.2），GUI 不直接改写托管配置。
 - 当前界面基线使用 16px 正文、15px 主要控件与编辑器、分层圆角；窄窗口导航通过可点击的 More 菜单收纳，macOS 菜单栏使用单色 template icon，窗口内品牌图标仍保留颜色。
 
 ## v0.1.3 bootstrap

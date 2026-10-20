@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Deterministic dsh Keysmith fixture emitting dsh-keysmith/v1.
 
-Mirrors dsh-keysmith 0.2.1's payload shape so the adapter contract can be tested without
+Mirrors dsh-keysmith 0.2.2's payload shape so the adapter contract can be tested without
 the real CLI. State comes from files under --dsh-dir, in the same order the real adapter
 decides it:
 
@@ -26,7 +26,7 @@ import sys
 from pathlib import Path
 
 SCHEMA = "dsh-keysmith/v1"
-VERSION = os.environ.get("FIXTURE_VERSION", "0.2.1")
+VERSION = os.environ.get("FIXTURE_VERSION", "0.2.2")
 MANIFEST = ".dsh-keysmith-manifest.json"
 AGENTS = "AGENTS.md"
 PATCH = "cordis.patch.yml"
@@ -139,7 +139,7 @@ def dump(payload: dict) -> None:
 
 
 def extra_for(root: Path, with_state: bool = True) -> dict:
-    """The payload fields dsh-keysmith 0.2.1 sends.
+    """The payload fields dsh-keysmith 0.2.2 sends.
 
     Only `--status` and `--recover` report `state`/`drift`/`dsh_dir_exists`; deploy and
     uninstall describe the operation they performed and leave the state out. Keeping that
