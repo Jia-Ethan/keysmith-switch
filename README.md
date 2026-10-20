@@ -356,7 +356,7 @@ npx tauri build --target aarch64-apple-darwin --config src-tauri/tauri.preview.m
 
 | 版本 | 更新内容 |
 | --- | --- |
-| `v0.8.0` | 新增第六个 Agent DSH（DeepSeek Harness）：随包提供 dsh-keysmith 0.2.1，把提示词部署到全局 `~/.dsh/AGENTS.md`，并写入 `~/.dsh/cordis.patch.yml` 去掉 DSH 固定的身份句，先看计划再确认；原有的 `AGENTS.md` 先备份，停用时放回。`~/.dsh` 不存在时不会创建，`settings.yaml`、`.credentials.yaml`、会话和存储都不动。第三个资源是 npm 缓存里 `dsh-llm-deepseek` 的流式 tool_call 热修，上游一改就会跳过，届时计划里会明确标出。输入替换暂不支持 DSH。[#148](https://github.com/Jia-Ethan/keysmith-switch/issues/148) |
+| `v0.8.0` | 新增第六个 Agent DSH（DeepSeek Harness）：随包提供 dsh-keysmith 0.2.2，把提示词部署到全局 `~/.dsh/AGENTS.md`，并写入 `~/.dsh/cordis.patch.yml` 去掉 DSH 固定的身份句，先看计划再确认；原有的 `AGENTS.md` 先备份，停用时放回。`~/.dsh` 不存在时不会创建，`settings.yaml`、`.credentials.yaml`、会话和存储都不动。第三个资源是 npm 缓存里 `dsh-llm-deepseek` 的流式 tool_call 热修，上游一改就会跳过，届时计划里会明确标出。输入替换暂不支持 DSH。[#148](https://github.com/Jia-Ethan/keysmith-switch/issues/148) |
 | [`v0.7.0`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.7.0) | 新增第五个 Agent pi：随包提供 pi-keysmith 0.2.0，把提示词部署到全局 `~/.pi/agent/SYSTEM.md`，先看计划再确认；原有的 `SYSTEM.md` 先备份，停用时放回，`APPEND_SYSTEM.md`、`AGENTS.md` 等其他文件不动。`~/.pi/agent` 不存在时不会创建。输入替换暂不支持 pi。[#144](https://github.com/Jia-Ethan/keysmith-switch/pull/144) |
 | [`v0.6.5`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.6.5) | 支持密封规则包（`opaque`）：安装、输入替换页和更新确认只展示名称、条数和适用的 Agent，不展示规则正文，也不能复制到「我的规则」；中转服务照常按原文替换。密封只是界面上不展示，规则在本机仍是明文。[#140](https://github.com/Jia-Ethan/keysmith-switch/pull/140) |
 | [`v0.6.4`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.6.4) | Grok Build 适配器更新到 grok-keysmith v0.8.0：`config.toml` 新增「用户区域」，部署后自己加的配置（如 API key 备用模型）放进去，不算配置被改动，停用时会保留。[#136](https://github.com/Jia-Ethan/keysmith-switch/pull/136) |

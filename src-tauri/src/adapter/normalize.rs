@@ -581,7 +581,7 @@ fn normalize_pi(command: &AdapterCommand, captured: &Captured, mut envelope: Env
     envelope
 }
 
-/// dsh-keysmith 0.2.1 answers with `dsh-keysmith/v1`. It reports `state` outright, so unlike
+/// dsh-keysmith 0.2.2 answers with `dsh-keysmith/v1`. It reports `state` outright, so unlike
 /// pi there is no status tree to walk — but the state it reports has to line up with what a
 /// deploy may safely do, and dsh backs up before it replaces, so drift does not block a deploy.
 fn normalize_dsh(
@@ -590,7 +590,7 @@ fn normalize_dsh(
     mut envelope: Envelope,
 ) -> Envelope {
     if matches!(command, AdapterCommand::Version) {
-        // argparse text (`dsh-keysmith 0.2.1`), not an envelope.
+        // argparse text (`dsh-keysmith 0.2.2`), not an envelope.
         if let Some(version) = captured
             .stdout
             .lines()
@@ -679,10 +679,13 @@ fn normalize_dsh(
         AdapterCommand::Doctor | AdapterCommand::Status { .. }
     ) {
         return envelope.fail("dsh adapter did not report a state");
-    } else if matches!(
-        command,
-        AdapterCommand::Activate { .. } | AdapterCommand::Deactivate { .. }
-    ) {
+    } else if envelope.ok
+        && envelope.exit_code == 0
+        && matches!(
+            command,
+            AdapterCommand::Activate { .. } | AdapterCommand::Deactivate { .. }
+        )
+    {
         // dsh-keysmith describes the operation it performed, not the state it left behind.
         // A confirmed write that succeeded did what it said, so the state is the one it aimed
         // at; deriving it here is why Switch can show the result without a second round trip.
@@ -705,11 +708,11 @@ fn normalize_dsh(
             .pointer("/adapter_patch/path")
             .and_then(Value::as_str)
             .unwrap_or("");
-        if adapter_path.is_empty() {
+        if !adapter_path.is_empty() {
             envelope.target_paths.push(TargetPath {
                 path: adapter_path.to_string(),
                 role: "adapter".into(),
-                exists: false,
+                exists: !matches!(adapter_state, "absent"),
             });
         }
         if matches!(adapter_state, "unknown" | "absent") {
