@@ -50,7 +50,7 @@ export const TOOL_CATALOG: ToolInfo[] = [
   {
     id: "dsh",
     name: "DSH",
-    adapterVersion: "0.2.1",
+    adapterVersion: "0.2.2",
     available: true,
     unavailableReason: null,
     supportedScopes: ["user"],
