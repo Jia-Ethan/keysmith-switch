@@ -1135,7 +1135,8 @@ async fn dsh_fixture_contract() {
             .target_paths
             .iter()
             .any(|entry| entry.role == "instruction"
-                && entry.path.ends_with("/.dsh/AGENTS.md")
+                && std::path::Path::new(&entry.path)
+                    .ends_with(std::path::Path::new(".dsh").join("AGENTS.md"))
                 && entry.exists),
         "{:?}",
         confirmed.target_paths
