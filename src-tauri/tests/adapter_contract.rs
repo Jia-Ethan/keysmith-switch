@@ -1111,7 +1111,10 @@ async fn dsh_fixture_contract() {
         .planned_files
         .iter()
         .any(|entry| entry.path.ends_with("AGENTS.md")));
-    assert!(!dsh_dir.join("AGENTS.md").exists(), "a preview writes nothing");
+    assert!(
+        !dsh_dir.join("AGENTS.md").exists(),
+        "a preview writes nothing"
+    );
 
     let confirmed = run_adapter_with(ToolKind::Dsh, dsh_activate(&file), &opts)
         .await
@@ -1156,7 +1159,10 @@ async fn dsh_reports_drift_and_a_deploy_still_plans() {
     assert_eq!(drifted.status, ToolStatus::Drift);
     assert!(drifted.ok, "drift is a state, not a failure: {drifted:?}");
     assert!(
-        drifted.warnings.iter().any(|note| note.contains("agents_md")),
+        drifted
+            .warnings
+            .iter()
+            .any(|note| note.contains("agents_md")),
         "{:?}",
         drifted.warnings
     );
@@ -1242,9 +1248,7 @@ async fn dsh_reports_recovery_required_from_residue() {
     .await
     .unwrap();
     assert!(plan.ok && plan.preview, "{plan:?}");
-    assert!(dsh_dir
-        .join(".dsh-keysmith-transaction-deadbeef")
-        .is_dir());
+    assert!(dsh_dir.join(".dsh-keysmith-transaction-deadbeef").is_dir());
 
     let done = run_adapter_with(
         ToolKind::Dsh,
@@ -1259,9 +1263,7 @@ async fn dsh_reports_recovery_required_from_residue() {
     .await
     .unwrap();
     assert!(done.ok && !done.preview, "{done:?}");
-    assert!(!dsh_dir
-        .join(".dsh-keysmith-transaction-deadbeef")
-        .exists());
+    assert!(!dsh_dir.join(".dsh-keysmith-transaction-deadbeef").exists());
 }
 
 #[tokio::test]

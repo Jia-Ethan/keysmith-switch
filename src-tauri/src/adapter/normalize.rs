@@ -584,7 +584,11 @@ fn normalize_pi(command: &AdapterCommand, captured: &Captured, mut envelope: Env
 /// dsh-keysmith 0.2.1 answers with `dsh-keysmith/v1`. It reports `state` outright, so unlike
 /// pi there is no status tree to walk — but the state it reports has to line up with what a
 /// deploy may safely do, and dsh backs up before it replaces, so drift does not block a deploy.
-fn normalize_dsh(command: &AdapterCommand, captured: &Captured, mut envelope: Envelope) -> Envelope {
+fn normalize_dsh(
+    command: &AdapterCommand,
+    captured: &Captured,
+    mut envelope: Envelope,
+) -> Envelope {
     if matches!(command, AdapterCommand::Version) {
         // argparse text (`dsh-keysmith 0.2.1`), not an envelope.
         if let Some(version) = captured
@@ -750,7 +754,10 @@ fn normalize_dsh(command: &AdapterCommand, captured: &Captured, mut envelope: En
         let Some(path) = action.get("path").and_then(Value::as_str) else {
             continue;
         };
-        let kind = action.get("action").and_then(Value::as_str).unwrap_or("write");
+        let kind = action
+            .get("action")
+            .and_then(Value::as_str)
+            .unwrap_or("write");
         // `noop`/`skip` describe a resource that is already in place; listing them as planned
         // writes would overstate what a confirmation changes.
         if matches!(kind, "noop" | "skip") {

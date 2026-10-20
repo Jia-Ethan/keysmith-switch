@@ -507,7 +507,8 @@ fn pi_args(command: &AdapterCommand, home: Option<&Path>) -> Result<PreparedComm
 }
 
 /// `<home>/.pi/agent`, from the isolated home when there is one, else the real home.
-fn pi_dir(home: Option<&Path>) -> Result<String> {    let root = match tool_dir(home, ".pi") {
+fn pi_dir(home: Option<&Path>) -> Result<String> {
+    let root = match tool_dir(home, ".pi") {
         Some(dir) => PathBuf::from(dir),
         None => dirs::home_dir()
             .ok_or_else(|| Error::invalid("pi needs a home folder to find ~/.pi/agent"))?

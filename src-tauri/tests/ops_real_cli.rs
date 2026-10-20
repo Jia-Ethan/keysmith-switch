@@ -570,7 +570,10 @@ async fn real_dsh_deploys_reads_back_and_leaves_the_rest_of_its_home_alone() {
     std::fs::create_dir_all(dsh_dir.join("profiles")).unwrap();
     // Files that belong to dsh and its owner. Switch must not touch any of them.
     let owned = [
-        ("settings.yaml", "permission:\n  defaultPreset: danger-full-access\n"),
+        (
+            "settings.yaml",
+            "permission:\n  defaultPreset: danger-full-access\n",
+        ),
         (".credentials.yaml", "deepseek: placeholder\n"),
         ("sessions/s1.json", "{\"turn\":1}\n"),
         ("storages/state.json", "{\"k\":1}\n"),
@@ -594,7 +597,10 @@ async fn real_dsh_deploys_reads_back_and_leaves_the_rest_of_its_home_alone() {
         .await
         .unwrap();
     assert!(status.ok, "{status:?}");
-    assert_eq!(status.status, keysmith_switch_lib::models::ToolStatus::NotInstalled);
+    assert_eq!(
+        status.status,
+        keysmith_switch_lib::models::ToolStatus::NotInstalled
+    );
     assert_eq!(status.adapter_version.as_deref(), Some("0.2.1"));
 
     let body = "# Real dsh prompt\nAsk before deleting.\n";
@@ -607,7 +613,10 @@ async fn real_dsh_deploys_reads_back_and_leaves_the_rest_of_its_home_alone() {
     .await
     .unwrap();
     assert!(deployed.ok, "{deployed:?}");
-    assert_eq!(std::fs::read_to_string(dsh_dir.join("AGENTS.md")).unwrap(), body);
+    assert_eq!(
+        std::fs::read_to_string(dsh_dir.join("AGENTS.md")).unwrap(),
+        body
+    );
 
     let state = keysmith_switch_lib::harness::harness_state(&store, ToolKind::Dsh, &opts)
         .await
@@ -641,7 +650,10 @@ async fn real_dsh_deploys_reads_back_and_leaves_the_rest_of_its_home_alone() {
         "uninstall restores the file that was there before the deploy"
     );
     for (name, expected) in [
-        ("settings.yaml", "permission:\n  defaultPreset: danger-full-access\n"),
+        (
+            "settings.yaml",
+            "permission:\n  defaultPreset: danger-full-access\n",
+        ),
         (".credentials.yaml", "deepseek: placeholder\n"),
         ("sessions/s1.json", "{\"turn\":1}\n"),
         ("storages/state.json", "{\"k\":1}\n"),
