@@ -522,7 +522,8 @@ fn pi_dir(home: Option<&Path>) -> Result<String> {
 }
 
 /// dsh-keysmith, like pi: every machine-readable call names `--dsh-dir` explicitly as an
-/// absolute path, so the adapter never has to infer it from `$DSH_HOME` or a default.
+/// absolute path, so the CLI never falls back to its own `$DSH_HOME`/`~/.dsh` guess. The
+/// adapter resolves that path once, in [`dsh_dir`], where the Mirasim exception lives.
 ///
 /// One difference from pi that the shape of this function records: dsh-keysmith 0.2.1 has no
 /// preview token, so a confirmation cannot be bound to the preview the user saw. `--yes` is
@@ -583,18 +584,77 @@ fn dsh_args(command: &AdapterCommand, home: Option<&Path>) -> Result<PreparedCom
     Ok(PreparedCommand { args, preview })
 }
 
-/// `<home>/.dsh`, from the isolated home when there is one, else the real home.
+/// `<home>/.dsh` from an isolated home — the shape every test uses — else the user's real
+/// dsh home.
+///
+/// The real home is not hard-coded to `~/.dsh`: `$DSH_HOME` wins when it is set, which is what
+/// dsh-keysmith 0.2.1 resolves on its own and what a relocated harness install needs. Mirasim
+/// is the case that forces the two apart. It starts every dsh session with `DSH_HOME` pointing
+/// at a disposable mount under `~/.mirasim/agent-homes/dsh/<id>`, assembled from symlinks back
+/// into `~/.dsh`; deploying through such a mount would land in one session's scratch directory
+/// and vanish with it, so a value pointing inside Mirasim's agent homes is ignored.
 fn dsh_dir(home: Option<&Path>) -> Result<String> {
     let dir = match tool_dir(home, ".dsh") {
         Some(dir) => PathBuf::from(dir),
-        None => dirs::home_dir()
-            .ok_or_else(|| Error::invalid("dsh needs a home folder to find ~/.dsh"))?
-            .join(".dsh"),
+        None => {
+            let real_home = dirs::home_dir()
+                .ok_or_else(|| Error::invalid("dsh needs a home folder to find ~/.dsh"))?;
+            let mirasim = mirasim_home(std::env::var(MIRASIM_HOME_ENV).ok().as_deref(), &real_home);
+            dsh_home_from(
+                std::env::var(DSH_HOME_ENV).ok().as_deref(),
+                &real_home,
+                mirasim.as_deref(),
+            )
+        }
     };
     if !dir.is_absolute() {
         return Err(Error::invalid("dsh --dsh-dir must be an absolute path"));
     }
     Ok(dir.to_string_lossy().into_owned())
+}
+
+const DSH_HOME_ENV: &str = "DSH_HOME";
+const MIRASIM_HOME_ENV: &str = "MIRASIM_HOME";
+
+/// The user's real dsh home: `$DSH_HOME` when it names an absolute path that is not inside
+/// Mirasim's agent homes, else `~/.dsh`.
+fn dsh_home_from(env: Option<&str>, real_home: &Path, mirasim: Option<&Path>) -> PathBuf {
+    let default = real_home.join(".dsh");
+    let raw = match env.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(raw) => raw,
+        None => return default,
+    };
+    let path = expand_tilde(Path::new(raw), real_home);
+    if !path.is_absolute() {
+        return default;
+    }
+    // Mirasim mounts `$DSH_HOME` per session; the canonical home it links from is the target.
+    if mirasim.is_some_and(|root| path.starts_with(root.join("agent-homes"))) {
+        return default;
+    }
+    path
+}
+
+/// Mirasim's home: `$MIRASIM_HOME` when it is set, else `~/.mirasim` when that directory
+/// exists. Absent means nobody is running Mirasim here and `$DSH_HOME` needs no suspicion.
+fn mirasim_home(env: Option<&str>, real_home: &Path) -> Option<PathBuf> {
+    if let Some(raw) = env.map(str::trim).filter(|value| !value.is_empty()) {
+        let path = expand_tilde(Path::new(raw), real_home);
+        if path.is_absolute() {
+            return Some(path);
+        }
+    }
+    let candidate = real_home.join(".mirasim");
+    candidate.is_dir().then_some(candidate)
+}
+
+/// `~/x` and a bare `~` mean the real home, matching what dsh-keysmith's `expanduser` does.
+/// `~other/x` is another user's directory and is left untouched.
+fn expand_tilde(path: &Path, real_home: &Path) -> PathBuf {
+    match path.strip_prefix("~") {
+        Ok(rest) => real_home.join(rest),
+        Err(_) => path.to_path_buf(),
+    }
 }
 
 fn push_project_dir(
@@ -654,4 +714,97 @@ fn tool_dir(home: Option<&Path>, name: &str) -> Option<String> {
         };
         path.to_string_lossy().into_owned()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn home() -> PathBuf {
+        PathBuf::from("/Users/tester")
+    }
+
+    #[test]
+    fn the_real_home_defaults_to_dot_dsh() {
+        assert_eq!(dsh_home_from(None, &home(), None), home().join(".dsh"));
+        // An empty or whitespace-only variable is the same as unset: dsh-keysmith trims it too.
+        assert_eq!(
+            dsh_home_from(Some("   "), &home(), None),
+            home().join(".dsh")
+        );
+        assert_eq!(
+            dsh_home_from(Some(""), &home(), Some(&home().join(".mirasim"))),
+            home().join(".dsh")
+        );
+    }
+
+    #[test]
+    fn dsh_home_is_honoured_because_dsh_itself_honours_it() {
+        let mirasim = home().join(".mirasim");
+        assert_eq!(
+            dsh_home_from(Some("/Volumes/work/dsh"), &home(), Some(&mirasim)),
+            PathBuf::from("/Volumes/work/dsh")
+        );
+        // `~` is the real home, the way Python's expanduser reads it.
+        assert_eq!(
+            dsh_home_from(Some("~/custom-dsh"), &home(), Some(&mirasim)),
+            home().join("custom-dsh")
+        );
+    }
+
+    #[test]
+    fn a_mirasim_session_mount_is_never_the_deployment_target() {
+        let mirasim = home().join(".mirasim");
+        let session = mirasim.join("agent-homes/dsh/946bece7-47e7-4afe-bcbc9d8ac186");
+        // This is exactly what a Mirasim-spawned shell hands to its children.
+        assert_eq!(
+            dsh_home_from(Some(&session.to_string_lossy()), &home(), Some(&mirasim)),
+            home().join(".dsh")
+        );
+        // A path that merely shares a prefix is a different directory, not a mount.
+        let lookalike = mirasim.join("agent-homes-backup/dsh/x");
+        assert_eq!(
+            dsh_home_from(Some(&lookalike.to_string_lossy()), &home(), Some(&mirasim)),
+            lookalike
+        );
+    }
+
+    #[test]
+    fn a_relative_dsh_home_falls_back_to_the_default() {
+        assert_eq!(
+            dsh_home_from(Some("dsh-home"), &home(), None),
+            home().join(".dsh")
+        );
+        assert_eq!(
+            dsh_home_from(Some("../dsh"), &home(), None),
+            home().join(".dsh")
+        );
+    }
+
+    #[test]
+    fn another_users_tilde_path_is_left_alone() {
+        // strip_prefix only eats a whole `~` component, so `~bob/x` keeps its leading `~`.
+        assert_eq!(
+            expand_tilde(Path::new("~bob/dsh"), &home()),
+            PathBuf::from("~bob/dsh")
+        );
+        assert_eq!(expand_tilde(Path::new("~"), &home()), home());
+    }
+
+    #[test]
+    fn mirasim_home_prefers_an_explicit_value() {
+        assert_eq!(
+            mirasim_home(Some("/opt/mirasim-home"), &home()),
+            Some(PathBuf::from("/opt/mirasim-home"))
+        );
+        // No explicit value and no `~/.mirasim` on disk: nothing is running Mirasim here.
+        let empty = tempfile::tempdir().unwrap();
+        assert_eq!(mirasim_home(None, empty.path()), None);
+        // The directory itself makes it detectable.
+        std::fs::create_dir_all(empty.path().join(".mirasim")).unwrap();
+        assert_eq!(
+            mirasim_home(None, empty.path()),
+            Some(empty.path().join(".mirasim"))
+        );
+    }
 }

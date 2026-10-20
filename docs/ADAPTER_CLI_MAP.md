@@ -121,7 +121,7 @@ doctor / install 继续解析文本行，不传 `--json`。0.3.2 的 `uninstall 
 | recover | `--recover --dsh-dir <abs> --json --lang en`。确认时加 `--yes` |
 | backups / restore / reconcile | 不支持 |
 
-`--dsh-dir` 每次都传，且必须是绝对路径：隔离 home 时是 `<home>/.dsh`，否则是真实 home 下的 `~/.dsh`。CLI 从不创建它，也不会替用户跑一次 dsh；目录不存在时 `dsh_dir_exists=false`、state 为 `not-installed`，部署以 exit 2 被拦下。schema: `dsh-keysmith/v1`，随包版本 0.2.1。
+`--dsh-dir` 每次都传，且必须是绝对路径：隔离 home 时是 `<home>/.dsh`，否则解析真实 home——`$DSH_HOME` 设了就用它（与 CLI 自己的 `_default_dsh_home` 一致），否则 `~/.dsh`。唯一的例外是 Mirasim 的会话挂载点：Mirasim 用 `DSH_HOME=~/.mirasim/agent-homes/dsh/<id>` 启动每个 dsh 会话，那个目录是一栋指回 `~/.dsh` 的符号链接楼，只属于当次会话，所以继承到的值若落在 `agent-homes/` 下面就忽略，仍然部署到 `~/.dsh`。CLI 从不创建它，也不会替用户跑一次 dsh；目录不存在时 `dsh_dir_exists=false`、state 为 `not-installed`，部署以 exit 2 被拦下。schema: `dsh-keysmith/v1`，随包版本 0.2.1。
 
 `normalize_dsh` 的约定：
 
