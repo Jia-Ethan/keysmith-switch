@@ -22,6 +22,7 @@ pub fn prepare(
         ToolKind::Grok => grok_args(command, isolated_home),
         ToolKind::Zcode => zcode_args(command, isolated_home),
         ToolKind::Pi => pi_args(command, isolated_home),
+        ToolKind::Dsh => dsh_args(command, isolated_home),
     }
 }
 
@@ -506,8 +507,7 @@ fn pi_args(command: &AdapterCommand, home: Option<&Path>) -> Result<PreparedComm
 }
 
 /// `<home>/.pi/agent`, from the isolated home when there is one, else the real home.
-fn pi_dir(home: Option<&Path>) -> Result<String> {
-    let root = match tool_dir(home, ".pi") {
+fn pi_dir(home: Option<&Path>) -> Result<String> {    let root = match tool_dir(home, ".pi") {
         Some(dir) => PathBuf::from(dir),
         None => dirs::home_dir()
             .ok_or_else(|| Error::invalid("pi needs a home folder to find ~/.pi/agent"))?
@@ -516,6 +516,82 @@ fn pi_dir(home: Option<&Path>) -> Result<String> {
     let dir = root.join("agent");
     if !dir.is_absolute() {
         return Err(Error::invalid("pi --pi-dir must be an absolute path"));
+    }
+    Ok(dir.to_string_lossy().into_owned())
+}
+
+/// dsh-keysmith, like pi: every machine-readable call names `--dsh-dir` explicitly as an
+/// absolute path, so the adapter never has to infer it from `$DSH_HOME` or a default.
+///
+/// One difference from pi that the shape of this function records: dsh-keysmith 0.2.1 has no
+/// preview token, so a confirmation cannot be bound to the preview the user saw. `--yes` is
+/// the only confirmation there is, and the CLI backs up before it overwrites.
+fn dsh_args(command: &AdapterCommand, home: Option<&Path>) -> Result<PreparedCommand> {
+    let mut args: Vec<String> = Vec::new();
+    let mut preview = true;
+    match command {
+        AdapterCommand::Version => {
+            return Ok(PreparedCommand {
+                args: vec!["--version".into()],
+                preview: true,
+            });
+        }
+        AdapterCommand::Doctor | AdapterCommand::Status { .. } => args.push("--status".into()),
+        AdapterCommand::PlanActivate { file, name, .. } => {
+            args.push("--file".into());
+            args.push(abs(file)?);
+            push_flag_name(&mut args, name.as_deref());
+        }
+        AdapterCommand::Activate { file, name, .. } => {
+            args.push("--file".into());
+            args.push(abs(file)?);
+            push_flag_name(&mut args, name.as_deref());
+            args.push("--yes".into());
+            preview = false;
+        }
+        AdapterCommand::PlanDeactivate { .. } => args.push("--uninstall".into()),
+        AdapterCommand::Deactivate { .. } => {
+            args.push("--uninstall".into());
+            args.push("--yes".into());
+            preview = false;
+        }
+        AdapterCommand::Recover { execute, .. } => {
+            args.push("--recover".into());
+            if *execute {
+                args.push("--yes".into());
+                preview = false;
+            }
+        }
+        AdapterCommand::Backups { .. } | AdapterCommand::Restore { .. } => {
+            return Err(Error::unavailable(
+                "backups and restore are Claude commands",
+            ));
+        }
+        AdapterCommand::Reconcile { .. } => {
+            return Err(Error::unavailable("reconcile is a Grok command"));
+        }
+    }
+    args.push("--dsh-dir".into());
+    args.push(dsh_dir(home)?);
+    if matches!(command, AdapterCommand::PlanActivate { .. }) {
+        args.push("--dry-run".into());
+    }
+    args.push("--json".into());
+    args.push("--lang".into());
+    args.push("en".into());
+    Ok(PreparedCommand { args, preview })
+}
+
+/// `<home>/.dsh`, from the isolated home when there is one, else the real home.
+fn dsh_dir(home: Option<&Path>) -> Result<String> {
+    let dir = match tool_dir(home, ".dsh") {
+        Some(dir) => PathBuf::from(dir),
+        None => dirs::home_dir()
+            .ok_or_else(|| Error::invalid("dsh needs a home folder to find ~/.dsh"))?
+            .join(".dsh"),
+    };
+    if !dir.is_absolute() {
+        return Err(Error::invalid("dsh --dsh-dir must be an absolute path"));
     }
     Ok(dir.to_string_lossy().into_owned())
 }

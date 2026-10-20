@@ -4,12 +4,13 @@
 
 ## Tools
 
-`claude` | `codex` | `grok` | `zcode` | `pi`
+`claude` | `codex` | `grok` | `zcode` | `pi` | `dsh`
 
 - Claude Code scopes: `user` | `project` | `local`（project/local 必须有绝对 `projectDir`）
 - Codex / Grok scopes: 仅 `user`
 - ZCode scopes: 仅 `user`；macOS 与 Windows 均可用。Switch 不安装 ZCode 本体：官方安装计划只给出手动安装说明，不执行安装命令
 - pi scopes: 仅 `user`（`~/.pi/agent`）。支持 recover；不支持 backups / restore / reconcile，也不支持输入替换。没有官方产品安装计划
+- dsh scopes: 仅 `user`（`~/.dsh`）。支持 recover；不支持 backups / restore / reconcile，也不支持输入替换。确认不绑定预览（dsh-keysmith 0.2.1 没有预览 token）。没有官方产品安装计划
 
 ## Adapter envelope
 

@@ -32,6 +32,7 @@ fn setup(tool: ToolKind) -> (tempfile::TempDir, Store, AdapterOptions) {
         ToolKind::Grok => "grok-keysmith.py",
         ToolKind::Zcode => "zcode-keysmith.py",
         ToolKind::Pi => "pi-keysmith.py",
+        ToolKind::Dsh => "dsh-keysmith.py",
     };
     let opts = AdapterOptions {
         home: Some(home),

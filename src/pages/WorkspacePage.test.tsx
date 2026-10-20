@@ -771,7 +771,7 @@ describe("Workspace: card menu", () => {
     const menu = await openMenu("b");
     expect(menu).toHaveAccessibleName("Spare 的操作");
     const labels = within(menu).getAllByRole("menuitem").map((item) => item.textContent);
-    expect(labels).toEqual(["打开", "编辑", "部署", "复制", "Claude Code", "Grok Build", "ZCode", "pi", "删除"]);
+    expect(labels).toEqual(["打开", "编辑", "部署", "复制", "Claude Code", "Grok Build", "ZCode", "pi", "DSH", "删除"]);
     expect(within(menu).getByRole("group", { name: "复制到其他工具" })).toBeInTheDocument();
     expect(screen.getByTestId("prompt-item-b").closest("li")).toHaveAttribute("data-engaged");
     fireEvent.keyDown(document.activeElement!, { key: "Escape" });

@@ -38,6 +38,7 @@ pub fn harness_source(tool: ToolKind) -> HarnessSource {
         ToolKind::Grok => "Grok prompt",
         ToolKind::Zcode => "ZCode prompt",
         ToolKind::Pi => "pi prompt",
+        ToolKind::Dsh => "DSH prompt",
     };
     HarnessSource { tool, title }
 }

@@ -206,6 +206,16 @@ fn native_prompt_files(tool: ToolKind, home: &Path) -> Vec<PathBuf> {
                 Vec::new()
             };
         }
+        // dsh's home holds sessions, storages, provider settings and credentials; only the
+        // user-global AGENTS.md it loads is a prompt candidate.
+        ToolKind::Dsh => {
+            let agents = home.join(".dsh").join("AGENTS.md");
+            return if agents.is_file() {
+                vec![agents]
+            } else {
+                Vec::new()
+            };
+        }
     };
     let mut files = Vec::new();
     for root in roots {
@@ -407,6 +417,8 @@ fn infer_tool_from_path(path: &Path) -> Option<ToolKind> {
         Some(ToolKind::Zcode)
     } else if text.contains("/.pi/") || text.contains("\\.pi\\") {
         Some(ToolKind::Pi)
+    } else if text.contains("/.dsh/") || text.contains("\\.dsh\\") {
+        Some(ToolKind::Dsh)
     } else {
         None
     }

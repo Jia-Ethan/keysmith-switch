@@ -41,9 +41,9 @@ function renderShell(page: AppPage, advancedEnabled = false, autoCheck = false) 
 }
 
 describe("AppShell tool navigation", () => {
-  it("renders all five tool entries", () => {
+  it("renders all six tool entries", () => {
     renderShell({ kind: "tool", tool: "claude" });
-    for (const tool of ["claude", "codex", "grok", "zcode", "pi"]) {
+    for (const tool of ["claude", "codex", "grok", "zcode", "pi", "dsh"]) {
       expect(screen.getByTestId(`nav-${tool}`)).toBeInTheDocument();
     }
   });
@@ -81,7 +81,7 @@ describe("AppShell tool navigation", () => {
 
   it("does not mark any tool active on the settings page", () => {
     renderShell({ kind: "settings" });
-    for (const tool of ["claude", "codex", "grok", "zcode", "pi"]) {
+    for (const tool of ["claude", "codex", "grok", "zcode", "pi", "dsh"]) {
       expect(screen.getByTestId(`nav-${tool}`)).not.toHaveAttribute("aria-current");
     }
     expect(screen.getByTestId("nav-settings")).toBeInTheDocument();

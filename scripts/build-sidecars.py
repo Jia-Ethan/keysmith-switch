@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Freeze the five Keysmith CLIs into platform-native sidecars, and build the input
+"""Freeze the six Keysmith CLIs into platform-native sidecars, and build the input
 rewrite relay (Rust) next to them.
 
 Users of the packaged app do not need Python. Dev `tauri dev` and cargo tests
@@ -97,6 +97,14 @@ SPECS = [
         "name": "keysmith-pi",
         "script": VENDOR / "pi" / "pi-keysmith.py",
         "datas": [VENDOR / "pi" / "examples" / "system-prompt.md"],
+        "hidden": [],
+    },
+    {
+        # dsh-keysmith keeps its built-in prompt as a source constant and reads no data
+        # files, so there is nothing to bundle alongside it.
+        "name": "keysmith-dsh",
+        "script": VENDOR / "dsh" / "dsh-keysmith.py",
+        "datas": [],
         "hidden": [],
     },
 ]

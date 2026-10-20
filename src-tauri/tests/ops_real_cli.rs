@@ -550,3 +550,214 @@ async fn real_pi_without_its_folder_refuses_and_creates_nothing() {
     );
     assert!(!user_home.join(".pi").exists());
 }
+
+/// The real dsh-keysmith in a temporary home. Unlike the other adapters it also manages a
+/// file inside the npm cache and a private home full of the agent's own data; both have to
+/// come out the other side untouched.
+#[tokio::test]
+async fn real_dsh_deploys_reads_back_and_leaves_the_rest_of_its_home_alone() {
+    if !python3_available() {
+        return;
+    }
+    let Some(cli) = vendor("dsh/dsh-keysmith.py") else {
+        return;
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let user_home = tmp.path().join("home");
+    let dsh_dir = user_home.join(".dsh");
+    std::fs::create_dir_all(dsh_dir.join("sessions")).unwrap();
+    std::fs::create_dir_all(dsh_dir.join("storages")).unwrap();
+    std::fs::create_dir_all(dsh_dir.join("profiles")).unwrap();
+    // Files that belong to dsh and its owner. Switch must not touch any of them.
+    let owned = [
+        ("settings.yaml", "permission:\n  defaultPreset: danger-full-access\n"),
+        (".credentials.yaml", "deepseek: placeholder\n"),
+        ("sessions/s1.json", "{\"turn\":1}\n"),
+        ("storages/state.json", "{\"k\":1}\n"),
+    ];
+    for (name, body) in owned {
+        std::fs::write(dsh_dir.join(name), body).unwrap();
+    }
+    // A prompt the person wrote before Keysmith existed: it is the file uninstall restores.
+    std::fs::write(dsh_dir.join("AGENTS.md"), "MY OWN INSTRUCTIONS\n").unwrap();
+
+    let paths = AppPaths::from_home(tmp.path().join("switch"));
+    paths.ensure().unwrap();
+    let store = Store::open(&paths).unwrap();
+    let opts = AdapterOptions {
+        home: Some(user_home.clone()),
+        cli_override: Some(cli),
+        ..AdapterOptions::default()
+    };
+
+    let status = tool_status(&store, ToolKind::Dsh, Scope::User, None, &opts)
+        .await
+        .unwrap();
+    assert!(status.ok, "{status:?}");
+    assert_eq!(status.status, keysmith_switch_lib::models::ToolStatus::NotInstalled);
+    assert_eq!(status.adapter_version.as_deref(), Some("0.2.1"));
+
+    let body = "# Real dsh prompt\nAsk before deleting.\n";
+    let deployed = keysmith_switch_lib::harness::deploy_harness_with(
+        &store,
+        ToolKind::Dsh,
+        &opts,
+        Some(body.into()),
+    )
+    .await
+    .unwrap();
+    assert!(deployed.ok, "{deployed:?}");
+    assert_eq!(std::fs::read_to_string(dsh_dir.join("AGENTS.md")).unwrap(), body);
+
+    let state = keysmith_switch_lib::harness::harness_state(&store, ToolKind::Dsh, &opts)
+        .await
+        .unwrap();
+    assert!(state.deployed, "{state:?}");
+    assert_eq!(state.prompt_id, deployed.prompt_id);
+
+    // Deactivate, then check every file dsh owns is exactly as it was.
+    let off = keysmith_switch_lib::ops::plan_deactivate(
+        &store,
+        keysmith_switch_lib::models::PlanDeactivateInput {
+            tool: ToolKind::Dsh,
+            scope: Scope::User,
+            project_dir: None,
+            prompt_id: None,
+            salvage_config: false,
+        },
+        &opts,
+    )
+    .await
+    .unwrap();
+    assert!(off.envelope.ok, "{:?}", off.envelope);
+    // dsh-keysmith has no preview token, so a deactivation is a plan then a confirm.
+    let done = keysmith_switch_lib::ops::confirm_deactivate(&store, &off.operation_id, &opts)
+        .await
+        .unwrap();
+    assert!(done.envelope.ok, "{:?}", done.envelope);
+    assert_eq!(
+        std::fs::read_to_string(dsh_dir.join("AGENTS.md")).unwrap(),
+        "MY OWN INSTRUCTIONS\n",
+        "uninstall restores the file that was there before the deploy"
+    );
+    for (name, expected) in [
+        ("settings.yaml", "permission:\n  defaultPreset: danger-full-access\n"),
+        (".credentials.yaml", "deepseek: placeholder\n"),
+        ("sessions/s1.json", "{\"turn\":1}\n"),
+        ("storages/state.json", "{\"k\":1}\n"),
+    ] {
+        assert_eq!(
+            std::fs::read_to_string(dsh_dir.join(name)).unwrap(),
+            expected,
+            "{name} belongs to dsh and must not be rewritten"
+        );
+    }
+    assert!(!dsh_dir.join("cordis.patch.yml").exists());
+}
+
+/// Drift on a real dsh deployment: Switch reports it, refuses to deactivate with a reason,
+/// and a redeploy is what clears it — recover has nothing to do, which is why the refusal
+/// must not tell the person to run it.
+#[tokio::test]
+async fn real_dsh_drift_blocks_deactivate_and_a_redeploy_clears_it() {
+    if !python3_available() {
+        return;
+    }
+    let Some(cli) = vendor("dsh/dsh-keysmith.py") else {
+        return;
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let user_home = tmp.path().join("home");
+    let dsh_dir = user_home.join(".dsh");
+    std::fs::create_dir_all(dsh_dir.join("profiles")).unwrap();
+    let paths = AppPaths::from_home(tmp.path().join("switch"));
+    paths.ensure().unwrap();
+    let store = Store::open(&paths).unwrap();
+    let opts = AdapterOptions {
+        home: Some(user_home),
+        cli_override: Some(cli),
+        ..AdapterOptions::default()
+    };
+
+    let deployed = keysmith_switch_lib::harness::deploy_harness_with(
+        &store,
+        ToolKind::Dsh,
+        &opts,
+        Some("# prompt one\n".into()),
+    )
+    .await
+    .unwrap();
+    assert!(deployed.ok, "{deployed:?}");
+
+    std::fs::write(dsh_dir.join("AGENTS.md"), "hand edited\n").unwrap();
+    let drifted = tool_status(&store, ToolKind::Dsh, Scope::User, None, &opts)
+        .await
+        .unwrap();
+    assert_eq!(
+        drifted.status,
+        keysmith_switch_lib::models::ToolStatus::Drift,
+        "{drifted:?}"
+    );
+
+    // The refusal comes straight from the adapter and names the reason.
+    let blocked = keysmith_switch_lib::ops::plan_deactivate(
+        &store,
+        keysmith_switch_lib::models::PlanDeactivateInput {
+            tool: ToolKind::Dsh,
+            scope: Scope::User,
+            project_dir: None,
+            prompt_id: None,
+            salvage_config: false,
+        },
+        &opts,
+    )
+    .await
+    .unwrap();
+    assert!(!blocked.envelope.ok, "{:?}", blocked.envelope);
+    let said = format!("{:?}", blocked.envelope.blockers);
+    assert!(said.contains("drifted"), "{said}");
+    // Recover reports zero actions for drift, so pointing there would be a dead end.
+    assert!(!said.contains("recover instead"), "{said}");
+
+    // Deploying again is the way out, and it must keep the file the person edited.
+    let redeployed = keysmith_switch_lib::harness::deploy_harness_with(
+        &store,
+        ToolKind::Dsh,
+        &opts,
+        Some("# prompt two\n".into()),
+    )
+    .await
+    .unwrap();
+    assert!(redeployed.ok, "{redeployed:?}");
+    let after = tool_status(&store, ToolKind::Dsh, Scope::User, None, &opts)
+        .await
+        .unwrap();
+    assert_eq!(
+        after.status,
+        keysmith_switch_lib::models::ToolStatus::Active,
+        "{after:?}"
+    );
+
+    // And deactivating now restores what the person last wrote themselves.
+    let off = keysmith_switch_lib::ops::plan_deactivate(
+        &store,
+        keysmith_switch_lib::models::PlanDeactivateInput {
+            tool: ToolKind::Dsh,
+            scope: Scope::User,
+            project_dir: None,
+            prompt_id: None,
+            salvage_config: false,
+        },
+        &opts,
+    )
+    .await
+    .unwrap();
+    assert!(off.envelope.ok, "{:?}", off.envelope);
+    keysmith_switch_lib::ops::confirm_deactivate(&store, &off.operation_id, &opts)
+        .await
+        .unwrap();
+    assert_eq!(
+        std::fs::read_to_string(dsh_dir.join("AGENTS.md")).unwrap(),
+        "hand edited\n"
+    );
+}

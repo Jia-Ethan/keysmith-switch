@@ -10,7 +10,7 @@ identifier：`com.jia-ethan.keysmith-switch`
 
 | 平台 | 目标 | 发布要求 |
 | --- | --- | --- |
-| macOS Apple Silicon | `.app`、`.dmg`、`.app.tar.gz` | ad-hoc 签名，关闭 hardened runtime；app、DMG 和 updater archive 内 app 的五个 Keysmith sidecar 与 `keysmith-relay` 均通过运行时 smoke |
+| macOS Apple Silicon | `.app`、`.dmg`、`.app.tar.gz` | ad-hoc 签名，关闭 hardened runtime；app、DMG 和 updater archive 内 app 的六个 Keysmith sidecar 与 `keysmith-relay` 均通过运行时 smoke |
 | Windows x64 | NSIS `currentUser` `.exe` | 无 Authenticode；构建 runner 验证状态为 `NotSigned`，并产出 updater `.sig` |
 | Linux、Intel Mac、Windows ARM64 | 不发布 | 客户端显示 unsupported，不执行安装 |
 
@@ -37,7 +37,7 @@ identifier：`com.jia-ethan.keysmith-switch`
 - `src-tauri/tauri.macos.conf.json` 使用 `signingIdentity: "-"` 和 `hardenedRuntime: false`。
 - 最终 `.app` 必须通过 `codesign --verify --deep --strict`，且为 `Signature=adhoc`、`TeamIdentifier=not set`、无 Authority。
 - 最终 `.app` 和 updater `.app.tar.gz` 解包后的 app 都运行 `scripts/verify-bundle.sh`。
-- 五个 Keysmith sidecar 都必须通过架构、`--version` 和隔离 HOME 预览 smoke，不能只验证文件存在。
+- 六个 Keysmith sidecar 都必须通过架构、`--version` 和隔离 HOME 预览 smoke，不能只验证文件存在。
 - 新增 sidecar（`externalBin`）时，同时把它加进 `Jia-Ethan/keysmith-switch-releases` 的 `publish.yml` 占位列表；否则 publish 的 validate 在 Linux 编译验证器时失败（`keysmith-relay` 见该仓库 #2，`keysmith-pi` 见 #3）。
 - DMG 必须通过 `hdiutil verify`。
 

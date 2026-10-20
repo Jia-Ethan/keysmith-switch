@@ -1019,3 +1019,298 @@ fn pi_token_must_be_lowercase_hex() {
     assert_eq!(token(&"A".repeat(64)), None);
     assert_eq!(token(&"a".repeat(63)), None);
 }
+
+// ─── dsh ────────────────────────────────────────────────────────────────────
+//
+// dsh-keysmith differs from pi in three ways the contract has to pin down:
+// it names its own state, it has no preview token, and its adapter hot-fix can
+// silently stop applying. These tests are the record of each.
+
+fn dsh_status() -> AdapterCommand {
+    AdapterCommand::Status {
+        scope: Scope::User,
+        project_dir: None,
+        name: None,
+    }
+}
+
+fn dsh_plan(file: &std::path::Path) -> AdapterCommand {
+    AdapterCommand::PlanActivate {
+        file: file.to_path_buf(),
+        scope: Scope::User,
+        project_dir: None,
+        name: Some("dsh-unrestricted".into()),
+        runtime: false,
+        append_file: None,
+        max_tokens: None,
+    }
+}
+
+fn dsh_activate(file: &std::path::Path) -> AdapterCommand {
+    AdapterCommand::Activate {
+        file: file.to_path_buf(),
+        scope: Scope::User,
+        project_dir: None,
+        name: Some("dsh-unrestricted".into()),
+        runtime: false,
+        append_file: None,
+        max_tokens: None,
+        expected_preview_token: None,
+    }
+}
+
+#[tokio::test]
+async fn dsh_fixture_contract() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let opts = opts(&home, "dsh-keysmith.py");
+    let dsh_dir = home.join(".dsh");
+
+    // dsh has never run here: a readable status, not an error, and it says so.
+    let missing = run_adapter_with(ToolKind::Dsh, dsh_status(), &opts)
+        .await
+        .unwrap();
+    assert_envelope(&missing, ToolKind::Dsh, "status");
+    assert!(missing.ok, "{missing:?}");
+    assert_eq!(missing.status, ToolStatus::NotInstalled);
+    let root = missing
+        .target_paths
+        .iter()
+        .find(|entry| entry.role == "config-root")
+        .expect("config-root");
+    assert_eq!(root.path, dsh_dir.to_str().unwrap());
+    assert!(!root.exists, "dsh_dir_exists must be reported, not assumed");
+
+    // Every call names --dsh-dir as an absolute path and asks for English.
+    for flag in ["--status", "--json"] {
+        assert!(missing.argv.iter().any(|item| item == flag), "{flag}");
+    }
+    assert_eq!(arg_after(&missing.argv, "--lang"), Some("en"));
+    let dir_arg = arg_after(&missing.argv, "--dsh-dir").expect("--dsh-dir");
+    assert!(std::path::Path::new(dir_arg).is_absolute(), "{dir_arg}");
+    assert_eq!(dir_arg, dsh_dir.to_str().unwrap());
+
+    // A preview over an existing home plans the writes and writes nothing.
+    std::fs::create_dir_all(&dsh_dir).unwrap();
+    let file = home.join("prompt.md");
+    std::fs::write(&file, "hello dsh\n").unwrap();
+    let plan = run_adapter_with(ToolKind::Dsh, dsh_plan(&file), &opts)
+        .await
+        .unwrap();
+    assert!(plan.ok && plan.preview, "{plan:?}");
+    assert!(plan.argv.iter().any(|item| item == "--dry-run"));
+    assert!(!plan.argv.iter().any(|item| item == "--yes"));
+    // No preview token exists in this adapter, so a confirmation is not bound to a preview.
+    assert!(plan.confirmation_token.is_none());
+    assert!(!plan
+        .argv
+        .iter()
+        .any(|item| item == "--expected-preview-token"));
+    assert!(plan
+        .planned_files
+        .iter()
+        .any(|entry| entry.path.ends_with("AGENTS.md")));
+    assert!(!dsh_dir.join("AGENTS.md").exists(), "a preview writes nothing");
+
+    let confirmed = run_adapter_with(ToolKind::Dsh, dsh_activate(&file), &opts)
+        .await
+        .unwrap();
+    assert!(confirmed.ok && !confirmed.preview, "{confirmed:?}");
+    assert!(confirmed.argv.iter().any(|item| item == "--yes"));
+    assert!(!confirmed.argv.iter().any(|item| item == "--dry-run"));
+    assert_eq!(confirmed.status, ToolStatus::Active);
+    let body_sha = keysmith_switch_lib::models::sha256_hex("hello dsh\n");
+    assert_eq!(
+        confirmed.current_fingerprint.as_deref(),
+        Some(body_sha.as_str()),
+        "the manifest's deployed-prompt sha is what names the live prompt"
+    );
+    assert!(dsh_dir.join("AGENTS.md").is_file());
+
+    let active = run_adapter_with(ToolKind::Dsh, dsh_status(), &opts)
+        .await
+        .unwrap();
+    assert_eq!(active.status, ToolStatus::Active);
+    assert!(active.ok, "{active:?}");
+}
+
+#[tokio::test]
+async fn dsh_reports_drift_and_a_deploy_still_plans() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let opts = opts(&home, "dsh-keysmith.py");
+    let dsh_dir = home.join(".dsh");
+    std::fs::create_dir_all(&dsh_dir).unwrap();
+    let file = home.join("prompt.md");
+    std::fs::write(&file, "hello dsh\n").unwrap();
+    run_adapter_with(ToolKind::Dsh, dsh_activate(&file), &opts)
+        .await
+        .unwrap();
+    std::fs::write(dsh_dir.join("AGENTS.md"), "hand edited\n").unwrap();
+
+    let drifted = run_adapter_with(ToolKind::Dsh, dsh_status(), &opts)
+        .await
+        .unwrap();
+    assert_eq!(drifted.status, ToolStatus::Drift);
+    assert!(drifted.ok, "drift is a state, not a failure: {drifted:?}");
+    assert!(
+        drifted.warnings.iter().any(|note| note.contains("agents_md")),
+        "{:?}",
+        drifted.warnings
+    );
+
+    // dsh-keysmith backs the file up and replaces it, so drift does not block a deploy.
+    // Showing Drift on the plan would read as a repair to make first.
+    let plan = run_adapter_with(ToolKind::Dsh, dsh_plan(&file), &opts)
+        .await
+        .unwrap();
+    assert!(plan.ok, "{plan:?}");
+    assert_eq!(plan.status, ToolStatus::Inactive);
+    assert!(plan.blockers.is_empty(), "{:?}", plan.blockers);
+
+    // Uninstalling it is a different matter: the adapter refuses, and says why.
+    let blocked = run_adapter_with(
+        ToolKind::Dsh,
+        AdapterCommand::PlanDeactivate {
+            scope: Scope::User,
+            project_dir: None,
+            name: None,
+            salvage_config: false,
+        },
+        &opts,
+    )
+    .await
+    .unwrap();
+    assert!(!blocked.ok, "{blocked:?}");
+    assert!(
+        blocked.blockers.iter().any(|item| item.contains("drifted")),
+        "{:?}",
+        blocked.blockers
+    );
+}
+
+#[tokio::test]
+async fn dsh_rejects_an_adapter_without_the_state_contract() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::create_dir_all(home.join(".dsh")).unwrap();
+    // 0.2.0 shipped dsh-keysmith/v1 without `version`, `state` or `dsh_dir_exists`.
+    let mut opts = opts(&home, "dsh-keysmith.py");
+    opts.extra_env
+        .insert("FIXTURE_VERSION".into(), "0.2.0".into());
+    let old = run_adapter_with(ToolKind::Dsh, dsh_status(), &opts)
+        .await
+        .unwrap();
+    assert!(!old.ok, "{old:?}");
+    assert!(
+        old.error.as_deref().unwrap_or("").contains("too old"),
+        "{:?}",
+        old.error
+    );
+}
+
+#[tokio::test]
+async fn dsh_reports_recovery_required_from_residue() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let opts = opts(&home, "dsh-keysmith.py");
+    let dsh_dir = home.join(".dsh");
+    std::fs::create_dir_all(dsh_dir.join(".dsh-keysmith-transaction-deadbeef")).unwrap();
+
+    let status = run_adapter_with(ToolKind::Dsh, dsh_status(), &opts)
+        .await
+        .unwrap();
+    assert_eq!(status.status, ToolStatus::RecoveryRequired);
+    assert!(status.recovery_required);
+    assert!(!status.ok);
+
+    // Recover is offered, and a preview of it writes nothing.
+    let plan = run_adapter_with(
+        ToolKind::Dsh,
+        AdapterCommand::Recover {
+            scope: Scope::User,
+            project_dir: None,
+            execute: false,
+            expected_preview_token: None,
+        },
+        &opts,
+    )
+    .await
+    .unwrap();
+    assert!(plan.ok && plan.preview, "{plan:?}");
+    assert!(dsh_dir
+        .join(".dsh-keysmith-transaction-deadbeef")
+        .is_dir());
+
+    let done = run_adapter_with(
+        ToolKind::Dsh,
+        AdapterCommand::Recover {
+            scope: Scope::User,
+            project_dir: None,
+            execute: true,
+            expected_preview_token: None,
+        },
+        &opts,
+    )
+    .await
+    .unwrap();
+    assert!(done.ok && !done.preview, "{done:?}");
+    assert!(!dsh_dir
+        .join(".dsh-keysmith-transaction-deadbeef")
+        .exists());
+}
+
+#[tokio::test]
+async fn dsh_surfaces_a_skipped_adapter_hotfix() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::create_dir_all(home.join(".dsh")).unwrap();
+    let mut opts = opts(&home, "dsh-keysmith.py");
+    opts.extra_env
+        .insert("FIXTURE_ADAPTER_STATE".into(), "unknown".into());
+
+    let status = run_adapter_with(ToolKind::Dsh, dsh_status(), &opts)
+        .await
+        .unwrap();
+    // The patch being skipped does not make the deployment unusable; it must not read as
+    // silent success either.
+    assert!(status.ok, "{status:?}");
+    assert!(
+        status
+            .warnings
+            .iter()
+            .any(|note| note.contains("streaming tool-call fix was skipped")),
+        "{:?}",
+        status.warnings
+    );
+}
+
+#[tokio::test]
+async fn dsh_unsupported_commands_say_so() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let opts = opts(&home, "dsh-keysmith.py");
+    for command in [
+        AdapterCommand::Backups {
+            scope: Scope::User,
+            project_dir: None,
+        },
+        AdapterCommand::Restore {
+            target: home.join("AGENTS.md"),
+            backup: "x".into(),
+            scope: Some(Scope::User),
+            project_dir: None,
+            execute: false,
+        },
+    ] {
+        assert!(run_adapter_with(ToolKind::Dsh, command, &opts)
+            .await
+            .is_err());
+    }
+}

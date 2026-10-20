@@ -6,14 +6,14 @@
 
 ## 产品状态
 
-- 首页是每个 Agent 的工作区：顶部显示部署状态与当前生效的提示词（活动记录缺失时按内容指纹在提示词库中匹配，仍无法识别则标注“来源未记录”），下方是提示词库，库中任一提示词可一键生成部署计划。所有部署都是全局（user scope）安装，界面不再提供范围选择；应用也不再提供键盘快捷键。Quick Deploy 以弹出面板打开，可粘贴、导入或拖入 `.md` 文件，将正文保存到本地库，预览计划后确认部署；默认不抓取兄弟仓库的远程提示词。检查更新、移除部署和部署按钮在请求进行中显示加载状态，设置保存以标题旁的轻量提示确认。当前仍由五个随包提供的 legacy adapter 执行写入；Agent registry 与外部 adapter 尚未实现。
-- 五个工具（Claude Code、Codex、Grok Build、ZCode、pi）各自独立的提示词库、Markdown 可重建索引、SQLite 元数据、历史、标签、激活状态和跨工具复制已实现。
+- 首页是每个 Agent 的工作区：顶部显示部署状态与当前生效的提示词（活动记录缺失时按内容指纹在提示词库中匹配，仍无法识别则标注“来源未记录”），下方是提示词库，库中任一提示词可一键生成部署计划。所有部署都是全局（user scope）安装，界面不再提供范围选择；应用也不再提供键盘快捷键。Quick Deploy 以弹出面板打开，可粘贴、导入或拖入 `.md` 文件，将正文保存到本地库，预览计划后确认部署；默认不抓取兄弟仓库的远程提示词。检查更新、移除部署和部署按钮在请求进行中显示加载状态，设置保存以标题旁的轻量提示确认。当前仍由六个随包提供的 legacy adapter 执行写入；Agent registry 与外部 adapter 尚未实现。
+- 六个工具（Claude Code、Codex、Grok Build、ZCode、pi、DSH）各自独立的提示词库、Markdown 可重建索引、SQLite 元数据、历史、标签、激活状态和跨工具复制已实现。
 - 激活、停用、恢复、清除数据和官方 CLI 操作保留计划、确认、执行、失败保留与恢复门禁。
 - 提示词详情与编辑使用独立页面，保留脏状态保护、键盘与无障碍行为。
 - 设置页区分 loading、empty、retryable error 和 busy 状态。
 - 关于页在应用内更新可用时显示“更新并重启”；低于 updater 门槛或签名 key ID 不匹配时只显示本地化的官方下载入口。
 - 更新安装必须显式确认；安装期间阻止关闭和重复提交，并显示下载/安装进度。
-- 五个 Keysmith sidecar 仍随应用原子交付（pi 自 [#143](https://github.com/Jia-Ethan/keysmith-switch/issues/143) 起接入，pi-keysmith 0.2.0），GUI 不直接改写托管配置。
+- 六个 Keysmith sidecar 仍随应用原子交付（pi 自 [#143](https://github.com/Jia-Ethan/keysmith-switch/issues/143) 起接入，pi-keysmith 0.2.0；DSH 对应 [#148](https://github.com/Jia-Ethan/keysmith-switch/issues/148)，dsh-keysmith 0.2.1），GUI 不直接改写托管配置。
 - 当前界面基线使用 16px 正文、15px 主要控件与编辑器、分层圆角；窄窗口导航通过可点击的 More 菜单收纳，macOS 菜单栏使用单色 template icon，窗口内品牌图标仍保留颜色。
 
 ## v0.1.3 bootstrap

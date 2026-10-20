@@ -3,8 +3,13 @@ import claudeSvg from "../assets/claude.svg";
 import codexSvg from "../assets/codex.svg";
 import zcodePng from "../assets/zcode.png";
 import piSvg from "../assets/pi.svg";
+import dshSvg from "../assets/dsh.svg";
 
-/** Tool brand icons. Using official-sourced SVG for Claude/Codex/Grok/pi, the official app icon for ZCode. */
+/**
+ * Tool brand icons. Using official-sourced SVG for Claude/Codex/Grok/pi, the official app icon
+ * for ZCode. dsh ships no logo anywhere in its package or docs, so its mark is drawn here: a
+ * neutral geometric glyph in the app's own palette, not a claim to be a DeepSeek brand mark.
+ */
 export function ToolLogo({ tool, size = 20 }: { tool: ToolId; size?: number }) {
   switch (tool) {
     case "claude":
@@ -36,6 +41,8 @@ export function ToolLogo({ tool, size = 20 }: { tool: ToolId; size?: number }) {
       return <ZcodeMark size={size} />;
     case "pi":
       return <img src={piSvg} width={size} height={size} alt="" aria-hidden="true" className="shrink-0" />;
+    case "dsh":
+      return <img src={dshSvg} width={size} height={size} alt="" aria-hidden="true" className="shrink-0" />;
   }
 }
 

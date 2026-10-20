@@ -66,6 +66,7 @@
   :root[data-agent="grok"] { --ac-r: 42; --ac-g: 46; --ac-b: 56; }
   :root[data-agent="zcode"] { --ac-r: 109; --ac-g: 40; --ac-b: 217; }
   :root[data-agent="pi"] { --ac-r: 46; --ac-g: 118; --ac-b: 156; }
+  :root[data-agent="dsh"] { --ac-r: 36; --ac-g: 90; --ac-b: 140; }
 
   .dark {
     /* Graphite dark theme */
@@ -100,6 +101,7 @@
   :root.dark[data-agent="grok"] { --ac-r: 206; --ac-g: 212; --ac-b: 222; --primary-foreground: 20 22 28; }
   :root.dark[data-agent="zcode"] { --ac-r: 158; --ac-g: 124; --ac-b: 250; }
   :root.dark[data-agent="pi"] { --ac-r: 102; --ac-g: 170; --ac-b: 204; }
+  :root.dark[data-agent="dsh"] { --ac-r: 92; --ac-g: 148; --ac-b: 200; }
 }
 
 html,

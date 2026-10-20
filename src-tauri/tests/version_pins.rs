@@ -32,6 +32,13 @@ fn expected_versions_match_the_vendored_adapters() {
             .any(|line| line == format!("__version__ = \"{}\"", ToolKind::Pi.expected_version())),
         "pi-keysmith.py declares another __version__"
     );
+    assert_pinned(ToolKind::Dsh, &vendored("dsh/VERSION"));
+    let dsh = vendored("dsh/dsh-keysmith.py");
+    assert!(
+        dsh.lines()
+            .any(|line| line == format!("__version__ = \"{}\"", ToolKind::Dsh.expected_version())),
+        "dsh-keysmith.py declares another __version__"
+    );
     let claude = vendored("claude/claude-instruct.py");
     let line = claude
         .lines()

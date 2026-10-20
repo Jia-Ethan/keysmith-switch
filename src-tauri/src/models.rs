@@ -6,7 +6,7 @@ use std::str::FromStr;
 use crate::error::{Error, Result};
 
 pub const ADAPTER_SCHEMA: &str = "keysmith-switch/adapter-v1";
-pub const APP_VERSION: &str = "0.7.0";
+pub const APP_VERSION: &str = "0.8.0";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -16,15 +16,17 @@ pub enum ToolKind {
     Grok,
     Zcode,
     Pi,
+    Dsh,
 }
 
 impl ToolKind {
-    pub const ALL: [ToolKind; 5] = [
+    pub const ALL: [ToolKind; 6] = [
         ToolKind::Claude,
         ToolKind::Codex,
         ToolKind::Grok,
         ToolKind::Zcode,
         ToolKind::Pi,
+        ToolKind::Dsh,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -34,6 +36,7 @@ impl ToolKind {
             Self::Grok => "grok",
             Self::Zcode => "zcode",
             Self::Pi => "pi",
+            Self::Dsh => "dsh",
         }
     }
 
@@ -44,6 +47,7 @@ impl ToolKind {
             Self::Grok => "0.8.0",
             Self::Zcode => "0.3.2",
             Self::Pi => "0.2.0",
+            Self::Dsh => "0.2.1",
         }
     }
 
@@ -54,6 +58,7 @@ impl ToolKind {
             Self::Grok => "KEYSMITH_SWITCH_GROK_CLI",
             Self::Zcode => "KEYSMITH_SWITCH_ZCODE_CLI",
             Self::Pi => "KEYSMITH_SWITCH_PI_CLI",
+            Self::Dsh => "KEYSMITH_SWITCH_DSH_CLI",
         }
     }
 
@@ -64,6 +69,7 @@ impl ToolKind {
             Self::Grok => "grok/grok-keysmith.py",
             Self::Zcode => "zcode/zcode-keysmith.py",
             Self::Pi => "pi/pi-keysmith.py",
+            Self::Dsh => "dsh/dsh-keysmith.py",
         }
     }
 
@@ -74,6 +80,8 @@ impl ToolKind {
             Self::Grok => "99-keysmith",
             Self::Zcode => "system-role",
             Self::Pi => "system-prompt",
+            // dsh-keysmith's own default: the name is recorded but addresses no path.
+            Self::Dsh => "dsh-unrestricted",
         }
     }
 
@@ -116,6 +124,7 @@ impl FromStr for ToolKind {
             "grok" => Ok(Self::Grok),
             "zcode" => Ok(Self::Zcode),
             "pi" => Ok(Self::Pi),
+            "dsh" => Ok(Self::Dsh),
             other => Err(Error::invalid(format!("unknown tool: {other}"))),
         }
     }

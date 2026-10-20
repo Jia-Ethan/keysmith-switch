@@ -75,9 +75,14 @@ assert_sidecar_previews() {
   mkdir -p "$smoke_home/.pi/agent"
   HOME="$smoke_home" "$MACOS/keysmith-pi" --file "$prompt" --name bundle-smoke \
     --pi-dir "$smoke_home/.pi/agent" --dry-run --json --lang en >/dev/null
+  # dsh-keysmith refuses a preview when its home is missing, so the home exists here; the
+  # point of the check is that a preview writes nothing into it.
+  mkdir -p "$smoke_home/.dsh/profiles"
+  HOME="$smoke_home" "$MACOS/keysmith-dsh" --file "$prompt" --name bundle-smoke \
+    --dsh-dir "$smoke_home/.dsh" --dry-run --json --lang en >/dev/null
 
   if [[ -e "$smoke_home/.claude" || -e "$smoke_home/.grok" || -e "$smoke_home/.zcode-keysmith" \
-    || -n "$(ls -A "$smoke_home/.pi/agent")" ]]; then
+    || -n "$(ls -A "$smoke_home/.pi/agent")" || -n "$(ls -A "$smoke_home/.dsh")" ]]; then
     echo "sidecar preview smoke unexpectedly wrote managed configuration" >&2
     rm -rf "$smoke_home"
     exit 1
@@ -97,7 +102,7 @@ if [[ "$identifier" != "com.jia-ethan.keysmith-switch" ]]; then
 fi
 
 assert_arm64_executable "$MACOS/keysmith-switch" "main executable"
-for name in keysmith-claude keysmith-codex keysmith-grok keysmith-zcode keysmith-pi; do
+for name in keysmith-claude keysmith-codex keysmith-grok keysmith-zcode keysmith-pi keysmith-dsh; do
   if [[ -x "$MACOS/$name" ]]; then
     assert_arm64_executable "$MACOS/$name" "sidecar $name"
     assert_sidecar_runs "$MACOS/$name" "sidecar $name"

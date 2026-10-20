@@ -90,6 +90,7 @@ fn tool_display_name(tool: ToolKind) -> &'static str {
         ToolKind::Grok => "Grok Build",
         ToolKind::Zcode => "ZCode",
         ToolKind::Pi => "pi",
+        ToolKind::Dsh => "DSH",
     }
 }
 

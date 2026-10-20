@@ -352,17 +352,21 @@ pub async fn plan_deactivate(
     let salvage = input.salvage_config && input.tool == ToolKind::Grok;
     // Grok keeps nothing of a deployment once its manifest and rule are gone (a cleanup of a
     // drifted deployment leaves it so), and its uninstall refuses without them; pi's uninstall
-    // likewise refuses with `not-installed`. Only Switch's own record still says active:
-    // turning off then just puts that record right.
-    let record_only =
-        matches!(input.tool, ToolKind::Grok | ToolKind::Pi) && nothing_deployed(&status);
+    // likewise refuses with `not-installed`, as does dsh-keysmith's ("no manifest found"). Only
+    // Switch's own record still says active: turning off then just puts that record right.
+    let record_only = matches!(input.tool, ToolKind::Grok | ToolKind::Pi | ToolKind::Dsh)
+        && nothing_deployed(&status);
     // A drifted Grok deployment whose only problem is a lost config backup can still be
     // removed when the person asks for it; the adapter checks that and refuses otherwise.
     // pi's recover only finishes interrupted writes; it has nothing to do for a hand-edited
     // SYSTEM.md, so its own uninstall preview says why it refuses (a redeploy is the way out).
+    // dsh is the same, and strictly so: its recover reports zero actions for drift, so telling
+    // the person to "recover instead" would point them at a button that does nothing. Its own
+    // `target drifted from the manifest` blocker already names redeploy as the way out.
     let drifted = !salvage
         && (status.recovery_required
-            || (status.status == ToolStatus::Drift && input.tool != ToolKind::Pi));
+            || (status.status == ToolStatus::Drift
+                && !matches!(input.tool, ToolKind::Pi | ToolKind::Dsh)));
     let mut salvage_available = false;
     if drifted && input.tool == ToolKind::Grok {
         let probe = run_adapter_with(
@@ -803,7 +807,9 @@ pub async fn doctor_tool(tool: ToolKind, opts: &AdapterOptions) -> Result<Envelo
     run_adapter_with(tool, AdapterCommand::Doctor, opts).await
 }
 
-/// Grok and pi bind a confirmed write to the preview it was planned from.
+/// Grok and pi bind a confirmed write to the preview it was planned from. dsh-keysmith has
+/// no preview token, so nothing here can bind its `--yes` to the preview that was shown; what
+/// it does instead is back the file up before replacing it, and the deploy plan says so.
 fn uses_preview_token(tool: ToolKind) -> bool {
     matches!(tool, ToolKind::Grok | ToolKind::Pi)
 }

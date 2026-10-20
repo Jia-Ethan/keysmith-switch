@@ -29,6 +29,7 @@ const KEYSMITHS: { tool: ToolId; name: string; repo: string }[] = [
   { tool: "grok", name: "Grok Keysmith", repo: "https://github.com/Jia-Ethan/grok-keysmith" },
   { tool: "zcode", name: "Zcode Keysmith", repo: "https://github.com/Jia-Ethan/zcode-keysmith" },
   { tool: "pi", name: "pi Keysmith", repo: "https://github.com/Jia-Ethan/pi-keysmith" },
+  { tool: "dsh", name: "DSH Keysmith", repo: "https://github.com/Jia-Ethan/dsh-keysmith" },
 ];
 
 export function SettingsPage({

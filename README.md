@@ -6,7 +6,7 @@
 
 **一个桌面 App，管好你所有 AI 编程 Agent 的提示词。**
 
-粘贴提示词 → 先看部署计划 → 确认后部署到 **Claude Code** · **Codex** · **Grok Build** · **ZCode** · **pi**
+粘贴提示词 → 先看部署计划 → 确认后部署到 **Claude Code** · **Codex** · **Grok Build** · **ZCode** · **pi** · **DSH**
 
 [![Latest release](https://img.shields.io/github/v/release/Jia-Ethan/keysmith-switch-releases?label=%E7%A8%B3%E5%AE%9A%E7%89%88&color=C8643B&style=flat-square)](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/latest)
 [![Platforms](https://img.shields.io/badge/macOS%20%C2%B7%20Windows-555?style=flat-square)](#-下载)
@@ -33,7 +33,7 @@
 <tr>
 <td width="50%" valign="top">
 
-### 🗂️ 一个库，五个 Agent
+### 🗂️ 一个库，六个 Agent
 所有提示词集中在一处，按 Agent 分开管理，带标签、搜索、排序和版本历史。左侧一键切换 Agent。
 
 </td>
@@ -131,6 +131,10 @@
 <img src="docs/images/agents/pi.svg" width="48" height="48" alt="pi" />
 <br /><b>pi</b>
 </td>
+<td align="center" width="140">
+<img src="docs/images/agents/dsh.svg" width="48" height="48" alt="DSH" />
+<br /><b>DSH</b>
+</td>
 </tr>
 </table>
 
@@ -145,7 +149,7 @@ flowchart LR
     D -.->|写入前| F["💾 自动备份"]
 ```
 
-- **适配器负责写，Switch 负责管。** 所有真实配置写入都经过五个 Agent 适配器，GUI 不直接改写目标 Agent 的配置文件（例外只有[清理与回滚](#️-清理与回滚)里写明的几个文件）。适配器负责目标格式；Switch 负责提示词库、版本、哈希校验、计划预览和操作记录。备份、漂移检测和恢复能力取决于各适配器。
+- **适配器负责写，Switch 负责管。** 所有真实配置写入都经过六个 Agent 适配器，GUI 不直接改写目标 Agent 的配置文件（例外只有[清理与回滚](#️-清理与回滚)里写明的几个文件）。适配器负责目标格式；Switch 负责提示词库、版本、哈希校验、计划预览和操作记录。备份、漂移检测和恢复能力取决于各适配器。
 - **交给适配器的只有正文。** 库中的 Markdown 带有元数据；交给适配器的临时文件只包含提示词正文，预览或执行完成后就清理。
 - **不暗中改写。** 同一 Agent 的相同正文复用已有的库条目；如果原条目标题或标签不同，返回并部署原条目，不会悄悄改它的元数据。
 - **不绑定官方正文。** Switch 不内置任何一组官方提示词正文，快速部署不会联网，也不会从其他 Keysmith 仓库的远程分支抓取内容。
@@ -199,7 +203,7 @@ flowchart LR
 
 <br />
 
-- 只动 Switch 自己的部署、用户级的这一个记忆文件，以及（勾选后）Codex 的记忆文件夹，不碰项目目录里的任何文件。Grok Build、ZCode、pi 没有已知的记忆文件，清理时只停用部署；pi 的 `AGENTS.md`、`APPEND_SYSTEM.md`、设置和会话都不会动。Codex 的数据库、会话等其他文件不会动。
+- 只动 Switch 自己的部署、用户级的这一个记忆文件，以及（勾选后）Codex 的记忆文件夹，不碰项目目录里的任何文件。Grok Build、ZCode、pi、DSH 没有已知的记忆文件，清理时只停用部署；pi 的 `AGENTS.md`、`APPEND_SYSTEM.md`、设置和会话都不会动，DSH 的 `settings.yaml`、`.credentials.yaml`、会话和存储同样不动。Codex 的数据库、会话等其他文件不会动。
 - 版本保存在 `~/.keysmith-switch/snapshots/`：当时部署的提示词正文、记忆文件的原样字节，以及（如果清理了）整个 `memories` 文件夹。
 - 记忆文件夹是**整体移动**进版本里，不复制也不删除，所以体积再大也不会丢文件；清理后会留下一个空的 `memories` 文件夹。
 - 回滚会重新部署当时的提示词，把记忆文件恢复成原样，并把 `memories` 文件夹复制回去（版本本身保持完整，可以再次回滚）。回滚前现有的文件夹也会先移进一个新版本。
@@ -306,7 +310,7 @@ npx tauri build --target aarch64-apple-darwin --config src-tauri/tauri.preview.m
 
 每个 Agent 的适配器（`third_party/keysmith/`）和 App 要求的版本（`ToolKind::expected_version`）必须一致，否则确认部署会被拒绝。`src-tauri/tests/version_pins.rs` 在两者不一致时让测试失败。升级适配器时，要同时修改这两处，以及 `src-tauri/tests/fixtures/cli/` 里的默认版本号。
 
-当前发行包包含五个 legacy adapter sidecar，用于兼容 Claude Code、Codex、Grok Build、ZCode 与 pi 的目标配置协议。pi 只管理全局 `~/.pi/agent/SYSTEM.md`，并且 Switch 不会创建这个目录：没装过 pi 时部署会被拦下并说明原因。它们是执行实现，不是快速部署的默认提示词来源；快速部署不会自动抓取这些仓库的提示词，也不要求用户安装对应的 Keysmith 仓库。
+当前发行包包含六个 legacy adapter sidecar，用于兼容 Claude Code、Codex、Grok Build、ZCode、pi 与 DSH 的目标配置协议。pi 只管理全局 `~/.pi/agent/SYSTEM.md`，并且 Switch 不会创建这个目录：没装过 pi 时部署会被拦下并说明原因。DSH 只管理 `~/.dsh/AGENTS.md` 和它的 `cordis.patch.yml`，同样不创建 `~/.dsh`；它另有一个资源是 npm 缓存里 `dsh-llm-deepseek` 的一处热修，上游一改就对不上，那时部署会照常进行并在计划里标出这处补丁被跳过。它们是执行实现，不是快速部署的默认提示词来源；快速部署不会自动抓取这些仓库的提示词，也不要求用户安装对应的 Keysmith 仓库。
 
 `third_party/keysmith/` 中的版本锁只约束 legacy adapter artifact 的构建与审计。后续 Agent registry 会把这些 artifact 迁移到统一的 adapter manifest；用户提示词库和适配器供应链保持独立。
 
@@ -352,6 +356,7 @@ npx tauri build --target aarch64-apple-darwin --config src-tauri/tauri.preview.m
 
 | 版本 | 更新内容 |
 | --- | --- |
+| `v0.8.0` | 新增第六个 Agent DSH（DeepSeek Harness）：随包提供 dsh-keysmith 0.2.1，把提示词部署到全局 `~/.dsh/AGENTS.md`，并写入 `~/.dsh/cordis.patch.yml` 去掉 DSH 固定的身份句，先看计划再确认；原有的 `AGENTS.md` 先备份，停用时放回。`~/.dsh` 不存在时不会创建，`settings.yaml`、`.credentials.yaml`、会话和存储都不动。第三个资源是 npm 缓存里 `dsh-llm-deepseek` 的流式 tool_call 热修，上游一改就会跳过，届时计划里会明确标出。输入替换暂不支持 DSH。[#148](https://github.com/Jia-Ethan/keysmith-switch/issues/148) |
 | [`v0.7.0`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.7.0) | 新增第五个 Agent pi：随包提供 pi-keysmith 0.2.0，把提示词部署到全局 `~/.pi/agent/SYSTEM.md`，先看计划再确认；原有的 `SYSTEM.md` 先备份，停用时放回，`APPEND_SYSTEM.md`、`AGENTS.md` 等其他文件不动。`~/.pi/agent` 不存在时不会创建。输入替换暂不支持 pi。[#144](https://github.com/Jia-Ethan/keysmith-switch/pull/144) |
 | [`v0.6.5`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.6.5) | 支持密封规则包（`opaque`）：安装、输入替换页和更新确认只展示名称、条数和适用的 Agent，不展示规则正文，也不能复制到「我的规则」；中转服务照常按原文替换。密封只是界面上不展示，规则在本机仍是明文。[#140](https://github.com/Jia-Ethan/keysmith-switch/pull/140) |
 | [`v0.6.4`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.6.4) | Grok Build 适配器更新到 grok-keysmith v0.8.0：`config.toml` 新增「用户区域」，部署后自己加的配置（如 API key 备用模型）放进去，不算配置被改动，停用时会保留。[#136](https://github.com/Jia-Ethan/keysmith-switch/pull/136) |

@@ -9,6 +9,7 @@
     "grok": "Grok Build",
     "zcode": "ZCode",
     "pi": "pi",
+    "dsh": "DSH",
     "settings": "Settings",
     "about": "About",
     "advanced": "Advanced Tools",

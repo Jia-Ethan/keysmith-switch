@@ -26,6 +26,7 @@ pub fn normalize(
         ToolKind::Grok => normalize_grok(command, captured, envelope),
         ToolKind::Zcode => normalize_zcode(command, captured, envelope),
         ToolKind::Pi => normalize_pi(command, captured, envelope),
+        ToolKind::Dsh => normalize_dsh(command, captured, envelope),
     };
     // A CLI that stopped without a reason in its output still gave one on stderr.
     if !envelope.ok
@@ -330,6 +331,10 @@ fn normalize_grok(
 
 const PI_SCHEMA: &str = "pi-keysmith.envelope.v1";
 const PI_MIN_VERSION: (u64, u64, u64) = (0, 2, 0);
+const DSH_SCHEMA: &str = "dsh-keysmith/v1";
+/// 0.2.1 is the first dsh-keysmith whose `--json` reports `state`, `dsh_dir_exists` and a
+/// `version` field. 0.2.0 shipped the contract without them and must not be accepted.
+const DSH_MIN_VERSION: (u64, u64, u64) = (0, 2, 1);
 
 /// `pi-keysmith.envelope.v1`. Same shape as Grok's envelope, different wire: the state is in
 /// `status.*` (not `result.*`), `ok` is false for a valid `conflict` / `recovery-required`
@@ -572,6 +577,218 @@ fn normalize_pi(command: &AdapterCommand, captured: &Captured, mut envelope: Env
                 detail: (!blocked.is_empty()).then(|| blocked.join(", ")),
             });
         }
+    }
+    envelope
+}
+
+/// dsh-keysmith 0.2.1 answers with `dsh-keysmith/v1`. It reports `state` outright, so unlike
+/// pi there is no status tree to walk — but the state it reports has to line up with what a
+/// deploy may safely do, and dsh backs up before it replaces, so drift does not block a deploy.
+fn normalize_dsh(command: &AdapterCommand, captured: &Captured, mut envelope: Envelope) -> Envelope {
+    if matches!(command, AdapterCommand::Version) {
+        // argparse text (`dsh-keysmith 0.2.1`), not an envelope.
+        if let Some(version) = captured
+            .stdout
+            .lines()
+            .next()
+            .and_then(|line| line.split_whitespace().last())
+        {
+            envelope.adapter_version = Some(normalize_version(version));
+        }
+        envelope.ok = captured.exit_code == 0;
+        return envelope;
+    }
+    let json = match parse_json(&captured.stdout) {
+        Ok(value) => value,
+        Err(error) => return envelope.fail(error),
+    };
+    if json.get("schema").and_then(Value::as_str) != Some(DSH_SCHEMA) {
+        return envelope.fail(format!("dsh adapter did not answer with {DSH_SCHEMA}"));
+    }
+    let version = json.get("version").and_then(Value::as_str).unwrap_or("");
+    if !semver_at_least(version, DSH_MIN_VERSION) {
+        return envelope.fail(format!(
+            "dsh adapter {version} is too old; Keysmith Switch needs 0.2.1 or newer"
+        ));
+    }
+    envelope.adapter_version = Some(normalize_version(version));
+    envelope.ok = json_bool(&json, "ok").unwrap_or(false);
+    envelope.exit_code = json
+        .get("exit_status")
+        .and_then(Value::as_i64)
+        .map(|code| code as i32)
+        .unwrap_or(captured.exit_code);
+    // dsh-keysmith says `preview`/`execute`; the envelope carries a boolean.
+    envelope.preview = json
+        .get("mode")
+        .and_then(Value::as_str)
+        .map(|mode| mode != "execute")
+        .unwrap_or(envelope.preview);
+
+    let dsh_dir = json.get("dsh_dir").and_then(Value::as_str);
+    let dir_exists = json_bool(&json, "dsh_dir_exists").unwrap_or(false);
+    if let Some(dir) = dsh_dir {
+        envelope.target_paths.push(TargetPath {
+            path: dir.to_string(),
+            role: "config-root".into(),
+            exists: dir_exists,
+        });
+    }
+
+    // dsh-keysmith's own messages are English regardless of `--lang`, so they are passed
+    // through as-is; the interface translates only what it has wording for.
+    envelope.warnings = json
+        .get("warnings")
+        .and_then(Value::as_array)
+        .map(string_values)
+        .unwrap_or_default()
+        .iter()
+        .map(|item| redact_text(item))
+        .collect();
+
+    let drift: Vec<String> = json
+        .get("drift")
+        .and_then(Value::as_array)
+        .map(string_values)
+        .unwrap_or_default();
+
+    if let Some(state) = json.get("state").and_then(Value::as_str) {
+        envelope.status = match state {
+            "not-installed" => ToolStatus::NotInstalled,
+            "recovery-required" => ToolStatus::RecoveryRequired,
+            // A hand-edited AGENTS.md does not stop a deploy: dsh-keysmith backs it up and
+            // replaces it. Reported on a deploy plan, it would read as a repair to make first.
+            "drift"
+                if matches!(
+                    command,
+                    AdapterCommand::PlanActivate { .. } | AdapterCommand::Activate { .. }
+                ) =>
+            {
+                ToolStatus::Inactive
+            }
+            "drift" => ToolStatus::Drift,
+            "active" => ToolStatus::Active,
+            other => return envelope.fail(format!("dsh adapter reported unknown state {other}")),
+        };
+    } else if matches!(
+        command,
+        AdapterCommand::Doctor | AdapterCommand::Status { .. }
+    ) {
+        return envelope.fail("dsh adapter did not report a state");
+    } else if matches!(
+        command,
+        AdapterCommand::Activate { .. } | AdapterCommand::Deactivate { .. }
+    ) {
+        // dsh-keysmith describes the operation it performed, not the state it left behind.
+        // A confirmed write that succeeded did what it said, so the state is the one it aimed
+        // at; deriving it here is why Switch can show the result without a second round trip.
+        envelope.status = if matches!(command, AdapterCommand::Activate { .. }) {
+            ToolStatus::Active
+        } else {
+            ToolStatus::NotInstalled
+        };
+    }
+    envelope.recovery_required = envelope.status == ToolStatus::RecoveryRequired;
+    for note in &drift {
+        envelope.warnings.push(redact_text(note));
+    }
+
+    // The adapter hot-fix is the one resource that can silently stop applying: it is skipped
+    // with a warning when the upstream source matches no known snippet, which is the expected
+    // outcome on newer dsh releases. Surface it rather than let a skip read as a success.
+    if let Some(adapter_state) = json.pointer("/adapter_patch/state").and_then(Value::as_str) {
+        let adapter_path = json
+            .pointer("/adapter_patch/path")
+            .and_then(Value::as_str)
+            .unwrap_or("");
+        if adapter_path.is_empty() {
+            envelope.target_paths.push(TargetPath {
+                path: adapter_path.to_string(),
+                role: "adapter".into(),
+                exists: false,
+            });
+        }
+        if matches!(adapter_state, "unknown" | "absent") {
+            let note = if adapter_state == "unknown" {
+                "dsh adapter matches no known version; the streaming tool-call fix was skipped"
+            } else {
+                "dsh adapter file not found; the streaming tool-call fix was skipped"
+            };
+            if !envelope.warnings.iter().any(|known| known == note) {
+                envelope.warnings.push(note.to_string());
+            }
+        }
+    }
+
+    // The deployed prompt's sha, so the harness can name which library prompt is live.
+    envelope.current_fingerprint = json
+        .pointer("/manifest/resources/agents_md/after_sha256")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+
+    let blockers = json
+        .get("blockers")
+        .and_then(Value::as_array)
+        .map(string_values)
+        .unwrap_or_default();
+    envelope.blockers = blockers.iter().map(|item| redact_text(item)).collect();
+    if let Some(error) = json.get("error").and_then(Value::as_str) {
+        if !error.is_empty() {
+            envelope.error = Some(redact_text(error));
+        }
+    }
+
+    // dsh-keysmith reports every file it plans to touch, including the manifest and backups.
+    // Paths it prints are already absolute.
+    for action in json
+        .get("actions")
+        .and_then(Value::as_array)
+        .map(|items| items.iter())
+        .into_iter()
+        .flatten()
+    {
+        let Some(path) = action.get("path").and_then(Value::as_str) else {
+            continue;
+        };
+        let kind = action.get("action").and_then(Value::as_str).unwrap_or("write");
+        // `noop`/`skip` describe a resource that is already in place; listing them as planned
+        // writes would overstate what a confirmation changes.
+        if matches!(kind, "noop" | "skip") {
+            continue;
+        }
+        envelope.planned_files.push(PlannedFile {
+            path: path.to_string(),
+            action: kind.to_string(),
+            detail: redact_text(action.get("detail").and_then(Value::as_str).unwrap_or("")),
+        });
+    }
+
+    // Exit 1 with blockers is the drift refusal (or residue); 2 changed nothing. Neither may
+    // leave a half-written deployment, so neither marks recovery as required on its own.
+    if !envelope.ok && envelope.error.is_none() && !envelope.blockers.is_empty() {
+        envelope.error = envelope.blockers.first().cloned();
+    }
+
+    if matches!(
+        command,
+        AdapterCommand::Doctor | AdapterCommand::Status { .. }
+    ) {
+        envelope.doctor.ok = envelope.ok && !envelope.recovery_required;
+        envelope.doctor.checks.push(DoctorCheck {
+            name: "state".into(),
+            ok: envelope.ok,
+            detail: Some(envelope.status.as_str().to_string()),
+        });
+        envelope.doctor.checks.push(DoctorCheck {
+            name: "dsh_dir".into(),
+            ok: dir_exists,
+            detail: dsh_dir.map(str::to_string),
+        });
+        envelope.doctor.checks.push(DoctorCheck {
+            name: "drift".into(),
+            ok: drift.is_empty(),
+            detail: (!drift.is_empty()).then(|| drift.join("; ")),
+        });
     }
     envelope
 }

@@ -1,6 +1,6 @@
 # Adapter CLI 映射
 
-统一 command 到五个钉选 CLI 的 argv。所有参数均为独立 argv 元素。
+统一 command 到六个钉选 CLI 的 argv。所有参数均为独立 argv 元素。
 
 ## Claude Code (`third_party/keysmith/claude/claude-instruct.py`)
 
@@ -106,3 +106,36 @@ doctor / install 继续解析文本行，不传 `--json`。0.3.2 的 `uninstall 
 - 退出码 2（用法错误）、3（`preview-token-mismatch`，提示重新预览）、5（`lock-busy`，可重试）都保证零写入；只有 4（`write-failed`）标记需要 recover。
 
 清理只走 adapter 自己的 uninstall，不动 pi 的会话、设置和其他文件。输入替换不支持 pi。
+
+## DSH (`third_party/keysmith/dsh/dsh-keysmith.py`)
+
+| 统一命令 | argv |
+| --- | --- |
+| version | `--version`（argparse 文本，不是 envelope） |
+| status | `--status --dsh-dir <abs> --json --lang en` |
+| plan-activate | `--file <abs.md> --name <safe> --dsh-dir <abs> --dry-run --json --lang en` |
+| activate | `--file <abs.md> --name <safe> --dsh-dir <abs> --yes --json --lang en` |
+| plan-deactivate | `--uninstall --dsh-dir <abs> --json --lang en` |
+| deactivate | `--uninstall --dsh-dir <abs> --yes --json --lang en` |
+| doctor | 同 status |
+| recover | `--recover --dsh-dir <abs> --json --lang en`。确认时加 `--yes` |
+| backups / restore / reconcile | 不支持 |
+
+`--dsh-dir` 每次都传，且必须是绝对路径：隔离 home 时是 `<home>/.dsh`，否则是真实 home 下的 `~/.dsh`。CLI 从不创建它，也不会替用户跑一次 dsh；目录不存在时 `dsh_dir_exists=false`、state 为 `not-installed`，部署以 exit 2 被拦下。schema: `dsh-keysmith/v1`，随包版本 0.2.1。
+
+`normalize_dsh` 的约定：
+
+- **没有预览 token。** 0.2.1 的 CLI 不产生 `confirmation_token`，所以 `--yes` 是全部确认，`uses_preview_token(Dsh)` 为 false。预览与确认之间若有人手改了 `AGENTS.md`，dsh-keysmith 会先备份再覆盖，不会丢内容；部署计划里照实写明这一点。
+- 状态由 CLI 直接给出：`state` 取 `not-installed` / `active` / `drift` / `recovery-required`。`drift` 时 `ok` 仍是 true、exit 0：部署还在，只是不再等于当初写下的内容。
+- 部署预览与确认上的 `drift` 映射为 `inactive` 而非 `drift`：dsh-keysmith 会备份并替换手改过的 `AGENTS.md`，标成 `drift` 会读成「先修复」。
+- 只有 `--status` / `--recover` 报 `state`；`deploy` / `--uninstall` 报的是操作结果。确认写入成功后，`activate` 按 `active`、`deactivate` 按 `not-installed` 推导，省掉一次往返。
+- `mode` 是 `preview` / `execute`，envelope 的 `preview` 布尔由它换算。
+- `blockers` / `warnings` / `error` 原样取用，`--lang` 不影响它们（CLI 的 JSON 消息恒为英文），所以 Switch 统一传 `--lang en`；i18n 由界面负责。
+- `manifest.resources.agents_md.after_sha256` → `currentFingerprint`，用来认出线上生效的是库里哪条提示词。
+- `actions[]` 里 `noop` / `skip` 不进 `plannedFiles`：它们描述已经到位的资源，列成计划写入会夸大确认的效果。
+- `adapter_patch.state` 为 `unknown` 或 `absent` 时必定加一条 warning。这是唯一会随上游 npm 更新静默失效的资源；不能让它读成「一切正常」。
+- 退出码 2 是用法或目录缺失，保证零写入；exit 1 带 blocker 是漂移拒绝或事务残留。
+
+托管三个资源：`~/.dsh/AGENTS.md`（部署的提示词本身）、`~/.dsh/cordis.patch.yml`（关掉 `includeHarnessIdentity`，即去掉 DSH 固定的身份句）、以及 `profiles/node_modules/@deepseek-ai/dsh-llm-deepseek/lib/index.js` 的流式 tool_call 热修。`settings.yaml`、`.credentials.yaml`、`sessions/`、`storages/` 一律不碰，清理时整块跳过。
+
+漂移的处理与 pi 不同：`recover` 只收尾中断的事务，对漂移返回 0 actions，所以 `ops::plan_deactivate` 的漂移分支排除 DSH——沿用 pi 的「recover instead」会把用户指向一个什么都不做的按钮。adapter 自己的 `target drifted from the manifest` 已经指明了出路是重新部署。输入替换不支持 DSH。
