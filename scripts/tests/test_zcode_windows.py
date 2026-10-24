@@ -147,9 +147,36 @@ class ZcodeWindowsTest(unittest.TestCase):
         self.assertEqual(self.registry, {}, "the user environment is restored")
         self.assertFalse((self.managed / "system-role.md").exists())
 
+    def test_storage_startup_install_patches_runtime_and_uninstall_restores_it(self):
+        asar = self.app / "resources" / "app.asar"
+        asar.write_bytes(b"ZCODE_AGENT_SERVER_COMMAND\nsupportsStorageStartup\n")
+        runtime = self.app / "resources" / "glm" / "zcode.cjs"
+        original = runtime.read_text(encoding="utf-8")
+        base = ("--managed-dir", str(self.managed))
+
+        code, out = self.run_cli("install", "--system-file", str(self.prompt), *base, "--yes")
+
+        self.assertEqual(code, 0, out)
+        config = json.loads((self.managed / "config.json").read_text(encoding="utf-8"))
+        self.assertEqual(config["injection_mode"], "runtime-patch")
+        self.assertTrue(config["app_bundle_modified"])
+        self.assertNotIn("ZCODE_AGENT_SERVER_COMMAND", config["environment"])
+        self.assertNotIn("ZCODE_AGENT_SERVER_COMMAND", self.registry)
+        self.assertNotIn("ZCODE_AGENT_SERVER_ARGS_JSON", self.registry)
+        self.assertIsNone(config["agent_server_command"])
+        self.assertIsNone(config["agent_server_args_json"])
+        self.assertIn("ZCODE_KEYSMITH_SYSTEM_FILE", runtime.read_text(encoding="utf-8"))
+        self.assertEqual(pathlib.Path(config["runtime_original_backup"]).read_text(encoding="utf-8"), original)
+
+        code, out = self.run_cli("uninstall", *base, "--yes", "--json")
+
+        self.assertEqual(code, 0, out)
+        self.assertEqual(runtime.read_text(encoding="utf-8"), original)
+        self.assertEqual(self.registry, {}, "the user environment is restored")
+
     @unittest.expectedFailure
     def test_user_node_options_survive_install_and_uninstall(self):
-        # Known upstream behaviour (zcode-keysmith 0.3.2): install clears the user's NODE_OPTIONS
+        # Known upstream behaviour (zcode-keysmith 0.3.4): install clears the user's NODE_OPTIONS
         # as a "stale" key and uninstall does not put it back. Vendored code is not edited here;
         # remove expectedFailure when the pin moves to a fixed upstream.
         self.registry["NODE_OPTIONS"] = ("--max-old-space-size=4096", 1)

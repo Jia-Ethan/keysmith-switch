@@ -9,16 +9,16 @@ Keysmith Switch.
 | claude | claude/claude-instruct.py | `7dbfa253` (`v7.2`) | v7.2 |
 | codex | codex/codex-instruct.py | `33cf4049` (`v0.6.0`) | v0.6.0 |
 | grok | grok/grok-keysmith.py | `d87def09` (`v0.8.0`) | v0.8.0 |
-| zcode | zcode/zcode-keysmith.py | `7348b875` (no `v0.3.2` tag; desktop `desktop-v0.1.0-beta.1`) | 0.3.2 |
+| zcode | zcode/zcode-keysmith.py | `3c3bea8f994d3670c2cd571e9bd87449fc868788` (merged #44; v0.3.4 tag pending) | 0.3.4 |
 | pi | pi/pi-keysmith.py | `37f69cac` (`v0.2.0`) | v0.2.0 |
 | dsh | dsh/dsh-keysmith.py | `8879d7b538b856413e7c78b16699fbd2d0f2743d` (merged #2; v0.2.2 tag pending) | v0.2.2 |
 
-`v0.3.1` is the Zcode CLI Latest tag and is not this pin. `v0.2.0` is older. The
-desktop prerelease is the source of the 0.3.2 tree; it is not a CLI release and
-is not Latest.
+ZCode 0.3.4 recognizes `supportsStorageStartup` in `resources/app.asar` on Windows,
+keeps the official agent-server, and reversibly patches `resources/glm/zcode.cjs`.
+The uninstaller restores the original runtime from its recorded backup.
 
 Advanced Tools also vendor `grok_keysmith_runner.py` and `grok_keysmith_breaktest.py`
-from the same Grok commit. Zcode 0.3.2 emits `zcode-keysmith/v1` when `--json` is
+from the same Grok commit. Zcode 0.3.4 emits `zcode-keysmith/v1` when `--json` is
 passed. doctor and install stay on text. plan-deactivate and deactivate pass
 `--json` on uninstall; the parser still accepts the text lines.
 

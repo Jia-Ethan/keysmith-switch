@@ -32,7 +32,7 @@ export const TOOL_CATALOG: ToolInfo[] = [
   {
     id: "zcode",
     name: "ZCode",
-    adapterVersion: "0.3.2",
+    adapterVersion: "0.3.4",
     available: true,
     unavailableReason: null,
     supportedScopes: ["user"],

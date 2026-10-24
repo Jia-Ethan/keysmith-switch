@@ -2,7 +2,7 @@
 """Deterministic ZCode Keysmith fixture.
 
 doctor and install stay on text lines. uninstall emits zcode-keysmith/v1
-when --json is present, matching sidecar 0.3.2.
+when --json is present, matching sidecar 0.3.4.
 """
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import os
 import sys
 from pathlib import Path
 
-VERSION = os.environ.get("FIXTURE_VERSION", "0.3.2")
+VERSION = os.environ.get("FIXTURE_VERSION", "0.3.4")
 FAIL = os.environ.get("FIXTURE_FAIL")
 
 

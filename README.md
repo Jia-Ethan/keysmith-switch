@@ -356,7 +356,8 @@ npx tauri build --target aarch64-apple-darwin --config src-tauri/tauri.preview.m
 
 | 版本 | 更新内容 |
 | --- | --- |
-| `v0.8.2`（准备中） | 修复 DSH 部署或停用失败时的状态误报；不完整的 `profiles/web` 跳过配置合成并提示回退，避免自动创建 profile 文件；同步 DSH 适配器版本。[#152](https://github.com/Jia-Ethan/keysmith-switch/pull/152) |
+| `v0.8.3`（准备中） | 修复 Windows / ZCode 3.16.x 部署成功但提示词不生效：随包升级 zcode-keysmith 0.3.4，识别新版启动方式并保留官方 agent-server，备份、补丁实际 runtime，停用时还原；同步 macOS 的 memory 覆盖与自动重补丁修复。对应上游 [#44](https://github.com/Jia-Ethan/zcode-keysmith/pull/44)。 |
+| [`v0.8.2`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.8.2) | 修复 DSH 部署或停用失败时的状态误报；不完整的 `profiles/web` 跳过配置合成并提示回退，避免自动创建 profile 文件；同步 DSH 适配器版本。[#152](https://github.com/Jia-Ethan/keysmith-switch/pull/152) |
 | [`v0.8.1`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.8.1) | 新增第六个 Agent DSH（DeepSeek Harness）：随包提供 dsh-keysmith 0.2.2，把提示词部署到全局 `~/.dsh/AGENTS.md`，并写入 `~/.dsh/cordis.patch.yml` 去掉 DSH 固定的身份句，先看计划再确认；原有的 `AGENTS.md` 先备份，停用时放回。`~/.dsh` 不存在时不会创建，`settings.yaml`、`.credentials.yaml`、会话和存储都不动。第三个资源是 npm 缓存里 `dsh-llm-deepseek` 的流式 tool_call 热修，上游一改就会跳过，届时计划里会明确标出。输入替换暂不支持 DSH；同时修复 DSH preview smoke 的打包验证误报。[#148](https://github.com/Jia-Ethan/keysmith-switch/issues/148) |
 | [`v0.7.0`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.7.0) | 新增第五个 Agent pi：随包提供 pi-keysmith 0.2.0，把提示词部署到全局 `~/.pi/agent/SYSTEM.md`，先看计划再确认；原有的 `SYSTEM.md` 先备份，停用时放回，`APPEND_SYSTEM.md`、`AGENTS.md` 等其他文件不动。`~/.pi/agent` 不存在时不会创建。输入替换暂不支持 pi。[#144](https://github.com/Jia-Ethan/keysmith-switch/pull/144) |
 | [`v0.6.5`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.6.5) | 支持密封规则包（`opaque`）：安装、输入替换页和更新确认只展示名称、条数和适用的 Agent，不展示规则正文，也不能复制到「我的规则」；中转服务照常按原文替换。密封只是界面上不展示，规则在本机仍是明文。[#140](https://github.com/Jia-Ethan/keysmith-switch/pull/140) |

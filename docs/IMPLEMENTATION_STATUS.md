@@ -1,13 +1,14 @@
 # Keysmith Switch 实现状态
 
-更新日期：2026-10-20（Asia/Shanghai）
+更新日期：2026-10-24（Asia/Shanghai）
 
-阶段：公开稳定版为 [`v0.8.1`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.8.1)，含 macOS Apple Silicon 与 Windows x64 安装包。`v0.1.9`（Quick Deploy，[#28](https://github.com/Jia-Ethan/keysmith-switch/pull/28)）已于 2026-09-28 发布；`v0.2.0`（界面改版，[#30](https://github.com/Jia-Ethan/keysmith-switch/pull/30)）于 2026-09-29 发布；`v0.2.1`（反馈改为预填 issue 表单、设置图标换成齿轮，[#34](https://github.com/Jia-Ethan/keysmith-switch/pull/34)）同日发布；`v0.2.2`（显示当前生效的提示词、去掉范围选择与键盘快捷键、补全操作反馈，[#37](https://github.com/Jia-Ethan/keysmith-switch/pull/37)）于 2026-09-30 发布；`v0.2.3`（“部署中”卡片、ZCode 官方图标、授权改为 PolyForm Noncommercial 1.0.0，[#39](https://github.com/Jia-Ethan/keysmith-switch/pull/39)）同日发布。此文下方 `v0.1.3`／`v0.1.4` 的验证记录是历史记录。
+阶段：公开稳定版为 [`v0.8.2`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.8.2)，含 macOS Apple Silicon 与 Windows x64 安装包。`v0.1.9`（Quick Deploy，[#28](https://github.com/Jia-Ethan/keysmith-switch/pull/28)）已于 2026-09-28 发布；`v0.2.0`（界面改版，[#30](https://github.com/Jia-Ethan/keysmith-switch/pull/30)）于 2026-09-29 发布；`v0.2.1`（反馈改为预填 issue 表单、设置图标换成齿轮，[#34](https://github.com/Jia-Ethan/keysmith-switch/pull/34)）同日发布；`v0.2.2`（显示当前生效的提示词、去掉范围选择与键盘快捷键、补全操作反馈，[#37](https://github.com/Jia-Ethan/keysmith-switch/pull/37)）于 2026-09-30 发布；`v0.2.3`（“部署中”卡片、ZCode 官方图标、授权改为 PolyForm Noncommercial 1.0.0，[#39](https://github.com/Jia-Ethan/keysmith-switch/pull/39)）同日发布。此文下方 `v0.1.3`／`v0.1.4` 的验证记录是历史记录。
 
-## v0.8.2 发布准备
+## v0.8.3 发布准备
 
-- #152 已合并：失败的 DSH 写入不再推导成功状态，随包 CLI 跳过不完整 profile 的配置合成，适配器版本显示同步为 0.2.2。
-- 当前公开稳定版仍为 v0.8.1；v0.8.2 正在准备版本声明与发布说明，签名候选构建、公开发布及实体机验收尚未完成。
+- 随包 ZCode CLI 固定到上游 commit `3c3bea8f994d3670c2cd571e9bd87449fc868788`（0.3.4，PR #44）。Windows 含 `supportsStorageStartup` 的 ZCode 3.16.x 使用 runtime-patch，不再依赖被忽略的 agent-server 环境覆盖；保留旧版 wrapper 路径。
+- Python Windows fixture 覆盖部署、原始 runtime 备份、无 `ZCODE_AGENT_SERVER_COMMAND` 环境覆盖、停用还原和用户环境恢复。
+- 当前公开稳定版仍为 v0.8.2；v0.8.3 正在准备版本声明与发布说明，签名候选构建、公开发布、Windows ZCode 3.16.x 实体机部署及 v0.8.2 → v0.8.3 应用内升级验收尚未完成。
 
 ## 产品状态
 

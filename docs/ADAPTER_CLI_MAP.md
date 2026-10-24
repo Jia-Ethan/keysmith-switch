@@ -75,9 +75,11 @@ stdout JSON schema: `claude-keysmith/v1`。`blockers` 非空或 `ok=false` 即�
 | doctor | `doctor` |
 | recover | 不支持：envelope `ok=false`，`unavailableReason` 说明无 recover |
 
-仅 macOS。Windows 不调用 CLI。scope 仅 `user`。不支持 recover。
+macOS 与 Windows 均调用 CLI。scope 仅 `user`。不支持 recover。
 
-doctor / install 继续解析文本行，不传 `--json`。0.3.2 的 `uninstall --help` 有 `--json`；带上它时 stdout 是 `zcode-keysmith/v1`（`operation=uninstall`，`mode=preview|execute`，`write` 与 `removed`）。plan-deactivate / deactivate 传 `--json`。解析器仍接受不带 `--json` 的文本行。`--json` 不用于 doctor、install 或 `--version`。
+随包固定为 zcode-keysmith 0.3.4（上游 commit `3c3bea8`）。Windows 的 `resources/app.asar` 含 `supportsStorageStartup` 时，部署走 runtime-patch：保留官方 agent-server，不写 `ZCODE_AGENT_SERVER_COMMAND`，备份并修改 `resources/glm/zcode.cjs`；停用按配置中的备份路径还原原始 runtime。旧版无该 marker 时仍走 wrapper。
+
+doctor / install 继续解析文本行，不传 `--json`。0.3.4 的 `uninstall --help` 有 `--json`；带上它时 stdout 是 `zcode-keysmith/v1`（`operation=uninstall`，`mode=preview|execute`，`write` 与 `removed`）。plan-deactivate / deactivate 传 `--json`。解析器仍接受不带 `--json` 的文本行。`--json` 不用于 doctor、install 或 `--version`。
 
 ## pi (`third_party/keysmith/pi/pi-keysmith.py`)
 
