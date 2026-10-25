@@ -1,15 +1,23 @@
 # Keysmith Switch 实现状态
 
-更新日期：2026-10-24（Asia/Shanghai）
+更新日期：2026-10-26（Asia/Shanghai）
 
-阶段：公开稳定版为 [`v0.8.2`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.8.2)，含 macOS Apple Silicon 与 Windows x64 安装包。`v0.1.9`（Quick Deploy，[#28](https://github.com/Jia-Ethan/keysmith-switch/pull/28)）已于 2026-09-28 发布；`v0.2.0`（界面改版，[#30](https://github.com/Jia-Ethan/keysmith-switch/pull/30)）于 2026-09-29 发布；`v0.2.1`（反馈改为预填 issue 表单、设置图标换成齿轮，[#34](https://github.com/Jia-Ethan/keysmith-switch/pull/34)）同日发布；`v0.2.2`（显示当前生效的提示词、去掉范围选择与键盘快捷键、补全操作反馈，[#37](https://github.com/Jia-Ethan/keysmith-switch/pull/37)）于 2026-09-30 发布；`v0.2.3`（“部署中”卡片、ZCode 官方图标、授权改为 PolyForm Noncommercial 1.0.0，[#39](https://github.com/Jia-Ethan/keysmith-switch/pull/39)）同日发布。此文下方 `v0.1.3`／`v0.1.4` 的验证记录是历史记录。
+阶段：公开稳定版为 [`v0.8.3`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.8.3)，含 macOS Apple Silicon 与 Windows x64 安装包。此文下方 `v0.1.3`／`v0.1.4` 的验证记录是历史记录。
 
-## v0.8.3 发布准备
+## v0.8.4 发布准备
+
+- [#157](https://github.com/Jia-Ethan/keysmith-switch/pull/157) 已合并（[#155](https://github.com/Jia-Ethan/keysmith-switch/issues/155)）：未设置 `https_proxy` / `all_proxy` 时，macOS 从 `scutil --proxy` 读取系统代理（HTTPS → HTTP → SOCKS）传给 curl；updater 插件的检查和下载在 macOS / Windows 上使用系统 HTTP 代理。回环 endpoint 不走代理。
+- 随包 dsh-keysmith 固定到上游 commit `c15f990`（0.4.0，[#156](https://github.com/Jia-Ethan/keysmith-switch/pull/156)）。部署面是 `profiles/web` 的 Cordis 插件，不再 dump `AGENTS.md`。0.4.0 读到 0.2.2 的 manifest 时报 `drift`，停用只撤插件，不还原旧版写下的 home `AGENTS.md` / `cordis.patch.yml`；发布说明提示需要还原的用户先在旧版停用。
+- 当前公开稳定版仍为 v0.8.3；v0.8.4 正在准备版本声明与发布说明，签名候选构建、公开发布、开着系统代理的 macOS 上 v0.8.3 → v0.8.4 应用内升级、以及 DSH 0.2.2 → 0.4.0 实体机迁移验收尚未完成。
+
+## v0.8.3 发布记录
 
 - 随包 ZCode CLI 固定到上游 commit `3c3bea8f994d3670c2cd571e9bd87449fc868788`（0.3.4，PR #44）。Windows 含 `supportsStorageStartup` 的 ZCode 3.16.x 使用 runtime-patch，不再依赖被忽略的 agent-server 环境覆盖；保留旧版 wrapper 路径。
 - Python Windows fixture 覆盖部署、原始 runtime 备份、无 `ZCODE_AGENT_SERVER_COMMAND` 环境覆盖、停用还原和用户环境恢复。
-- 随包 dsh-keysmith 固定到上游 commit `c15f990`（0.4.0，PR #6）。部署面是 `profiles/web` 的 Cordis 插件，不再 dump `AGENTS.md`。
-- 当前公开稳定版仍为 v0.8.2；v0.8.3 正在准备版本声明与发布说明，签名候选构建、公开发布、Windows ZCode 3.16.x 实体机部署及 v0.8.2 → v0.8.3 应用内升级验收尚未完成。
+- 2026-10-24，PR [#154](https://github.com/Jia-Ethan/keysmith-switch/pull/154) 合并为 `346e0a96894117c35de8fe31225e32b51ae87609`，main CI run [`40092753978`](https://github.com/Jia-Ethan/keysmith-switch/actions/runs/40092753978) 五项检查通过。GitHub-verified annotated tag [`v0.8.3`](https://github.com/Jia-Ethan/keysmith-switch/releases/tag/v0.8.3) 指向该提交。
+- Source release run [`40093446182`](https://github.com/Jia-Ethan/keysmith-switch/actions/runs/40093446182) 的 source-gates、macOS、Windows 和 metadata 均成功；公开发布 run [`40095719745`](https://github.com/Jia-Ethan/keysmith-switch-releases/actions/runs/40095719745) 经 `production` 审批后成功。
+- 独立下载验证了候选的 8 个发布文件、provenance、metadata、SHA-256、macOS DMG 和 updater 内全部 sidecar，ZCode 为 0.3.4。公开 Release 为 stable、Latest、非 draft、immutable，stable feed 与候选 `latest.json` 一致。
+- Windows ZCode 3.16.x 实体机部署/停用，以及 v0.8.2 → v0.8.3 真实应用内升级仍需独立验收。
 
 ## 产品状态
 
