@@ -135,7 +135,8 @@ def assert_bundled(python: Path, binary: Path, required: list) -> None:
         capture_output=True,
         text=True,
     ).stdout.splitlines()
-    entries = {line.strip() for line in listing}
+    # Windows builds store archive names with backslashes (`plugin\lib\index.js`).
+    entries = {line.strip().replace("\\", "/") for line in listing}
     missing = [name for name in required if name not in entries]
     if missing:
         raise SystemExit(f"{binary.name} does not bundle {missing}; the adapter reads these when it runs")

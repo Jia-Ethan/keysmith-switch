@@ -1110,9 +1110,10 @@ async fn dsh_fixture_contract() {
     assert!(plan.planned_files.iter().any(|entry| entry
         .path
         .contains("node_modules/dsh-keysmith")
-        || entry
-            .path
-            .contains(&format!("node_modules{}dsh-keysmith", std::path::MAIN_SEPARATOR))));
+        || entry.path.contains(&format!(
+            "node_modules{}dsh-keysmith",
+            std::path::MAIN_SEPARATOR
+        ))));
     assert!(
         !dsh_dir
             .join("profiles/web/node_modules/dsh-keysmith")

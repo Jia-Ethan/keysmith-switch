@@ -611,8 +611,7 @@ async fn real_dsh_deploys_reads_back_and_leaves_the_rest_of_its_home_alone() {
     .await
     .unwrap();
     assert!(deployed.ok, "{deployed:?}");
-    let contract = dsh_dir
-        .join("profiles/web/node_modules/dsh-keysmith/lib/contract.md");
+    let contract = dsh_dir.join("profiles/web/node_modules/dsh-keysmith/lib/contract.md");
     assert_eq!(std::fs::read_to_string(&contract).unwrap(), body);
     assert_eq!(
         std::fs::read_to_string(dsh_dir.join("AGENTS.md")).unwrap(),
@@ -710,7 +709,11 @@ async fn real_dsh_drift_blocks_deactivate_and_a_redeploy_clears_it() {
     let mut pkg: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&pkg_path).unwrap()).unwrap();
     pkg["dsh"]["profile"]["bundles"] = serde_json::json!([]);
-    std::fs::write(&pkg_path, serde_json::to_string_pretty(&pkg).unwrap() + "\n").unwrap();
+    std::fs::write(
+        &pkg_path,
+        serde_json::to_string_pretty(&pkg).unwrap() + "\n",
+    )
+    .unwrap();
     let drifted = tool_status(&store, ToolKind::Dsh, Scope::User, None, &opts)
         .await
         .unwrap();
