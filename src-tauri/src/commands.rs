@@ -1059,15 +1059,20 @@ async fn apply_with_plugin(
         .endpoint
         .parse::<tauri::Url>()
         .map_err(|error| Error::invalid(format!("invalid updater endpoint: {error}")))?;
+    let proxy = crate::netproxy::updater_proxy(&endpoint);
     let updater = match app
         .updater_builder()
         .endpoints(vec![endpoint])
         .and_then(|builder| {
-            builder
+            let builder = builder
                 .pubkey(runtime.pubkey)
                 .target(runtime.platform_key)
-                .timeout(Duration::from_secs(30))
-                .build()
+                .timeout(Duration::from_secs(30));
+            let builder = match proxy {
+                Some(proxy) => builder.proxy(proxy),
+                None => builder,
+            };
+            builder.build()
         }) {
         Ok(updater) => updater,
         Err(error) => {

@@ -1,20 +1,54 @@
-//! Proxy arguments for the `curl` children we spawn for update and extension fetches.
+//! Proxy settings for update and extension fetches.
 //!
-//! curl honours `http_proxy`/`https_proxy`/`all_proxy` on its own, but on Windows it never
-//! reads the system proxy that tools like Clash or v2rayN set, so GitHub times out for users
-//! who browse fine. Loopback is always excluded so local mock servers and tests are never proxied.
+//! curl honours `http_proxy`/`https_proxy`/`all_proxy` on its own, but it never reads the
+//! macOS or Windows system proxy that tools like Clash or v2rayN set, and an app opened from
+//! Finder or the Start menu has no proxy variables. The updater plugin's HTTP client is built
+//! without system-proxy support too. Without this, GitHub times out for users who browse fine.
+//! Loopback is always excluded so local mock servers and tests are never proxied.
+
+use url::{Host, Url};
 
 const NO_PROXY: &str = "127.0.0.1,localhost,::1";
 
 pub fn curl_proxy_args() -> Vec<String> {
     let mut args = vec!["--noproxy".to_string(), NO_PROXY.to_string()];
-    if !env_proxy_set() {
-        if let Some(proxy) = system_proxy() {
-            args.push("--proxy".to_string());
-            args.push(proxy);
-        }
+    if let Some(proxy) = fallback_proxy() {
+        args.push("--proxy".to_string());
+        args.push(proxy);
     }
     args
+}
+
+/// Proxy for the updater plugin's check and download of `endpoint`. Its HTTP client reads
+/// proxy variables but not the system proxy, and cannot speak SOCKS, so only HTTP proxies
+/// are passed on.
+pub fn updater_proxy(endpoint: &Url) -> Option<Url> {
+    if is_loopback(endpoint) {
+        return None;
+    }
+    http_proxy_url(&fallback_proxy()?)
+}
+
+/// The system proxy, unless a proxy variable is set, which curl and the plugin already honour.
+fn fallback_proxy() -> Option<String> {
+    if env_proxy_set() {
+        return None;
+    }
+    system_proxy()
+}
+
+fn http_proxy_url(raw: &str) -> Option<Url> {
+    let url = Url::parse(raw).ok()?;
+    matches!(url.scheme(), "http" | "https").then_some(url)
+}
+
+fn is_loopback(url: &Url) -> bool {
+    match url.host() {
+        Some(Host::Domain(domain)) => domain.eq_ignore_ascii_case("localhost"),
+        Some(Host::Ipv4(ip)) => ip.is_loopback(),
+        Some(Host::Ipv6(ip)) => ip.is_loopback(),
+        None => false,
+    }
 }
 
 fn env_proxy_set() -> bool {
@@ -48,9 +82,68 @@ fn system_proxy() -> Option<String> {
     parse_proxy_server(&reg_value(&query("ProxyServer")?, "ProxyServer")?)
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+fn system_proxy() -> Option<String> {
+    use crate::nowindow::NoWindow;
+    let out = std::process::Command::new("/usr/sbin/scutil")
+        .arg("--proxy")
+        .no_window()
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    parse_scutil_proxy(&String::from_utf8_lossy(&out.stdout))
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 fn system_proxy() -> Option<String> {
     None
+}
+
+/// Top-level `Key : value` lines of `scutil --proxy` into a curl proxy URL, preferring
+/// HTTPS, then HTTP, then SOCKS. Nested blocks such as `ExceptionsList` are skipped.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn parse_scutil_proxy(output: &str) -> Option<String> {
+    let mut depth = 0_usize;
+    let mut fields = std::collections::HashMap::new();
+    for line in output.lines().map(str::trim) {
+        if line.starts_with('}') {
+            depth = depth.saturating_sub(1);
+            continue;
+        }
+        let opens = line.ends_with('{');
+        if depth == 1 && !opens {
+            if let Some((key, value)) = line.split_once(" : ") {
+                fields.insert(key.trim(), value.trim());
+            }
+        }
+        if opens {
+            depth += 1;
+        }
+    }
+    let entry = |kind: &str, scheme: &str| {
+        if fields.get(format!("{kind}Enable").as_str()) != Some(&"1") {
+            return None;
+        }
+        let host = *fields.get(format!("{kind}Proxy").as_str())?;
+        if host.is_empty() {
+            return None;
+        }
+        let host = if host.contains(':') {
+            format!("[{host}]")
+        } else {
+            host.to_string()
+        };
+        let address = match fields.get(format!("{kind}Port").as_str()) {
+            Some(port) => format!("{host}:{port}"),
+            None => host,
+        };
+        Some(with_scheme(&address, scheme))
+    };
+    entry("HTTPS", "http")
+        .or_else(|| entry("HTTP", "http"))
+        .or_else(|| entry("SOCKS", "socks5"))
 }
 
 /// Value column of one `reg query` output line: `    Name    REG_SZ    data`.
@@ -89,7 +182,7 @@ fn parse_proxy_server(raw: &str) -> Option<String> {
         .or_else(|| find("socks").map(|v| with_scheme(v, "socks5")))
 }
 
-#[cfg_attr(not(windows), allow(dead_code))]
+#[cfg_attr(not(any(windows, target_os = "macos")), allow(dead_code))]
 fn with_scheme(value: &str, scheme: &str) -> String {
     if value.contains("://") {
         value.to_string()
@@ -132,6 +225,99 @@ mod tests {
         let out = "\r\nHKEY_CURRENT_USER\\...\\Internet Settings\r\n    ProxyEnable    REG_DWORD    0x1\r\n";
         assert_eq!(reg_value(out, "ProxyEnable").as_deref(), Some("0x1"));
         assert_eq!(reg_value(out, "ProxyServer"), None);
+    }
+
+    const SCUTIL: &str = "<dictionary> {
+  ExceptionsList : <array> {
+    0 : localhost
+    1 : 127.0.0.0/8
+  }
+  ExcludeSimpleHostnames : 1
+  HTTPEnable : 1
+  HTTPPort : 7890
+  HTTPProxy : 127.0.0.1
+  HTTPSEnable : 1
+  HTTPSPort : 7891
+  HTTPSProxy : 127.0.0.1
+  ProxyAutoConfigEnable : 0
+  SOCKSEnable : 1
+  SOCKSPort : 7892
+  SOCKSProxy : 127.0.0.1
+}
+";
+
+    #[test]
+    fn scutil_prefers_https() {
+        assert_eq!(
+            parse_scutil_proxy(SCUTIL).as_deref(),
+            Some("http://127.0.0.1:7891")
+        );
+    }
+
+    #[test]
+    fn scutil_falls_back_to_http_then_socks() {
+        let http = SCUTIL.replace("HTTPSEnable : 1", "HTTPSEnable : 0");
+        assert_eq!(
+            parse_scutil_proxy(&http).as_deref(),
+            Some("http://127.0.0.1:7890")
+        );
+        let socks = http.replace("HTTPEnable : 1", "HTTPEnable : 0");
+        assert_eq!(
+            parse_scutil_proxy(&socks).as_deref(),
+            Some("socks5://127.0.0.1:7892")
+        );
+    }
+
+    #[test]
+    fn scutil_without_enabled_proxy_is_none() {
+        let off = "<dictionary> {\n  HTTPEnable : 0\n  HTTPSEnable : 0\n  SOCKSEnable : 0\n}\n";
+        assert_eq!(parse_scutil_proxy(off), None);
+        assert_eq!(parse_scutil_proxy(""), None);
+    }
+
+    #[test]
+    fn scutil_ignores_nested_blocks() {
+        let scoped = "<dictionary> {
+  __SCOPED__ : <dictionary> {
+    en0 : <dictionary> {
+      HTTPSEnable : 1
+      HTTPSPort : 9999
+      HTTPSProxy : 10.0.0.1
+    }
+  }
+  HTTPSEnable : 0
+}
+";
+        assert_eq!(parse_scutil_proxy(scoped), None);
+    }
+
+    #[test]
+    fn scutil_brackets_ipv6_hosts() {
+        let v6 = "<dictionary> {\n  HTTPSEnable : 1\n  HTTPSPort : 8080\n  HTTPSProxy : ::1\n}\n";
+        assert_eq!(parse_scutil_proxy(v6).as_deref(), Some("http://[::1]:8080"));
+    }
+
+    #[test]
+    fn updater_only_takes_http_proxies() {
+        assert!(http_proxy_url("http://127.0.0.1:7890").is_some());
+        assert!(http_proxy_url("socks5://127.0.0.1:7892").is_none());
+        assert!(http_proxy_url("not a url").is_none());
+    }
+
+    #[test]
+    fn updater_never_proxies_loopback_endpoints() {
+        for endpoint in [
+            "http://127.0.0.1:4010/latest.json",
+            "http://localhost:4010/latest.json",
+            "http://[::1]:4010/latest.json",
+        ] {
+            let url = Url::parse(endpoint).unwrap();
+            assert!(is_loopback(&url));
+            assert_eq!(updater_proxy(&url), None);
+        }
+        assert!(!is_loopback(
+            &Url::parse(crate::updater::STABLE_ENDPOINT).unwrap()
+        ));
     }
 
     #[test]

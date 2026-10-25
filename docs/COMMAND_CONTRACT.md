@@ -110,6 +110,7 @@
 - 默认 stable endpoint：`https://github.com/Jia-Ethan/keysmith-switch-releases/releases/latest/download/latest.json`
 - beta endpoint：`https://raw.githubusercontent.com/Jia-Ethan/keysmith-switch-releases/beta/latest.json`
 - 环境覆盖：`KEYSMITH_SWITCH_UPDATER_ENDPOINT`、`KEYSMITH_SWITCH_UPDATER_PUBKEY`
+- 代理：未设置 `https_proxy` / `all_proxy` 时，检查、下载和扩展请求使用 macOS / Windows 系统代理（updater 插件下载只用 HTTP 代理）；回环地址永不走代理
 - 禁止静默安装；`install_app_update` 必须 `confirmed: true`
 - metadata 可用 `minimum_updater_version` 声明能验证当前签名密钥的最早客户端；低于门槛时只返回目标版本的手动下载入口，不请求 updater payload
 - `installMode` 为 `none | inApp | manual`；`reason` 为 `bootstrapRequired | signatureKeyMismatch | null`
