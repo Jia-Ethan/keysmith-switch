@@ -525,9 +525,9 @@ fn pi_dir(home: Option<&Path>) -> Result<String> {
 /// absolute path, so the CLI never falls back to its own `$DSH_HOME`/`~/.dsh` guess. The
 /// adapter resolves that path once, in [`dsh_dir`], where the Mirasim exception lives.
 ///
-/// One difference from pi that the shape of this function records: dsh-keysmith 0.2.2 has no
+/// One difference from pi that the shape of this function records: dsh-keysmith 0.4.0 has no
 /// preview token, so a confirmation cannot be bound to the preview the user saw. `--yes` is
-/// the only confirmation there is, and the CLI backs up before it overwrites.
+/// the only confirmation there is. `--file` overlays `plugin/lib/contract.md`.
 fn dsh_args(command: &AdapterCommand, home: Option<&Path>) -> Result<PreparedCommand> {
     let mut args: Vec<String> = Vec::new();
     let mut preview = true;
@@ -588,7 +588,7 @@ fn dsh_args(command: &AdapterCommand, home: Option<&Path>) -> Result<PreparedCom
 /// dsh home.
 ///
 /// The real home is not hard-coded to `~/.dsh`: `$DSH_HOME` wins when it is set, which is what
-/// dsh-keysmith 0.2.2 resolves on its own and what a relocated harness install needs. Mirasim
+/// dsh-keysmith 0.4.0 resolves on its own and what a relocated harness install needs. Mirasim
 /// is the case that forces the two apart. It starts every dsh session with `DSH_HOME` pointing
 /// at a disposable mount under `~/.mirasim/agent-homes/dsh/<id>`, assembled from symlinks back
 /// into `~/.dsh`; deploying through such a mount would land in one session's scratch directory

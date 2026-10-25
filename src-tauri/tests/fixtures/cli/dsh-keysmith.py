@@ -1,37 +1,36 @@
 #!/usr/bin/env python3
 """Deterministic dsh Keysmith fixture emitting dsh-keysmith/v1.
 
-Mirrors dsh-keysmith 0.2.2's payload shape so the adapter contract can be tested without
-the real CLI. State comes from files under --dsh-dir, in the same order the real adapter
-decides it:
+Mirrors dsh-keysmith 0.4.0's payload shape so the adapter contract can be tested
+without the real CLI. State comes from files under --dsh-dir:
 
-- any `.dsh-keysmith-transaction-*` directory: recovery-required
-- no `.dsh-keysmith-manifest.json`: not-installed
-- manifest present, every managed file matching its recorded `after`: active
-- manifest present, any managed file differing or missing: drift
+- no `.dsh-keysmith-manifest.json` and no live plugin/bundles/insert: not-installed
+- manifest present (or leftover plugin pieces) matching the live profile: active
+- plugin / bundles / insert mismatch: drift
 
-Environment switches, mirroring the behaviours the real adapter has:
+`--file` overlays `profiles/<profile>/node_modules/dsh-keysmith/lib/contract.md`.
+Home `AGENTS.md` is never written. `--recover` is a no-op.
+
+Environment switches:
 - FIXTURE_VERSION=0.2.0  answers the old contract (no `version`, `state`, `dsh_dir_exists`)
 - FIXTURE_DIR_MISSING=1  makes `--dsh-dir` point at a path that does not exist
-- FIXTURE_ADAPTER_STATE    the adapter_patch state to report (default "absent")
-- FIXTURE_LANG_ECHO=1    repeats the `--lang` it was given, so a test can prove Switch
-                         always asks for English
+- FIXTURE_LANG_ECHO=1    repeats the `--lang` it was given
 """
 from __future__ import annotations
 
 import hashlib
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
 
 SCHEMA = "dsh-keysmith/v1"
-VERSION = os.environ.get("FIXTURE_VERSION", "0.2.2")
+VERSION = os.environ.get("FIXTURE_VERSION", "0.4.0")
 MANIFEST = ".dsh-keysmith-manifest.json"
-AGENTS = "AGENTS.md"
-PATCH = "cordis.patch.yml"
-ADAPTER = "profiles/node_modules/@deepseek-ai/dsh-llm-deepseek/lib/index.js"
-RESOURCES = {AGENTS: "agents_md", PATCH: "cordis_patch", ADAPTER: "adapter_patch"}
+PLUGIN = "dsh-keysmith"
+DEFAULT_PROFILE = "web"
+INSERT_BLOCK = "- insert:\n    - id: dsh-keysmith\n      name: dsh-keysmith\n"
 
 
 def flag(argv: list[str], name: str) -> str | None:
@@ -46,11 +45,12 @@ def sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def fingerprint(path: Path) -> dict | None:
-    if not path.is_file():
-        return None
-    data = path.read_bytes()
-    return {"sha256": sha(data), "size": len(data), "mtime_ns": 0}
+def profile_dir(root: Path, profile: str) -> Path:
+    return root / "profiles" / profile
+
+
+def plugin_dest(root: Path, profile: str) -> Path:
+    return profile_dir(root, profile) / "node_modules" / PLUGIN
 
 
 def load_manifest(root: Path) -> dict | None:
@@ -61,53 +61,70 @@ def load_manifest(root: Path) -> dict | None:
     return raw if isinstance(raw, dict) else None
 
 
-def residue(root: Path) -> list[dict]:
-    items = []
-    for entry in sorted(root.glob(".dsh-keysmith-transaction-*")):
-        items.append({"kind": "transaction", "id": entry.name, "path": str(entry),
-                      "phase": "prepared", "operation": "deploy"})
-    return items
+def has_insert(text: str) -> bool:
+    return "- id: dsh-keysmith" in text
 
 
-def drift_notes(root: Path, manifest: dict) -> list[str]:
-    notes = []
-    for name, key in RESOURCES.items():
-        entry = (manifest.get("resources") or {}).get(key)
-        if entry is None:
-            continue
-        live = fingerprint(root / name)
-        if live is None:
-            notes.append(f"{key}: missing since deploy: {root / name}")
-        elif live["sha256"] != entry.get("after_sha256"):
-            notes.append(f"{key}: changed since deploy: {root / name}")
-    return notes
+def live_state(root: Path, profile: str) -> tuple[bool, bool, bool]:
+    dest = plugin_dest(root, profile)
+    pkg_path = profile_dir(root, profile) / "package.json"
+    try:
+        pkg = json.loads(pkg_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        pkg = {}
+    bundles = ((pkg.get("dsh") or {}).get("profile") or {}).get("bundles") or []
+    in_bundles = PLUGIN in bundles
+    patch = profile_dir(root, profile) / "cordis.patch.yml"
+    inserted = has_insert(patch.read_text(encoding="utf-8")) if patch.is_file() else False
+    copied = dest.is_dir() and (dest / "lib" / "index.js").is_file()
+    return copied, in_bundles, inserted
 
 
-def inspect(root: Path) -> tuple[str, list[str], dict | None, list[dict]]:
-    left = residue(root)
+def inspect(root: Path, profile: str) -> tuple[str, list[str], dict | None]:
     manifest = load_manifest(root)
-    if left:
-        return "recovery-required", [], manifest, left
+    used = str((manifest or {}).get("profile") or profile)
+    copied, in_bundles, inserted = live_state(root, used)
+    notes: list[str] = []
     if manifest is None:
-        return "not-installed", [], None, []
-    notes = drift_notes(root, manifest)
-    return ("drift" if notes else "active"), notes, manifest, []
+        if copied or in_bundles or inserted:
+            if not copied:
+                notes.append("profile_plugin: missing plugin copy")
+            if not in_bundles:
+                notes.append("profile_bundles: dsh-keysmith not in bundles")
+            if not inserted:
+                notes.append("profile_insert: insert missing")
+            return ("drift" if notes else "active"), notes, None
+        return "not-installed", [], None
+    if not copied:
+        notes.append("profile_plugin: missing since deploy")
+    if not in_bundles:
+        notes.append("profile_bundles: changed since deploy")
+    if not inserted:
+        notes.append("profile_insert: changed since deploy")
+    return ("drift" if notes else "active"), notes, manifest
 
 
 def manifest_public(manifest: dict | None) -> dict | None:
     if manifest is None:
         return None
     resources = {}
-    for key in set(RESOURCES.values()):
-        entry = (manifest.get("resources") or {}).get(key)
+    for key in ("profile_plugin", "profile_bundles", "profile_insert"):
+        entry = manifest.get(key) or (manifest.get("resources") or {}).get(key)
         if entry is None:
             continue
-        resources[key] = {"path": entry.get("path"), "backup": entry.get("backup"),
-                          "after_sha256": entry.get("after_sha256")}
-    return {"deployment_id": manifest.get("deployment_id"),
-            "tool_version": manifest.get("tool_version"),
-            "created_at": manifest.get("created_at"),
-            "resources": resources}
+        after = entry.get("after") or {}
+        resources[key] = {
+            "path": entry.get("path"),
+            "backup": entry.get("backup"),
+            "after_sha256": after.get("sha256") or entry.get("after_sha256"),
+        }
+    return {
+        "deployment_id": manifest.get("deployment_id"),
+        "tool_version": manifest.get("tool_version"),
+        "created_at": manifest.get("created_at"),
+        "profile": manifest.get("profile"),
+        "resources": resources,
+    }
 
 
 def report(operation: str, mode: str, ok: bool, exit_status: int, *, actions=None,
@@ -138,25 +155,15 @@ def dump(payload: dict) -> None:
     print(json.dumps(payload, indent=2))
 
 
-def extra_for(root: Path, with_state: bool = True) -> dict:
-    """The payload fields dsh-keysmith 0.2.2 sends.
-
-    Only `--status` and `--recover` report `state`/`drift`/`dsh_dir_exists`; deploy and
-    uninstall describe the operation they performed and leave the state out. Keeping that
-    asymmetry here is the point — the adapter has to cope with it.
-    """
-    state, notes, manifest, left = inspect(root)
+def extra_for(root: Path, profile: str, with_state: bool = True) -> dict:
+    state, notes, manifest = inspect(root, profile)
     extra = {
         "dsh_dir": str(root),
-        "ready": not left,
-        "residue": left,
+        "profile": (manifest or {}).get("profile") or profile,
+        "ready": True,
+        "residue": [],
         "manifest": manifest_public(manifest),
-        "adapter_patch": {
-            "state": os.environ.get("FIXTURE_ADAPTER_STATE", "absent"),
-            "path": str(root / ADAPTER),
-            "managed": bool((manifest or {}).get("resources", {}).get("adapter_patch")),
-            "already_patched": None,
-        },
+        "adapter_patch": {"state": "absent", "path": None, "managed": False, "already_patched": None},
     }
     if VERSION != "0.2.0" and with_state:
         extra["dsh_dir_exists"] = root.is_dir()
@@ -165,124 +172,138 @@ def extra_for(root: Path, with_state: bool = True) -> dict:
     return extra
 
 
-def status(root: Path, lang: str | None) -> int:
-    state, _notes, _manifest, left = inspect(root)
-    ready = not left
-    blockers = [f"unfinished transaction residue: {item['path']}" for item in left] if left else []
-    payload = report("status", "preview", ready, 0 if ready else 1, blockers=blockers,
-                     extra=extra_for(root))
+def status(root: Path, lang: str | None, profile: str) -> int:
+    payload = report("status", "preview", True, 0, extra=extra_for(root, profile))
     if os.environ.get("FIXTURE_LANG_ECHO") == "1":
         payload["lang"] = lang
     dump(payload)
-    return 0 if ready else 1
+    return 0
 
 
-def deploy(root: Path, lang: str | None, name: str, yes: bool) -> int:
+def write_plugin(dest: Path, overlay: bytes | None) -> None:
+    lib = dest / "lib"
+    lib.mkdir(parents=True, exist_ok=True)
+    (lib / "index.js").write_text("export default {}\n", encoding="utf-8")
+    body = overlay if overlay is not None else b"# fixture dsh contract\n"
+    (lib / "contract.md").write_bytes(body)
+
+
+def deploy(root: Path, lang: str | None, name: str, yes: bool, profile: str, source: str | None) -> int:
     mode = "execute" if yes else "preview"
     if not root.is_dir():
         message = f"DSH directory does not exist: {root}"
         dump(report("deploy", mode, False, 2, error=message, blockers=[message],
-                    extra={"dsh_dir": str(root), "name": name}))
+                    extra={"dsh_dir": str(root), "dsh_dir_exists": False, "name": name,
+                           "state": "not-installed"}))
         return 2
-    _state, _notes, _manifest, left = inspect(root)
-    if left:
-        blockers = [f"unfinished transaction residue: {item['path']}" for item in left]
-        dump(report("deploy", mode, False, 1, blockers=blockers,
-                    extra={**extra_for(root, with_state=False), "name": name}))
-        return 1
-    source = flag(__import__("sys").argv, "--file")
-    data = Path(source).read_bytes() if source else b"# fixture dsh\n"
+    dest = plugin_dest(root, profile)
+    pkg_path = profile_dir(root, profile) / "package.json"
+    patch_path = profile_dir(root, profile) / "cordis.patch.yml"
     actions = [
-        action("replace" if (root / AGENTS).is_file() else "create", root / AGENTS, "agents_md"),
-        action("replace" if (root / PATCH).is_file() else "create", root / PATCH, "cordis_patch"),
-        action("write", root / MANIFEST, "manifest"),
-        action("skip", root / ADAPTER, "absent"),
+        action("create" if not dest.exists() else "replace", dest, "profile_plugin"),
+        action("update", pkg_path, "profile_bundles"),
+        action("update", patch_path, "profile_insert"),
     ]
-    warnings = ["adapter file absent; skipping adapter patch"]
-    extra = {**extra_for(root, with_state=False), "name": name,
-             "source": {"kind": "file" if source else "builtin", "path": source},
-             "target": {"agents_md": str(root / AGENTS), "cordis_patch": str(root / PATCH)}}
+    warnings = ["does not patch the host or write AGENTS.md"]
+    extra = {**extra_for(root, profile, with_state=False), "name": name, "profile": profile}
     if os.environ.get("FIXTURE_LANG_ECHO") == "1":
         extra["lang"] = lang
     if not yes:
+        extra["state"] = "not-installed"
+        extra["ready"] = True
+        extra["dsh_dir_exists"] = True
         dump(report("deploy", "preview", True, 0, actions=actions, warnings=warnings, extra=extra))
         return 0
-    (root / AGENTS).write_bytes(data)
-    (root / PATCH).write_bytes(b"id: system-prompt\n")
+    overlay = Path(source).read_bytes() if source else None
+    write_plugin(dest, overlay)
+    pkg = {}
+    if pkg_path.is_file():
+        try:
+            pkg = json.loads(pkg_path.read_text(encoding="utf-8"))
+        except ValueError:
+            pkg = {}
+    dsh = pkg.setdefault("dsh", {})
+    profile_obj = dsh.setdefault("profile", {})
+    bundles = list(profile_obj.get("bundles") or [])
+    if PLUGIN not in bundles:
+        bundles.append(PLUGIN)
+    profile_obj["bundles"] = bundles
+    pkg_path.parent.mkdir(parents=True, exist_ok=True)
+    pkg_path.write_text(json.dumps(pkg, indent=2) + "\n", encoding="utf-8")
+    existing = patch_path.read_text(encoding="utf-8") if patch_path.is_file() else ""
+    if not has_insert(existing):
+        patch_path.write_text(existing + ("" if not existing or existing.endswith("\n") else "\n") + INSERT_BLOCK, encoding="utf-8")
     manifest = {
         "schema_version": 1,
         "tool_version": VERSION,
         "deployment_id": "0" * 32,
         "created_at": "2026-01-01T00:00:00+00:00",
-        "resources": {
-            "agents_md": {"path": AGENTS, "after_sha256": sha(data), "before": None, "backup": None},
-            "cordis_patch": {"path": PATCH, "after_sha256": sha(b"id: system-prompt\n"),
-                             "before": None, "backup": None},
+        "profile": profile,
+        "profile_plugin": {
+            "path": str(dest),
+            "after": {"sha256": sha((dest / "lib" / "index.js").read_bytes())},
+            "backup": None,
         },
+        "profile_bundles": {"path": str(pkg_path), "after": {"sha256": sha(pkg_path.read_bytes())}, "backup": None},
+        "profile_insert": {"path": str(patch_path), "after": {"sha256": sha(patch_path.read_bytes())}, "backup": None},
         "previous_manifest": {"fingerprint": None},
     }
     (root / MANIFEST).write_text(json.dumps(manifest), encoding="utf-8")
     dump(report("deploy", "execute", True, 0, actions=actions, warnings=warnings,
-                extra={**extra, "deployment_id": "0" * 32,
+                extra={**extra, "deployment_id": "0" * 32, "state": "active",
                        "manifest": manifest_public(manifest)}))
     return 0
 
 
-def uninstall(root: Path, lang: str | None, yes: bool) -> int:
+def uninstall(root: Path, lang: str | None, yes: bool, profile: str) -> int:
     mode = "execute" if yes else "preview"
     manifest = load_manifest(root)
     if manifest is None:
-        message = "no dsh-keysmith manifest found; nothing to uninstall"
+        message = "No dsh-keysmith manifest found; nothing to uninstall."
         dump(report("uninstall", mode, False, 1, error=message, blockers=[message],
-                    extra={"dsh_dir": str(root)}))
+                    extra={"dsh_dir": str(root), "state": "not-installed",
+                           "adapter_patch": extra_for(root, profile, with_state=False)["adapter_patch"]}))
         return 1
-    _state, notes, _manifest, left = inspect(root)
-    if left:
-        blockers = [f"unfinished transaction residue: {item['path']}" for item in left]
-        dump(report("uninstall", mode, False, 1, blockers=blockers,
-                    extra={**extra_for(root)}))
-        return 1
-    if notes:
-        # The real adapter names the first drifted file and refuses.
-        target = notes[0].split(": ", 1)[-1]
-        message = f"target drifted from the manifest, refusing to overwrite: {target}"
-        dump(report("uninstall", mode, False, 1, error=message, blockers=[message],
-                    extra={"dsh_dir": str(root), "manifest": manifest_public(manifest), "adapter_patch": extra_for(root, with_state=False)["adapter_patch"]}))
-        return 1
-    actions = [action("remove", root / AGENTS, "agents_md"),
-               action("remove", root / PATCH, "cordis_patch"),
-               action("backup", root / f"{MANIFEST}.uninstalled", "manifest")]
-    extra = {**extra_for(root, with_state=False), "manifest": manifest_public(manifest)}
+    used = str(manifest.get("profile") or profile)
+    dest = plugin_dest(root, used)
+    pkg_path = profile_dir(root, used) / "package.json"
+    patch_path = profile_dir(root, used) / "cordis.patch.yml"
+    actions = [
+        action("delete", dest, "profile_plugin"),
+        action("update", pkg_path, "profile_bundles"),
+        action("update", patch_path, "profile_insert"),
+        action("delete", root / MANIFEST, "manifest"),
+    ]
+    extra = {**extra_for(root, used, with_state=False), "profile": used, "manifest": manifest_public(manifest)}
     if os.environ.get("FIXTURE_LANG_ECHO") == "1":
         extra["lang"] = lang
     if not yes:
+        extra["state"] = "active"
         dump(report("uninstall", "preview", True, 0, actions=actions, extra=extra))
         return 0
-    (root / AGENTS).unlink(missing_ok=True)
-    (root / PATCH).unlink(missing_ok=True)
+    if dest.exists():
+        shutil.rmtree(dest)
+    if pkg_path.is_file():
+        pkg = json.loads(pkg_path.read_text(encoding="utf-8"))
+        bundles = [item for item in ((pkg.get("dsh") or {}).get("profile") or {}).get("bundles") or [] if item != PLUGIN]
+        ((pkg.setdefault("dsh", {})).setdefault("profile", {}))["bundles"] = bundles
+        pkg_path.write_text(json.dumps(pkg, indent=2) + "\n", encoding="utf-8")
+    if patch_path.is_file():
+        kept = [line for line in patch_path.read_text(encoding="utf-8").splitlines() if "dsh-keysmith" not in line and line.strip() != "- insert:"]
+        patch_path.write_text("\n".join(kept) + ("\n" if kept else ""), encoding="utf-8")
     (root / MANIFEST).unlink(missing_ok=True)
     dump(report("uninstall", "execute", True, 0, actions=actions,
-                extra={**extra, "manifest": None}))
+                extra={**extra, "state": "not-installed", "manifest": None}))
     return 0
 
 
 def recover(root: Path, lang: str | None, yes: bool) -> int:
     mode = "execute" if yes else "preview"
-    left = residue(root)
-    extra = {"dsh_dir": str(root), "residue": left}
+    extra = {"dsh_dir": str(root), "dsh_dir_exists": root.is_dir(), "residue": [],
+             "adapter_patch": {"state": "absent", "path": None, "managed": False, "already_patched": None}}
     if os.environ.get("FIXTURE_LANG_ECHO") == "1":
         extra["lang"] = lang
-    if not left:
-        dump(report("recover", mode, True, 0, extra=extra))
-        return 0
-    actions = [action("remove", item["path"], "transaction") for item in left]
-    if not yes:
-        dump(report("recover", "preview", True, 0, actions=actions, extra=extra))
-        return 0
-    for item in left:
-        (root / item["id"]).rmdir()
-    dump(report("recover", "execute", True, 0, actions=actions,
-                extra={"dsh_dir": str(root), "residue": []}))
+    dump(report("recover", mode, True, 0, extra=extra))
     return 0
 
 
@@ -295,14 +316,16 @@ def main(argv: list[str]) -> int:
     if os.environ.get("FIXTURE_DIR_MISSING") == "1":
         root = Path("/nonexistent/fixture-dsh")
     name = flag(argv, "--name") or "dsh-unrestricted"
+    profile = flag(argv, "--profile") or DEFAULT_PROFILE
     yes = "--yes" in argv
+    source = flag(argv, "--file")
     if "--status" in argv:
-        return status(root, lang)
+        return status(root, lang, profile)
     if "--uninstall" in argv:
-        return uninstall(root, lang, yes)
+        return uninstall(root, lang, yes, profile)
     if "--recover" in argv:
         return recover(root, lang, yes)
-    return deploy(root, lang, name, yes)
+    return deploy(root, lang, name, yes, profile, source)
 
 
 if __name__ == "__main__":

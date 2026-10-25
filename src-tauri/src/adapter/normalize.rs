@@ -334,7 +334,8 @@ const PI_MIN_VERSION: (u64, u64, u64) = (0, 2, 0);
 const DSH_SCHEMA: &str = "dsh-keysmith/v1";
 /// 0.2.1 is the first dsh-keysmith whose `--json` reports `state`, `dsh_dir_exists` and a
 /// `version` field. 0.2.0 shipped the contract without them and must not be accepted.
-const DSH_MIN_VERSION: (u64, u64, u64) = (0, 2, 1);
+/// 0.4.0 is the plugin installer this adapter is written against.
+const DSH_MIN_VERSION: (u64, u64, u64) = (0, 4, 0);
 
 /// `pi-keysmith.envelope.v1`. Same shape as Grok's envelope, different wire: the state is in
 /// `status.*` (not `result.*`), `ok` is false for a valid `conflict` / `recovery-required`
@@ -581,16 +582,16 @@ fn normalize_pi(command: &AdapterCommand, captured: &Captured, mut envelope: Env
     envelope
 }
 
-/// dsh-keysmith 0.2.2 answers with `dsh-keysmith/v1`. It reports `state` outright, so unlike
-/// pi there is no status tree to walk — but the state it reports has to line up with what a
-/// deploy may safely do, and dsh backs up before it replaces, so drift does not block a deploy.
+/// dsh-keysmith 0.4.0 answers with `dsh-keysmith/v1`. It reports `state` outright, so unlike
+/// pi there is no status tree to walk. Drift is a plugin/bundles/insert mismatch and does
+/// not block a redeploy; uninstall is gated on the manifest, not on home `AGENTS.md`.
 fn normalize_dsh(
     command: &AdapterCommand,
     captured: &Captured,
     mut envelope: Envelope,
 ) -> Envelope {
     if matches!(command, AdapterCommand::Version) {
-        // argparse text (`dsh-keysmith 0.2.2`), not an envelope.
+        // argparse text (`dsh-keysmith 0.4.0`), not an envelope.
         if let Some(version) = captured
             .stdout
             .lines()
@@ -612,7 +613,7 @@ fn normalize_dsh(
     let version = json.get("version").and_then(Value::as_str).unwrap_or("");
     if !semver_at_least(version, DSH_MIN_VERSION) {
         return envelope.fail(format!(
-            "dsh adapter {version} is too old; Keysmith Switch needs 0.2.1 or newer"
+            "dsh adapter {version} is too old; Keysmith Switch needs 0.4.0 or newer"
         ));
     }
     envelope.adapter_version = Some(normalize_version(version));
@@ -631,25 +632,41 @@ fn normalize_dsh(
 
     let dsh_dir = json.get("dsh_dir").and_then(Value::as_str);
     let dir_exists = json_bool(&json, "dsh_dir_exists").unwrap_or(false);
+    let profile = json
+        .get("profile")
+        .and_then(Value::as_str)
+        .filter(|name| !name.is_empty())
+        .unwrap_or("web");
     if let Some(dir) = dsh_dir {
         envelope.target_paths.push(TargetPath {
             path: dir.to_string(),
             role: "config-root".into(),
             exists: dir_exists,
         });
-        // dsh reports the prompt in the manifest as a relative resource name;
-        // expose the resolved live file so harness adoption can verify its hash.
+        // Live contract is the overlay inside the copied plugin. `--file` writes
+        // that Markdown; the manifest's profile_plugin sha is lib/index.js.
         let prompt_path = json
-            .pointer("/manifest/resources/agents_md/path")
+            .pointer("/manifest/resources/profile_plugin/path")
             .and_then(Value::as_str)
-            .map(std::path::PathBuf::from)
+            .map(|path| std::path::Path::new(path).join("lib").join("contract.md"))
             .filter(|path| path.is_absolute())
-            .unwrap_or_else(|| std::path::Path::new(dir).join("AGENTS.md"));
+            .unwrap_or_else(|| {
+                std::path::Path::new(dir)
+                    .join("profiles")
+                    .join(profile)
+                    .join("node_modules")
+                    .join("dsh-keysmith")
+                    .join("lib")
+                    .join("contract.md")
+            });
         envelope.target_paths.push(TargetPath {
             path: prompt_path.to_string_lossy().into_owned(),
             role: "instruction".into(),
             exists: prompt_path.is_file(),
         });
+        envelope.current_fingerprint = std::fs::read(&prompt_path)
+            .ok()
+            .map(crate::models::sha256_hex);
     }
 
     // dsh-keysmith's own messages are English regardless of `--lang`, so they are passed
@@ -671,18 +688,21 @@ fn normalize_dsh(
 
     if let Some(state) = json.get("state").and_then(Value::as_str) {
         envelope.status = match state {
-            "not-installed" => ToolStatus::NotInstalled,
-            "recovery-required" => ToolStatus::RecoveryRequired,
-            // A hand-edited AGENTS.md does not stop a deploy: dsh-keysmith backs it up and
-            // replaces it. Reported on a deploy plan, it would read as a repair to make first.
-            "drift"
-                if matches!(
-                    command,
-                    AdapterCommand::PlanActivate { .. } | AdapterCommand::Activate { .. }
-                ) =>
+            // 0.4.0 deploy preview always reports `not-installed` (the planned
+            // install, not live inspect). A successful PlanActivate is a
+            // confirmable write, shown as Inactive. Drift on a plan is the
+            // same: a redeploy realigns, so Drift would read as a repair.
+            "not-installed" | "drift"
+                if envelope.ok
+                    && matches!(
+                        command,
+                        AdapterCommand::PlanActivate { .. } | AdapterCommand::Activate { .. }
+                    ) =>
             {
                 ToolStatus::Inactive
             }
+            "not-installed" => ToolStatus::NotInstalled,
+            "recovery-required" => ToolStatus::RecoveryRequired,
             "drift" => ToolStatus::Drift,
             "active" => ToolStatus::Active,
             other => return envelope.fail(format!("dsh adapter reported unknown state {other}")),
@@ -713,38 +733,8 @@ fn normalize_dsh(
         envelope.warnings.push(redact_text(note));
     }
 
-    // The adapter hot-fix is the one resource that can silently stop applying: it is skipped
-    // with a warning when the upstream source matches no known snippet, which is the expected
-    // outcome on newer dsh releases. Surface it rather than let a skip read as a success.
-    if let Some(adapter_state) = json.pointer("/adapter_patch/state").and_then(Value::as_str) {
-        let adapter_path = json
-            .pointer("/adapter_patch/path")
-            .and_then(Value::as_str)
-            .unwrap_or("");
-        if !adapter_path.is_empty() {
-            envelope.target_paths.push(TargetPath {
-                path: adapter_path.to_string(),
-                role: "adapter".into(),
-                exists: !matches!(adapter_state, "absent"),
-            });
-        }
-        if matches!(adapter_state, "unknown" | "absent") {
-            let note = if adapter_state == "unknown" {
-                "dsh adapter matches no known version; the streaming tool-call fix was skipped"
-            } else {
-                "dsh adapter file not found; the streaming tool-call fix was skipped"
-            };
-            if !envelope.warnings.iter().any(|known| known == note) {
-                envelope.warnings.push(note.to_string());
-            }
-        }
-    }
-
-    // The deployed prompt's sha, so the harness can name which library prompt is live.
-    envelope.current_fingerprint = json
-        .pointer("/manifest/resources/agents_md/after_sha256")
-        .and_then(Value::as_str)
-        .map(str::to_string);
+    // 0.4.0 keeps `adapter_patch` in the envelope (always `absent`) so older
+    // Switch builds still parse. It is not a managed resource and is not a warning.
 
     let blockers = json
         .get("blockers")

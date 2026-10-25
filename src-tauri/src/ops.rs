@@ -360,9 +360,9 @@ pub async fn plan_deactivate(
     // removed when the person asks for it; the adapter checks that and refuses otherwise.
     // pi's recover only finishes interrupted writes; it has nothing to do for a hand-edited
     // SYSTEM.md, so its own uninstall preview says why it refuses (a redeploy is the way out).
-    // dsh is the same, and strictly so: its recover reports zero actions for drift, so telling
-    // the person to "recover instead" would point them at a button that does nothing. Its own
-    // `target drifted from the manifest` blocker already names redeploy as the way out.
+    // dsh 0.4.0 recover is a documented no-op (no journals). Drift is a plugin /
+    // bundles / insert mismatch; uninstall is gated on the manifest, so pointing
+    // at recover would be a dead end. Redeploy is the way to realign.
     let drifted = !salvage
         && (status.recovery_required
             || (status.status == ToolStatus::Drift
@@ -808,8 +808,7 @@ pub async fn doctor_tool(tool: ToolKind, opts: &AdapterOptions) -> Result<Envelo
 }
 
 /// Grok and pi bind a confirmed write to the preview it was planned from. dsh-keysmith has
-/// no preview token, so nothing here can bind its `--yes` to the preview that was shown; what
-/// it does instead is back the file up before replacing it, and the deploy plan says so.
+/// no preview token, so nothing here can bind its `--yes` to the preview that was shown.
 fn uses_preview_token(tool: ToolKind) -> bool {
     matches!(tool, ToolKind::Grok | ToolKind::Pi)
 }

@@ -203,7 +203,7 @@ flowchart LR
 
 <br />
 
-- 只动 Switch 自己的部署、用户级的这一个记忆文件，以及（勾选后）Codex 的记忆文件夹，不碰项目目录里的任何文件。Grok Build、ZCode、pi、DSH 没有已知的记忆文件，清理时只停用部署；pi 的 `AGENTS.md`、`APPEND_SYSTEM.md`、设置和会话都不会动，DSH 的 `settings.yaml`、`.credentials.yaml`、会话和存储同样不动。Codex 的数据库、会话等其他文件不会动。
+- 只动 Switch 自己的部署、用户级的这一个记忆文件，以及（勾选后）Codex 的记忆文件夹，不碰项目目录里的任何文件。Grok Build、ZCode、pi、DSH 没有已知的记忆文件，清理时只停用部署；pi 的 `AGENTS.md`、`APPEND_SYSTEM.md`、设置和会话都不会动，DSH 的 `AGENTS.md`、`settings.yaml`、`.credentials.yaml`、会话和存储同样不动。Codex 的数据库、会话等其他文件不会动。
 - 版本保存在 `~/.keysmith-switch/snapshots/`：当时部署的提示词正文、记忆文件的原样字节，以及（如果清理了）整个 `memories` 文件夹。
 - 记忆文件夹是**整体移动**进版本里，不复制也不删除，所以体积再大也不会丢文件；清理后会留下一个空的 `memories` 文件夹。
 - 回滚会重新部署当时的提示词，把记忆文件恢复成原样，并把 `memories` 文件夹复制回去（版本本身保持完整，可以再次回滚）。回滚前现有的文件夹也会先移进一个新版本。
@@ -310,7 +310,7 @@ npx tauri build --target aarch64-apple-darwin --config src-tauri/tauri.preview.m
 
 每个 Agent 的适配器（`third_party/keysmith/`）和 App 要求的版本（`ToolKind::expected_version`）必须一致，否则确认部署会被拒绝。`src-tauri/tests/version_pins.rs` 在两者不一致时让测试失败。升级适配器时，要同时修改这两处，以及 `src-tauri/tests/fixtures/cli/` 里的默认版本号。
 
-当前发行包包含六个 legacy adapter sidecar，用于兼容 Claude Code、Codex、Grok Build、ZCode、pi 与 DSH 的目标配置协议。pi 只管理全局 `~/.pi/agent/SYSTEM.md`，并且 Switch 不会创建这个目录：没装过 pi 时部署会被拦下并说明原因。DSH 只管理 `~/.dsh/AGENTS.md` 和它的 `cordis.patch.yml`，同样不创建 `~/.dsh`；它另有一个资源是 npm 缓存里 `dsh-llm-deepseek` 的一处热修，上游一改就对不上，那时部署会照常进行并在计划里标出这处补丁被跳过。它们是执行实现，不是快速部署的默认提示词来源；快速部署不会自动抓取这些仓库的提示词，也不要求用户安装对应的 Keysmith 仓库。
+当前发行包包含六个 legacy adapter sidecar，用于兼容 Claude Code、Codex、Grok Build、ZCode、pi 与 DSH 的目标配置协议。pi 只管理全局 `~/.pi/agent/SYSTEM.md`，并且 Switch 不会创建这个目录：没装过 pi 时部署会被拦下并说明原因。DSH 把 Cordis 插件装进 `profiles/web`（`node_modules/dsh-keysmith` + bundles + insert），同样不创建 `~/.dsh`，也不写 home `AGENTS.md`。它们是执行实现，不是快速部署的默认提示词来源；快速部署不会自动抓取这些仓库的提示词，也不要求用户安装对应的 Keysmith 仓库。
 
 `third_party/keysmith/` 中的版本锁只约束 legacy adapter artifact 的构建与审计。后续 Agent registry 会把这些 artifact 迁移到统一的 adapter manifest；用户提示词库和适配器供应链保持独立。
 
@@ -356,7 +356,7 @@ npx tauri build --target aarch64-apple-darwin --config src-tauri/tauri.preview.m
 
 | 版本 | 更新内容 |
 | --- | --- |
-| `v0.8.3`（准备中） | 修复 Windows / ZCode 3.16.x 部署成功但提示词不生效：随包升级 zcode-keysmith 0.3.4，识别新版启动方式并保留官方 agent-server，备份、补丁实际 runtime，停用时还原；同步 macOS 的 memory 覆盖与自动重补丁修复。对应上游 [#44](https://github.com/Jia-Ethan/zcode-keysmith/pull/44)。 |
+| `v0.8.3`（准备中） | 修复 Windows / ZCode 3.16.x 部署成功但提示词不生效：随包升级 zcode-keysmith 0.3.4，识别新版启动方式并保留官方 agent-server，备份、补丁实际 runtime，停用时还原；同步 macOS 的 memory 覆盖与自动重补丁修复。对应上游 [#44](https://github.com/Jia-Ethan/zcode-keysmith/pull/44)。随包升级 dsh-keysmith 0.4.0：部署改为把 Cordis 插件装进 `profiles/web`，不再写 `~/.dsh/AGENTS.md` 或 home `cordis.patch.yml`。对应上游 [#6](https://github.com/Jia-Ethan/dsh-keysmith/pull/6)。 |
 | [`v0.8.2`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.8.2) | 修复 DSH 部署或停用失败时的状态误报；不完整的 `profiles/web` 跳过配置合成并提示回退，避免自动创建 profile 文件；同步 DSH 适配器版本。[#152](https://github.com/Jia-Ethan/keysmith-switch/pull/152) |
 | [`v0.8.1`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.8.1) | 新增第六个 Agent DSH（DeepSeek Harness）：随包提供 dsh-keysmith 0.2.2，把提示词部署到全局 `~/.dsh/AGENTS.md`，并写入 `~/.dsh/cordis.patch.yml` 去掉 DSH 固定的身份句，先看计划再确认；原有的 `AGENTS.md` 先备份，停用时放回。`~/.dsh` 不存在时不会创建，`settings.yaml`、`.credentials.yaml`、会话和存储都不动。第三个资源是 npm 缓存里 `dsh-llm-deepseek` 的流式 tool_call 热修，上游一改就会跳过，届时计划里会明确标出。输入替换暂不支持 DSH；同时修复 DSH preview smoke 的打包验证误报。[#148](https://github.com/Jia-Ethan/keysmith-switch/issues/148) |
 | [`v0.7.0`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.7.0) | 新增第五个 Agent pi：随包提供 pi-keysmith 0.2.0，把提示词部署到全局 `~/.pi/agent/SYSTEM.md`，先看计划再确认；原有的 `SYSTEM.md` 先备份，停用时放回，`APPEND_SYSTEM.md`、`AGENTS.md` 等其他文件不动。`~/.pi/agent` 不存在时不会创建。输入替换暂不支持 pi。[#144](https://github.com/Jia-Ethan/keysmith-switch/pull/144) |

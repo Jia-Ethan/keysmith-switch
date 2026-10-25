@@ -1022,9 +1022,9 @@ fn pi_token_must_be_lowercase_hex() {
 
 // ─── dsh ────────────────────────────────────────────────────────────────────
 //
-// dsh-keysmith differs from pi in three ways the contract has to pin down:
-// it names its own state, it has no preview token, and its adapter hot-fix can
-// silently stop applying. These tests are the record of each.
+// dsh-keysmith 0.4.0 differs from pi in three ways the contract has to pin
+// down: it names its own state, it has no preview token, and it installs a
+// profile plugin rather than dumping AGENTS.md.
 
 fn dsh_status() -> AdapterCommand {
     AdapterCommand::Status {
@@ -1107,14 +1107,19 @@ async fn dsh_fixture_contract() {
         .argv
         .iter()
         .any(|item| item == "--expected-preview-token"));
-    assert!(plan
-        .planned_files
-        .iter()
-        .any(|entry| entry.path.ends_with("AGENTS.md")));
+    assert!(plan.planned_files.iter().any(|entry| entry
+        .path
+        .contains("node_modules/dsh-keysmith")
+        || entry
+            .path
+            .contains(&format!("node_modules{}dsh-keysmith", std::path::MAIN_SEPARATOR))));
     assert!(
-        !dsh_dir.join("AGENTS.md").exists(),
+        !dsh_dir
+            .join("profiles/web/node_modules/dsh-keysmith")
+            .exists(),
         "a preview writes nothing"
     );
+    assert!(!dsh_dir.join("AGENTS.md").exists());
 
     let confirmed = run_adapter_with(ToolKind::Dsh, dsh_activate(&file), &opts)
         .await
@@ -1127,16 +1132,28 @@ async fn dsh_fixture_contract() {
     assert_eq!(
         confirmed.current_fingerprint.as_deref(),
         Some(body_sha.as_str()),
-        "the manifest's deployed-prompt sha is what names the live prompt"
+        "the live contract overlay is what names the library prompt"
     );
-    assert!(dsh_dir.join("AGENTS.md").is_file());
+    assert!(!dsh_dir.join("AGENTS.md").exists());
+    let contract = dsh_dir
+        .join("profiles")
+        .join("web")
+        .join("node_modules")
+        .join("dsh-keysmith")
+        .join("lib")
+        .join("contract.md");
+    assert_eq!(std::fs::read_to_string(&contract).unwrap(), "hello dsh\n");
     assert!(
         confirmed
             .target_paths
             .iter()
             .any(|entry| entry.role == "instruction"
-                && std::path::Path::new(&entry.path)
-                    .ends_with(std::path::Path::new(".dsh").join("AGENTS.md"))
+                && std::path::Path::new(&entry.path).ends_with(
+                    std::path::Path::new("node_modules")
+                        .join("dsh-keysmith")
+                        .join("lib")
+                        .join("contract.md")
+                )
                 && entry.exists),
         "{:?}",
         confirmed.target_paths
@@ -1162,7 +1179,13 @@ async fn dsh_reports_drift_and_a_deploy_still_plans() {
     run_adapter_with(ToolKind::Dsh, dsh_activate(&file), &opts)
         .await
         .unwrap();
-    std::fs::write(dsh_dir.join("AGENTS.md"), "hand edited\n").unwrap();
+    // Editing home AGENTS.md is not drift. Dropping the plugin from bundles is.
+    let pkg_path = dsh_dir.join("profiles/web/package.json");
+    let mut pkg: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&pkg_path).unwrap()).unwrap();
+    pkg["dsh"]["profile"]["bundles"] = serde_json::json!([]);
+    std::fs::write(&pkg_path, serde_json::to_string_pretty(&pkg).unwrap()).unwrap();
+    std::fs::write(dsh_dir.join("AGENTS.md"), "switch pack stays\n").unwrap();
 
     let drifted = run_adapter_with(ToolKind::Dsh, dsh_status(), &opts)
         .await
@@ -1173,13 +1196,17 @@ async fn dsh_reports_drift_and_a_deploy_still_plans() {
         drifted
             .warnings
             .iter()
-            .any(|note| note.contains("agents_md")),
+            .any(|note| note.contains("profile_bundles")),
         "{:?}",
         drifted.warnings
     );
+    assert_eq!(
+        std::fs::read_to_string(dsh_dir.join("AGENTS.md")).unwrap(),
+        "switch pack stays\n"
+    );
 
-    // dsh-keysmith backs the file up and replaces it, so drift does not block a deploy.
-    // Showing Drift on the plan would read as a repair to make first.
+    // Drift does not block a redeploy. Showing Drift on the plan would read as
+    // a repair to make first.
     let plan = run_adapter_with(ToolKind::Dsh, dsh_plan(&file), &opts)
         .await
         .unwrap();
@@ -1187,8 +1214,8 @@ async fn dsh_reports_drift_and_a_deploy_still_plans() {
     assert_eq!(plan.status, ToolStatus::Inactive);
     assert!(plan.blockers.is_empty(), "{:?}", plan.blockers);
 
-    // Uninstalling it is a different matter: the adapter refuses, and says why.
-    let blocked = run_adapter_with(
+    // Uninstall is gated on the manifest, not on live drift.
+    let off = run_adapter_with(
         ToolKind::Dsh,
         AdapterCommand::PlanDeactivate {
             scope: Scope::User,
@@ -1200,12 +1227,7 @@ async fn dsh_reports_drift_and_a_deploy_still_plans() {
     )
     .await
     .unwrap();
-    assert!(!blocked.ok, "{blocked:?}");
-    assert!(
-        blocked.blockers.iter().any(|item| item.contains("drifted")),
-        "{:?}",
-        blocked.blockers
-    );
+    assert!(off.ok, "{off:?}");
 }
 
 #[tokio::test]
@@ -1225,7 +1247,8 @@ async fn dsh_failed_deploy_does_not_claim_active() {
 
     assert!(!failed.ok, "{failed:?}");
     assert_eq!(failed.exit_code, 2, "{failed:?}");
-    assert_eq!(failed.status, ToolStatus::Inactive, "{failed:?}");
+    // Missing `~/.dsh` is not-installed, not a half-written Inactive deploy.
+    assert_eq!(failed.status, ToolStatus::NotInstalled, "{failed:?}");
     assert!(failed.error.is_some(), "{failed:?}");
 }
 
@@ -1251,7 +1274,7 @@ async fn dsh_rejects_an_adapter_without_the_state_contract() {
 }
 
 #[tokio::test]
-async fn dsh_reports_recovery_required_from_residue() {
+async fn dsh_recover_is_a_documented_noop() {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().join("home");
     std::fs::create_dir_all(&home).unwrap();
@@ -1262,11 +1285,10 @@ async fn dsh_reports_recovery_required_from_residue() {
     let status = run_adapter_with(ToolKind::Dsh, dsh_status(), &opts)
         .await
         .unwrap();
-    assert_eq!(status.status, ToolStatus::RecoveryRequired);
-    assert!(status.recovery_required);
-    assert!(!status.ok);
+    assert_eq!(status.status, ToolStatus::NotInstalled);
+    assert!(!status.recovery_required);
+    assert!(status.ok, "{status:?}");
 
-    // Recover is offered, and a preview of it writes nothing.
     let plan = run_adapter_with(
         ToolKind::Dsh,
         AdapterCommand::Recover {
@@ -1295,32 +1317,9 @@ async fn dsh_reports_recovery_required_from_residue() {
     .await
     .unwrap();
     assert!(done.ok && !done.preview, "{done:?}");
-    assert!(!dsh_dir.join(".dsh-keysmith-transaction-deadbeef").exists());
-}
-
-#[tokio::test]
-async fn dsh_surfaces_a_skipped_adapter_hotfix() {
-    let tmp = tempfile::tempdir().unwrap();
-    let home = tmp.path().join("home");
-    std::fs::create_dir_all(&home).unwrap();
-    std::fs::create_dir_all(home.join(".dsh")).unwrap();
-    let mut opts = opts(&home, "dsh-keysmith.py");
-    opts.extra_env
-        .insert("FIXTURE_ADAPTER_STATE".into(), "unknown".into());
-
-    let status = run_adapter_with(ToolKind::Dsh, dsh_status(), &opts)
-        .await
-        .unwrap();
-    // The patch being skipped does not make the deployment unusable; it must not read as
-    // silent success either.
-    assert!(status.ok, "{status:?}");
     assert!(
-        status
-            .warnings
-            .iter()
-            .any(|note| note.contains("streaming tool-call fix was skipped")),
-        "{:?}",
-        status.warnings
+        dsh_dir.join(".dsh-keysmith-transaction-deadbeef").is_dir(),
+        "0.4.0 recover does not touch leftover directories"
     );
 }
 

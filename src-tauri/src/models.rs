@@ -47,7 +47,7 @@ impl ToolKind {
             Self::Grok => "0.8.0",
             Self::Zcode => "0.3.4",
             Self::Pi => "0.2.0",
-            Self::Dsh => "0.2.2",
+            Self::Dsh => "0.4.0",
         }
     }
 

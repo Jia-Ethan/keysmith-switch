@@ -123,23 +123,21 @@ doctor / install 继续解析文本行，不传 `--json`。0.3.4 的 `uninstall 
 | recover | `--recover --dsh-dir <abs> --json --lang en`。确认时加 `--yes` |
 | backups / restore / reconcile | 不支持 |
 
-`--dsh-dir` 每次都传，且必须是绝对路径：隔离 home 时是 `<home>/.dsh`，否则解析真实 home——`$DSH_HOME` 设了就用它（与 CLI 自己的 `_default_dsh_home` 一致），否则 `~/.dsh`。唯一的例外是 Mirasim 的会话挂载点：Mirasim 用 `DSH_HOME=~/.mirasim/agent-homes/dsh/<id>` 启动每个 dsh 会话，那个目录是一栋指回 `~/.dsh` 的符号链接楼，只属于当次会话，所以继承到的值若落在 `agent-homes/` 下面就忽略，仍然部署到 `~/.dsh`。CLI 从不创建它，也不会替用户跑一次 dsh；目录不存在时 `dsh_dir_exists=false`、state 为 `not-installed`，部署以 exit 2 被拦下。schema: `dsh-keysmith/v1`，随包版本 0.2.2。
+`--dsh-dir` 每次都传，且必须是绝对路径：隔离 home 时是 `<home>/.dsh`，否则解析真实 home——`$DSH_HOME` 设了就用它（与 CLI 自己的 `_default_dsh_home` 一致），否则 `~/.dsh`。唯一的例外是 Mirasim 的会话挂载点：Mirasim 用 `DSH_HOME=~/.mirasim/agent-homes/dsh/<id>` 启动每个 dsh 会话，那个目录是一栋指回 `~/.dsh` 的符号链接楼，只属于当次会话，所以继承到的值若落在 `agent-homes/` 下面就忽略，仍然部署到 `~/.dsh`。CLI 从不创建它，也不会替用户跑一次 dsh；目录不存在时 `dsh_dir_exists=false`、state 为 `not-installed`，部署以 exit 2 被拦下。schema: `dsh-keysmith/v1`，随包版本 0.4.0。
 
 `normalize_dsh` 的约定：
 
-- **没有预览 token。** 0.2.2 的 CLI 不产生 `confirmation_token`，所以 `--yes` 是全部确认，`uses_preview_token(Dsh)` 为 false。预览与确认之间若有人手改了 `AGENTS.md`，dsh-keysmith 会先备份再覆盖，不会丢内容；部署计划里照实写明这一点。
-- 状态由 CLI 直接给出：`state` 取 `not-installed` / `active` / `drift` / `recovery-required`。`drift` 时 `ok` 仍是 true、exit 0：部署还在，只是不再等于当初写下的内容。
-- 部署预览与确认上的 `drift` 映射为 `inactive` 而非 `drift`：dsh-keysmith 会备份并替换手改过的 `AGENTS.md`，标成 `drift` 会读成「先修复」。
-- 只有 `--status` / `--recover` 报 `state`；`deploy` / `--uninstall` 报的是操作结果。确认写入成功后，`activate` 按 `active`、`deactivate` 按 `not-installed` 推导，省掉一次往返。
+- **没有预览 token。** 0.4.0 的 CLI 不产生 `confirmation_token`，所以 `--yes` 是全部确认，`uses_preview_token(Dsh)` 为 false。`--file` 覆盖 `plugin/lib/contract.md`，不是 home `AGENTS.md`。
+- 状态由 CLI 直接给出：`state` 取 `not-installed` / `active` / `drift`。0.4.0 没有事务日志，`--recover` 是 documented no-op，不再报 `recovery-required`。`drift` 时 `ok` 仍是 true、exit 0：部署还在，只是 plugin / bundles / insert 对不上当初写下的内容。
+- 成功的部署预览把 CLI 的 `not-installed` / `drift` 都映射为 `inactive`：0.4.0 的 dry-run 描述的是计划写入、不是 live inspect；重新部署会把插件拷回对齐，标成 `drift` 会读成「先修复」。目录不存在的失败部署仍是 `not-installed`。
+- `--status` 报 `state`；`deploy` / `--uninstall` 在 0.4.0 也会带 `state`。确认写入成功后，`activate` 按 `active`、`deactivate` 按 `not-installed` 推导。
 - `mode` 是 `preview` / `execute`，envelope 的 `preview` 布尔由它换算。
 - `blockers` / `warnings` / `error` 原样取用，`--lang` 不影响它们（CLI 的 JSON 消息恒为英文），所以 Switch 统一传 `--lang en`；i18n 由界面负责。
-- `manifest.resources.agents_md.after_sha256` → `currentFingerprint`，用来认出线上生效的是库里哪条提示词。
+- 线上生效的契约是 `profiles/<profile>/node_modules/dsh-keysmith/lib/contract.md`。`currentFingerprint` 取该文件的 sha256，用来认出库里哪条提示词。
 - `actions[]` 里 `noop` / `skip` 不进 `plannedFiles`：它们描述已经到位的资源，列成计划写入会夸大确认的效果。
-- `adapter_patch.state` 为 `unknown` 或 `absent` 时必定加一条 warning。这是唯一会随上游 npm 更新静默失效的资源；不能让它读成「一切正常」。
-- 退出码 2 是用法或目录缺失，保证零写入；exit 1 带 blocker 是漂移拒绝或事务残留。
+- `adapter_patch` 恒为 `absent`（0.4.0 不打 llm 热修），不再为此加 warning。
+- 退出码 2 是用法或目录缺失，保证零写入；exit 1 带 blocker 是无 manifest 卸载。
 
-托管三个资源：`~/.dsh/AGENTS.md`（部署的提示词本身）、`~/.dsh/cordis.patch.yml`（关掉 `includeHarnessIdentity`，即去掉 DSH 固定的身份句）、以及 `profiles/node_modules/@deepseek-ai/dsh-llm-deepseek/lib/index.js` 的流式 tool_call 热修。`settings.yaml`、`.credentials.yaml`、`sessions/`、`storages/` 一律不碰，清理时整块跳过。
+托管三个资源：`profiles/web/node_modules/dsh-keysmith/`（Cordis 插件）、该 profile 的 `package.json` `dsh.profile.bundles`、以及该 profile 的 `cordis.patch.yml` insert。home `AGENTS.md`、home `cordis.patch.yml`、`@deepseek-ai` `node_modules`、`settings.yaml`、`.credentials.yaml`、`sessions/`、`storages/` 一律不碰。停用时卸掉插件拷贝、bundles 名和 insert，不还原 `AGENTS.md`（从未写过）。
 
-补丁体不是手写的三行。0.2.2 起，部署时先跑 `dsh --profile web --dump-default-config`，把 `system-prompt` 那一行的 `config` 原文取回来，再把 `includeHarnessIdentity: false` 等三个字段压在上面重述——因为补丁层是整块替换 `config`，只写三个字段会把 `dsh-web-app` 加的 `personaPrefix`／`personaSuffix` 一起删掉，而 home 层优先级高于 profile 层，这个删除会落到每个会话上（Mirasim 的会话也一样）。用 `--dump-default-config` 而不是 `--dump-config`：前者停在 bundle 层，读不到本工具自己上次写下的补丁，不会自我回灌。取不到时仍照旧部署并加 warning（`dsh` 不在 PATH、dump 不可用、或 `profiles/web` 不存在——最后一条是因为 dsh 会顺手把缺失的 profile 建出来）。预览从不跑 dump：它会在路上重写 profile 根，而预览的承诺是零写入。
-
-漂移的处理与 pi 不同：`recover` 只收尾中断的事务，对漂移返回 0 actions，所以 `ops::plan_deactivate` 的漂移分支排除 DSH——沿用 pi 的「recover instead」会把用户指向一个什么都不做的按钮。adapter 自己的 `target drifted from the manifest` 已经指明了出路是重新部署。输入替换不支持 DSH。
+漂移的处理与 pi 不同：`recover` 是 no-op，所以 `ops::plan_deactivate` 的漂移分支排除 DSH——沿用 pi 的「recover instead」会把用户指向一个什么都不做的按钮。重新部署是对齐 plugin / bundles / insert 的出路。输入替换不支持 DSH。

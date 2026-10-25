@@ -206,15 +206,27 @@ fn native_prompt_files(tool: ToolKind, home: &Path) -> Vec<PathBuf> {
                 Vec::new()
             };
         }
-        // dsh's home holds sessions, storages, provider settings and credentials; only the
-        // user-global AGENTS.md it loads is a prompt candidate.
+        // dsh's home holds sessions, storages, provider settings and credentials.
+        // 0.4.0 deploys the contract inside the profile plugin; a leftover
+        // user-global AGENTS.md is still a prompt candidate.
         ToolKind::Dsh => {
-            let agents = home.join(".dsh").join("AGENTS.md");
-            return if agents.is_file() {
-                vec![agents]
-            } else {
-                Vec::new()
-            };
+            let dsh = home.join(".dsh");
+            let contract = dsh
+                .join("profiles")
+                .join("web")
+                .join("node_modules")
+                .join("dsh-keysmith")
+                .join("lib")
+                .join("contract.md");
+            let agents = dsh.join("AGENTS.md");
+            let mut files = Vec::new();
+            if contract.is_file() {
+                files.push(contract);
+            }
+            if agents.is_file() {
+                files.push(agents);
+            }
+            return files;
         }
     };
     let mut files = Vec::new();

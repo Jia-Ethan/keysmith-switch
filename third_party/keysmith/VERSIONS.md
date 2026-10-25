@@ -11,7 +11,7 @@ Keysmith Switch.
 | grok | grok/grok-keysmith.py | `d87def09` (`v0.8.0`) | v0.8.0 |
 | zcode | zcode/zcode-keysmith.py | `3c3bea8f994d3670c2cd571e9bd87449fc868788` (merged #44; v0.3.4 tag pending) | 0.3.4 |
 | pi | pi/pi-keysmith.py | `37f69cac` (`v0.2.0`) | v0.2.0 |
-| dsh | dsh/dsh-keysmith.py | `8879d7b538b856413e7c78b16699fbd2d0f2743d` (merged #2; v0.2.2 tag pending) | v0.2.2 |
+| dsh | dsh/dsh-keysmith.py | `c15f990` (merged #6; v0.4.0 tag pending) | v0.4.0 |
 
 ZCode 0.3.4 recognizes `supportsStorageStartup` in `resources/app.asar` on Windows,
 keeps the official agent-server, and reversibly patches `resources/glm/zcode.cjs`.
@@ -26,16 +26,18 @@ pi 0.2.0 (`Jia-Ethan/pi-keysmith`) emits `pi-keysmith.envelope.v1` with `--json`
 is `docs/json-contract.md` at the same tag. `pi/examples/system-prompt.md` is the CLI's
 bundled default prompt from that tag.
 
-dsh 0.2.2 (`Jia-Ethan/dsh-keysmith`) emits `dsh-keysmith/v1` with `--json` for deploy, `--status`,
-`--uninstall` and `--recover`. Switch requires 0.2.1: 0.2.0 shipped the contract without
-`version`, `state` or `dsh_dir_exists`, so it cannot report drift. 0.2.2 is taken because it
-restates the `system-prompt` row from `dsh --dump-default-config` instead of writing the three
-base fields on their own — the older body deleted `personaPrefix`/`personaSuffix`, which
-`dsh-web-app` adds to that row and which the home layer then hid from every session. Its
-`--json` shape is unchanged, so the adapter needed no parser change; only the pin moved.
-dsh-keysmith bundles its built-in prompt as a source constant and reads no data files, so the
-sidecar needs no `datas`. It also has no preview token — `--yes` is the whole confirmation —
-and its `--json` messages stay English whatever `--lang` says.
-
-The DSH copy also skips composition for incomplete `profiles/web` directories,
-falling back with a warning without asking dsh to create unowned profile files.
+dsh 0.4.0 (`Jia-Ethan/dsh-keysmith`, merged [#6](https://github.com/Jia-Ethan/dsh-keysmith/pull/6))
+emits `dsh-keysmith/v1` with `--json` for deploy, `--status`, `--uninstall` and `--recover`.
+Switch requires 0.4.0: 0.2.0 shipped the contract without `version`, `state` or
+`dsh_dir_exists`. 0.4.0 is a Cordis plugin installer: it copies `plugin/` into
+`profiles/<name>/node_modules/dsh-keysmith` (default `web`), appends
+`dsh.profile.bundles`, and writes a body insert. It does not dump `AGENTS.md`,
+does not rewrite the home `cordis.patch.yml`, and does not patch
+`@deepseek-ai` `node_modules`. `--file` overlays `plugin/lib/contract.md`.
+`--recover` is a documented no-op (no journals). `adapter_patch` is always
+`absent`. The sidecar bundles `plugin/` and `examples/dsh-unrestricted.md`.
+The vendored CLI has a local frozen-path shim (`sys._MEIPASS`) so the
+PyInstaller onefile can find `plugin/` next to the script.
+There is no preview token — `--yes` is the whole confirmation — and `--json`
+messages stay English whatever `--lang` says. Live Switch packs in
+`$DSH_HOME/AGENTS.md` stay untouched.
