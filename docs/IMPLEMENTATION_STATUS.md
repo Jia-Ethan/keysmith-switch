@@ -2,13 +2,17 @@
 
 更新日期：2026-10-26（Asia/Shanghai）
 
-阶段：公开稳定版为 [`v0.8.3`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.8.3)，含 macOS Apple Silicon 与 Windows x64 安装包。此文下方 `v0.1.3`／`v0.1.4` 的验证记录是历史记录。
+阶段：公开稳定版为 [`v0.8.4`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.8.4)，含 macOS Apple Silicon 与 Windows x64 安装包。此文下方 `v0.1.3`／`v0.1.4` 的验证记录是历史记录。
 
-## v0.8.4 发布准备
+## v0.8.4 发布记录
 
 - [#157](https://github.com/Jia-Ethan/keysmith-switch/pull/157) 已合并（[#155](https://github.com/Jia-Ethan/keysmith-switch/issues/155)）：未设置 `https_proxy` / `all_proxy` 时，macOS 从 `scutil --proxy` 读取系统代理（HTTPS → HTTP → SOCKS）传给 curl；updater 插件的检查和下载在 macOS / Windows 上使用系统 HTTP 代理。回环 endpoint 不走代理。
 - 随包 dsh-keysmith 固定到上游 commit `c15f990`（0.4.0，[#156](https://github.com/Jia-Ethan/keysmith-switch/pull/156)）。部署面是 `profiles/web` 的 Cordis 插件，不再 dump `AGENTS.md`。0.4.0 读到 0.2.2 的 manifest 时报 `drift`，停用只撤插件，不还原旧版写下的 home `AGENTS.md` / `cordis.patch.yml`；发布说明提示需要还原的用户先在旧版停用。
-- 当前公开稳定版仍为 v0.8.3；v0.8.4 正在准备版本声明与发布说明，签名候选构建、公开发布、开着系统代理的 macOS 上 v0.8.3 → v0.8.4 应用内升级、以及 DSH 0.2.2 → 0.4.0 实体机迁移验收尚未完成。
+- 2026-10-26，发布准备 PR [#158](https://github.com/Jia-Ethan/keysmith-switch/pull/158) 合并为 `271e3edb70ca168990a6171675b4c1cafb438efb`，main CI run [`40221034839`](https://github.com/Jia-Ethan/keysmith-switch/actions/runs/40221034839) 五项检查通过。GitHub-verified annotated tag [`v0.8.4`](https://github.com/Jia-Ethan/keysmith-switch/releases/tag/v0.8.4) 指向该提交。
+- Source release run [`40221809784`](https://github.com/Jia-Ethan/keysmith-switch/actions/runs/40221809784) 的 source-gates、macOS、Windows 和 metadata 均成功；公开发布 run [`40224050469`](https://github.com/Jia-Ethan/keysmith-switch-releases/actions/runs/40224050469) 经 `production` 审批后成功。
+- 独立下载验证了候选的 8 个发布文件、provenance、SHA-256、`latest.json`（size / sha256 / 签名与文件一致，updater 门槛 0.1.3）和签名 key ID `0D03A636FF048B9F`（与 v0.8.3 相同）。macOS updater 内 sidecar：DSH 0.4.0、ZCode 0.3.4，其余与 v0.8.3 相同；DMG 内 app 与 updater archive 逐文件一致；Windows installer 含 8 个 `keysmith-*.exe`。随包 DSH sidecar 在隔离 home 部署为 `active`，未写 home `AGENTS.md`。
+- 公开 Release 为 stable、Latest、非 draft、immutable，8 个公开资产与候选一致，发布说明与 `scripts/release-notes.md` 一致；匿名 stable feed 与候选 `latest.json` 字节一致。
+- 开着系统代理的 macOS 上 v0.8.3 → v0.8.4 应用内升级（v0.8.3 本身仍有 #155 的问题，可能需要 TUN 模式或手动下载）、Windows 系统代理下的插件下载，以及 DSH 0.2.2 → 0.4.0 实体机迁移仍需独立验收。
 
 ## v0.8.3 发布记录
 
