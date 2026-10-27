@@ -93,8 +93,8 @@ impl ToolKind {
         !matches!(self, Self::Zcode)
     }
 
-    /// Every tool runs on macOS and Windows. Kept as a method so a future platform gap has
-    /// one place to be declared.
+    /// Every tool runs on macOS, Windows and Linux. Kept as a method so a future platform
+    /// gap has one place to be declared.
     pub fn available_on_this_os(self) -> bool {
         true
     }

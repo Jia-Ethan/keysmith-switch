@@ -12,7 +12,8 @@ identifier：`com.jia-ethan.keysmith-switch`
 | --- | --- | --- |
 | macOS Apple Silicon | `.app`、`.dmg`、`.app.tar.gz` | ad-hoc 签名，关闭 hardened runtime；app、DMG 和 updater archive 内 app 的六个 Keysmith sidecar 与 `keysmith-relay` 均通过运行时 smoke |
 | Windows x64 | NSIS `currentUser` `.exe` | 无 Authenticode；构建 runner 验证状态为 `NotSigned`，并产出 updater `.sig` |
-| Linux、Intel Mac、Windows ARM64 | 不发布 | 客户端显示 unsupported，不执行安装 |
+| Linux x64 | 源码构建 `deb` / AppImage，暂不发布 | 本地可构建运行；updater 仍返回 unsupported，不进入发布白名单 |
+| Linux ARM64、Intel Mac、Windows ARM64 | 不发布 | 客户端显示 unsupported，不执行安装 |
 
 ## v0.8.1 发布记录
 
@@ -63,7 +64,7 @@ identifier：`com.jia-ethan.keysmith-switch`
 
 源仓库的 `release` workflow 只接受与应用版本一致的 GitHub-verified annotated tag，构建 updater-signed 候选并上传短期 Actions artifact。公开 `Jia-Ethan/keysmith-switch-releases` 仓库重新验证 tag/commit provenance、平台白名单、minisign 和 SHA-256，再经受保护 `production` environment 发布不可变 Release。
 
-公开仓库不得保存生产 updater 私钥、源代码、Linux 产物或不受支持平台资产。公开 workflow 应绑定源 run 的仓库、workflow path、成功状态、tag、commit 和 artifact provenance。
+公开仓库不得保存生产 updater 私钥、源代码、Linux 产物或不受支持平台资产。公开 workflow 应绑定源 run 的仓库、workflow path、成功状态、tag、commit 和 artifact provenance。Linux 目前只支持源码构建，不进入公开 updater feed。
 
 ## 客户端更新策略
 

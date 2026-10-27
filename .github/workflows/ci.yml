@@ -95,3 +95,36 @@ jobs:
       - run: python scripts/build-sidecars.py
       - run: cargo test --workspace
         working-directory: src-tauri
+
+  rust-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Install Linux Tauri dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf libxdo-dev libssl-dev pkg-config
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python3 scripts/build-sidecars.py
+      - run: cargo fmt --all --check
+        working-directory: src-tauri
+      - run: cargo test --workspace
+        working-directory: src-tauri
+
+  sidecar-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python3 scripts/build-sidecars.py
+      - run: |
+          for sidecar in claude codex grok zcode pi relay; do
+            test -x "src-tauri/binaries/keysmith-${sidecar}-x86_64-unknown-linux-gnu"
+          done

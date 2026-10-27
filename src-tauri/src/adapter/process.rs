@@ -326,6 +326,12 @@ pub async fn invoke(
         command.env("USERPROFILE", home);
         command.env("CLAUDE_KEYSMITH_HOME", home);
     }
+    #[cfg(target_os = "linux")]
+    if !opts.extra_env.contains_key("CLAUDE_KEYSMITH_SHELL_RC") {
+        if let Some(rc) = linux_shell_rc(opts.home.as_deref()) {
+            command.env("CLAUDE_KEYSMITH_SHELL_RC", rc);
+        }
+    }
     for (key, value) in &opts.extra_env {
         command.env(key, value);
     }
@@ -448,6 +454,25 @@ impl Default for StreamCapture {
 #[cfg(unix)]
 fn configure_process_tree(command: &mut Command) {
     command.process_group(0);
+}
+
+/// Claude's adapter defaults to `~/.zshrc` on every Unix. Linux users are more often on
+/// bash, so point the wrapper at the file their interactive shell actually reads. Fish is
+/// left alone: the adapter's wrapper is POSIX shell, not fish syntax.
+#[cfg(target_os = "linux")]
+fn linux_shell_rc(home: Option<&Path>) -> Option<PathBuf> {
+    let home = home.map(Path::to_path_buf).or_else(dirs::home_dir)?;
+    let shell = std::env::var("SHELL").ok()?;
+    let name = Path::new(&shell)
+        .file_name()?
+        .to_string_lossy()
+        .to_ascii_lowercase();
+    match name.as_str() {
+        "zsh" => Some(home.join(".zshrc")),
+        "bash" => Some(home.join(".bashrc")),
+        "sh" | "dash" | "ksh" => Some(home.join(".profile")),
+        _ => None,
+    }
 }
 
 #[cfg(windows)]
