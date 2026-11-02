@@ -548,7 +548,7 @@ fn an_update_shows_a_diff_keeps_edits_and_removes_what_the_pack_dropped() {
     let agent = plan
         .files
         .iter()
-        .find(|f| f.path == edited.to_string_lossy())
+        .find(|f| f.display == "~/.claude/agents/diff-reviewer.md")
         .unwrap();
     assert_eq!(agent.action, FileAction::KeepModified);
     assert!(plan
