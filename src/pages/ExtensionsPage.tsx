@@ -2,14 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { extensionErrorCode, useExtensions } from "../components/ExtensionsProvider";
+import { HarnessPlanView } from "../components/HarnessPlanView";
 import { Callout } from "../components/PlanPreview";
 import * as api from "../api";
-import { IconAlert, IconCheck, IconDownload, IconPuzzle, IconRefresh, IconShield, IconSwap } from "../components/icons";
+import { IconAlert, IconCheck, IconDownload, IconPuzzle, IconRefresh, IconShield, IconSwap, IconTerminal } from "../components/icons";
 import { ToolLogo } from "../components/ToolLogos";
 import { Button, cx, Switch } from "../components/ui";
 import type { ToastApi } from "../hooks/useToasts";
 import { formatBytes, relativeTime } from "../lib/format";
-import type { ExtensionPack, ExtensionReport, RulePreview } from "../types";
+import type { ExtensionPack, ExtensionReport, HarnessPlan, HarnessReport, RulePreview } from "../types";
 
 /**
  * Extension packs: prompt bundles that the official source publishes and that update on
@@ -24,6 +25,8 @@ export function ExtensionsPage({ toast }: { toast: ToastApi }) {
   const [removing, setRemoving] = useState<ExtensionPack | null>(null);
   // A rule pack is installed only after its rules have been shown (or a sealed summary).
   const [previewing, setPreviewing] = useState<{ pack: ExtensionPack; preview: RulePreview | null } | null>(null);
+  // A harness pack is written only from a plan the person has read, file by file.
+  const [planning, setPlanning] = useState<{ pack: ExtensionPack; plan: HarnessPlan | null } | null>(null);
   const [updatingAll, setUpdatingAll] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const view = ext.view;
@@ -35,13 +38,18 @@ export function ExtensionsPage({ toast }: { toast: ToastApi }) {
   }, []);
 
   // Packs with an update lead, so the rail's count points at the first cards.
+  // "Update all" never includes a harness pack: each of those is its own reviewed plan.
   const packs = useMemo(() => {
     const list = view?.packs ?? [];
     return [...list.filter((pack) => pack.updateAvailable), ...list.filter((pack) => !pack.updateAvailable)];
   }, [view]);
-  const pending = packs.filter((pack) => pack.updateAvailable);
+  const pending = packs.filter((pack) => pack.updateAvailable && pack.kind !== "harness");
 
   const say = (report: ExtensionReport, kind: "install" | "update" | "remove", pack?: ExtensionPack) => {
+    if (pack?.kind === "harness") {
+      toast.ok(t("extensions.harness.removedToast", { removed: report.removed, kept: report.kept }));
+      return;
+    }
     if (pack?.kind === "rules") {
       toast.ok(t(kind === "remove" ? "extensions.rules.removedToast" : kind === "update" ? "extensions.rules.updatedToast" : "extensions.rules.installedToast"));
       return;
@@ -110,6 +118,32 @@ export function ExtensionsPage({ toast }: { toast: ToastApi }) {
     } catch (error) {
       setPreviewing(null);
       fail(error);
+    }
+  };
+
+  const plan = async (pack: ExtensionPack) => {
+    setPlanning({ pack, plan: null });
+    try {
+      const next = await api.planHarness(pack.id);
+      setPlanning((current) => (current?.pack.id === pack.id ? { pack, plan: next } : current));
+    } catch (error) {
+      setPlanning(null);
+      fail(error);
+    }
+  };
+
+  const confirmPlan = async () => {
+    const current = planning;
+    if (!current?.plan) return;
+    const update = current.plan.fromVersion !== null;
+    try {
+      const report: HarnessReport = await ext.confirmHarness(current.pack.id, current.plan.planId);
+      toast.ok(t(update ? "extensions.harness.updatedToast" : "extensions.harness.installedToast", { ...report }));
+      setPlanning(null);
+    } catch (error) {
+      fail(error);
+      // Whatever changed, the plan on screen is spent: read the pack and the disk again.
+      if (extensionErrorCode(error) === "changed") void plan(current.pack);
     }
   };
 
@@ -223,7 +257,13 @@ export function ExtensionsPage({ toast }: { toast: ToastApi }) {
                 index={index}
                 busy={ext.busyId === pack.id}
                 locked={locked}
-                onInstall={() => void (pack.kind === "rules" && pack.installedVersion === null ? preview(pack) : install(pack))}
+                onInstall={() =>
+                  void (pack.kind === "harness"
+                    ? plan(pack)
+                    : pack.kind === "rules" && pack.installedVersion === null
+                      ? preview(pack)
+                      : install(pack))
+                }
                 onRemove={() => setRemoving(pack)}
               />
             ))}
@@ -244,7 +284,11 @@ export function ExtensionsPage({ toast }: { toast: ToastApi }) {
         onConfirm={() => removing && void remove(removing)}
       >
         <p className="text-[13.5px] text-muted-foreground">
-          {removing?.kind === "rules" ? t("extensions.rules.uninstallBody") : t("extensions.uninstallBody")}
+          {removing?.kind === "harness"
+            ? t("extensions.harness.uninstallBody")
+            : removing?.kind === "rules"
+              ? t("extensions.rules.uninstallBody")
+              : t("extensions.uninstallBody")}
         </p>
       </ConfirmDialog>
 
@@ -308,6 +352,33 @@ export function ExtensionsPage({ toast }: { toast: ToastApi }) {
       </ConfirmDialog>
 
       <ConfirmDialog
+        open={planning !== null}
+        wide
+        title={
+          planning?.plan?.fromVersion
+            ? t("extensions.harness.planTitleUpdate", { name: planning.pack.name, from: planning.plan.fromVersion, to: planning.plan.version })
+            : t("extensions.harness.planTitle", { name: planning?.pack.name ?? "" })
+        }
+        confirmLabel={planning?.plan?.fromVersion ? t("extensions.harness.confirmUpdate") : t("extensions.harness.confirmInstall")}
+        cancelLabel={t("common.cancel")}
+        closeLabel={t("common.close")}
+        confirmTestId="extensions-harness-confirm"
+        confirmDisabled={!planning?.plan || planning.plan.blocked || planning.plan.nothingToDo}
+        busy={planning ? ext.busyId === planning.pack.id : false}
+        onClose={() => setPlanning(null)}
+        onConfirm={() => void confirmPlan()}
+      >
+        {planning?.plan ? (
+          <HarnessPlanView plan={planning.plan} />
+        ) : (
+          <div className="flex flex-col gap-2" aria-label={t("extensions.harness.planLoading")}>
+            <div className="skeleton h-4 w-2/3" />
+            <div className="skeleton h-16 w-full" />
+          </div>
+        )}
+      </ConfirmDialog>
+
+      <ConfirmDialog
         open={disabling}
         title={t("extensions.disableTitle")}
         confirmLabel={t("extensions.disable")}
@@ -357,7 +428,7 @@ function PackCard({
     >
       <div className="flex items-start gap-3">
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 text-primary">
-          {pack.kind === "rules" ? <IconSwap size={20} /> : <IconPuzzle size={20} />}
+          {pack.kind === "rules" ? <IconSwap size={20} /> : pack.kind === "harness" ? <IconTerminal size={20} /> : <IconPuzzle size={20} />}
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -377,10 +448,39 @@ function PackCard({
             <ToolLogo key={tool} tool={tool} size={14} />
           ))}
         </span>
-        <span>{pack.kind === "rules" ? t("extensions.rules.kind") : t("extensions.items", { count: pack.itemCount })}</span>
+        <span>
+          {pack.kind === "rules"
+            ? t("extensions.rules.kind")
+            : pack.kind === "harness"
+              ? t("extensions.harness.kind", { count: pack.components?.length ?? 0 })
+              : t("extensions.items", { count: pack.itemCount })}
+        </span>
         <span>{formatBytes(pack.size)}</span>
         <span className="font-mono">v{pack.version}</span>
       </div>
+      {pack.kind === "harness" && pack.components && pack.components.length > 0 ? (
+        <ul className="mt-2.5 flex flex-wrap gap-1.5" data-testid={`extension-components-${pack.id}`}>
+          {pack.components.map((component) => (
+            <li
+              key={component.id}
+              className="rounded-md bg-muted/70 px-1.5 py-0.5 font-mono text-[11.5px] text-muted-foreground"
+              title={`${t(`extensions.harness.types.${component.type}`)} · ${component.title}`}
+            >
+              {component.type === "skill" || component.type === "command" ? `/${component.name}` : component.name}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {installed && ((pack.modifiedFiles ?? 0) > 0 || (pack.missingFiles ?? 0) > 0) ? (
+        <p className="mt-2 text-[12px] text-warning" data-testid={`extension-drift-${pack.id}`}>
+          {[
+            (pack.modifiedFiles ?? 0) > 0 ? t("extensions.harness.modified", { count: pack.modifiedFiles }) : null,
+            (pack.missingFiles ?? 0) > 0 ? t("extensions.harness.missing", { count: pack.missingFiles }) : null,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+        </p>
+      ) : null}
       <div className="mt-3 flex items-center gap-2">
         {status ? (
           <span
@@ -407,7 +507,9 @@ function PackCard({
               <IconDownload size={13} />
               {installed
                 ? t("extensions.update")
-                : pack.kind === "rules"
+                : pack.kind === "harness"
+                  ? t("extensions.harness.view")
+                  : pack.kind === "rules"
                   ? pack.opaque
                     ? t("extensions.rules.install")
                     : t("extensions.rules.view")

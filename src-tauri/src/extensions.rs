@@ -17,6 +17,11 @@
 //! archive, the database and the relay's rules file still hold the text in the clear. A newer version of a table that is on
 //! never applies by itself: it waits on the Rewrite page until the person accepts it. A
 //! table that is off follows the pack silently.
+//!
+//! Harness packs (`kind: "harness"`) carry an agent's own components (skills, slash commands,
+//! subagents, rule files) and are written into the agents' folders by `crate::components`.
+//! Installing or updating one is always a plan the person reads (every file, where it goes, its
+//! full text or diff) and then confirms; nothing about them changes by itself.
 
 use crate::nowindow::NoWindow;
 use std::collections::{BTreeMap, BTreeSet};
@@ -149,6 +154,10 @@ pub enum ExtError {
     Incompatible(String),
     /// The pack is not in the index.
     Unknown,
+    /// A harness plan is not what the person saw any more: the pack or the disk changed.
+    Changed,
+    /// A harness plan would write over a file that is not this app's.
+    Conflict,
     Store(Error),
 }
 
@@ -160,6 +169,8 @@ impl ExtError {
             Self::Invalid(_) => "invalid",
             Self::Incompatible(_) => "incompatible",
             Self::Unknown => "unknown-pack",
+            Self::Changed => "changed",
+            Self::Conflict => "conflict",
             Self::Store(_) => "store",
         }
     }
@@ -192,6 +203,7 @@ pub enum PackKind {
     #[default]
     Prompts,
     Rules,
+    Harness,
 }
 
 impl PackKind {
@@ -199,6 +211,7 @@ impl PackKind {
         match text {
             "prompts" => Some(Self::Prompts),
             "rules" => Some(Self::Rules),
+            "harness" => Some(Self::Harness),
             _ => None,
         }
     }
@@ -219,6 +232,8 @@ pub struct IndexPack {
     pub size: u64,
     /// True when the pack asked the app not to show its rules.
     pub opaque: bool,
+    /// A harness pack's components, as the index lists them.
+    pub components: Vec<crate::components::ComponentSummary>,
 }
 
 #[derive(Debug, Clone)]
@@ -306,6 +321,17 @@ fn parse_index_pack(value: &Value, source: &Source) -> Option<IndexPack> {
     } else if opaque {
         return None;
     }
+    let components = if kind == PackKind::Harness {
+        // Tier 2 (components that run code) is not something this app installs.
+        if object.get("tier").and_then(Value::as_i64) != Some(1)
+            || semver(&min_app_version)? < crate::components::HARNESS_MIN_APP
+        {
+            return None;
+        }
+        crate::components::parse_summaries(object.get("components"), &tools)?
+    } else {
+        Vec::new()
+    };
     Some(IndexPack {
         id,
         kind,
@@ -319,6 +345,7 @@ fn parse_index_pack(value: &Value, source: &Source) -> Option<IndexPack> {
         sha256,
         size,
         opaque,
+        components,
     })
 }
 
@@ -387,6 +414,8 @@ pub struct LoadedPack {
     /// The agents a rule pack is for.
     pub tools: Vec<keysmith_rewrite::Tool>,
     pub opaque: bool,
+    /// A harness pack's components, checked file by file.
+    pub components: Vec<crate::components::Component>,
 }
 
 fn safe_name(name: &str) -> bool {
@@ -502,6 +531,34 @@ fn load_manifest(
         return invalid("pack.json: bad tools");
     }
     let name = loc(manifest.get("name").unwrap_or(&Value::Null)).unwrap_or_default();
+    if expected.kind != PackKind::Harness
+        && (manifest.get("tier").is_some() || manifest.get("components").is_some())
+    {
+        return invalid("pack.json: tier and components are only for harness packs");
+    }
+    if expected.kind == PackKind::Harness {
+        if manifest.get("opaque").is_some() {
+            return invalid("pack.json: opaque is only for rule packs");
+        }
+        let min_app = semver(text("min_app_version").unwrap_or("")).unwrap_or((0, 0, 0));
+        let components = crate::components::load(manifest, files, &expected.id, &tools, min_app)
+            .map_err(ExtError::Invalid)?;
+        let summaries: Vec<_> = components.iter().map(|c| c.summary()).collect();
+        if summaries != expected.components {
+            return invalid("pack.json: components do not match the index entry");
+        }
+        return Ok(LoadedPack {
+            id: expected.id.clone(),
+            version: expected.version.clone(),
+            kind: PackKind::Harness,
+            name,
+            items: Vec::new(),
+            rules: Vec::new(),
+            tools: Vec::new(),
+            opaque: false,
+            components,
+        });
+    }
     if expected.kind == PackKind::Rules {
         if !rule_tools_ok(&tools, text("min_app_version").unwrap_or("")) {
             return invalid("pack.json: a rule pack for other agents needs min_app_version 0.5.0");
@@ -530,6 +587,7 @@ fn load_manifest(
                 .filter_map(|tool| keysmith_rewrite::Tool::parse(tool))
                 .collect(),
             opaque,
+            components: Vec::new(),
         });
     }
     if manifest.get("opaque").is_some() {
@@ -612,6 +670,7 @@ fn load_manifest(
         rules: Vec::new(),
         tools: Vec::new(),
         opaque: false,
+        components: Vec::new(),
     })
 }
 
@@ -734,9 +793,11 @@ fn prune(store: &Store, state: &mut State) {
         pack.items
             .retain(|_, item| store.get_prompt(&item.prompt_id).is_ok());
     }
+    // Harness packs are recorded in the components ledger, not here.
     state.packs.retain(|id, pack| match pack.kind {
         PackKind::Prompts => !pack.items.is_empty(),
         PackKind::Rules => rule_tables.contains(id),
+        PackKind::Harness => false,
     });
 }
 
@@ -781,6 +842,22 @@ pub struct PackView {
     pub update_available: bool,
     #[serde(default)]
     pub opaque: bool,
+    /// A harness pack's components.
+    pub components: Vec<ComponentView>,
+    /// For an installed harness pack: files the person changed, and files that are gone.
+    pub modified_files: u32,
+    pub missing_files: u32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComponentView {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub kind: crate::components::ComponentType,
+    pub name: String,
+    pub title: String,
+    pub tools: Vec<ToolKind>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -819,9 +896,16 @@ fn build_view(
 ) -> ExtensionsView {
     let mut state = load_state(store);
     prune(store, &mut state);
+    let harness = crate::components::installed(store);
     let mut packs = Vec::new();
     for pack in index.map(|index| index.packs.as_slice()).unwrap_or(&[]) {
-        let installed = state.packs.get(&pack.id).map(|item| item.version.clone());
+        let on_disk = harness
+            .get(&pack.id)
+            .filter(|_| pack.kind == PackKind::Harness);
+        let installed = match pack.kind {
+            PackKind::Harness => on_disk.map(|state| state.version.clone()),
+            _ => state.packs.get(&pack.id).map(|item| item.version.clone()),
+        };
         let newer = match (installed.as_deref().and_then(semver), semver(&pack.version)) {
             (Some(have), Some(offered)) => offered > have,
             _ => false,
@@ -842,6 +926,19 @@ fn build_view(
             installed_version: installed,
             update_available: newer && ok,
             opaque: pack.opaque,
+            components: pack
+                .components
+                .iter()
+                .map(|c| ComponentView {
+                    id: c.id.clone(),
+                    kind: c.kind,
+                    name: c.name.clone(),
+                    title: pick(&c.title, language),
+                    tools: c.tools.clone(),
+                })
+                .collect(),
+            modified_files: on_disk.map(|s| s.modified).unwrap_or(0),
+            missing_files: on_disk.map(|s| s.missing).unwrap_or(0),
         });
     }
     let updates = packs.iter().filter(|pack| pack.update_available).count() as u32;
@@ -967,6 +1064,8 @@ pub fn install(
     let report = match loaded.kind {
         PackKind::Prompts => apply(store, source, &loaded, &mut state, language)?,
         PackKind::Rules => apply_rules(store, source, &loaded, &mut state, language, enable)?,
+        // Components are written only from a plan the person has read.
+        PackKind::Harness => return Err(ExtError::Invalid("a harness pack needs a plan".into())),
     };
     save_state(store, &state)?;
     let view = build_view(
@@ -1221,6 +1320,14 @@ pub fn uninstall(
     pack_id: &str,
     language: &str,
 ) -> std::result::Result<(ExtensionsView, Report), ExtError> {
+    if let Some(done) = crate::components::uninstall(store, pack_id)? {
+        let report = Report {
+            removed: done.removed,
+            kept: done.kept,
+            ..Report::default()
+        };
+        return Ok((state_view(store, source, language), report));
+    }
     let _lock = HomeLock::acquire(store.paths())?;
     let mut state = load_state(store);
     let pack = state.packs.remove(pack_id).ok_or(ExtError::Unknown)?;
@@ -1251,4 +1358,85 @@ pub fn uninstall(
     }
     save_state(store, &state)?;
     Ok((state_view(store, source, language), report))
+}
+
+// ----- harness packs --------------------------------------------------------------------------
+
+/// Read a harness pack from the source and work out what installing (or updating to) it would
+/// do here. Nothing is written. The plan names every file, where it goes, and its full text or
+/// diff; a conflict with a file that is not this app's blocks the whole plan.
+pub fn plan_harness(
+    store: &Store,
+    fetch: &dyn Fetch,
+    source: &Source,
+    pack_id: &str,
+    opts: &crate::adapter::AdapterOptions,
+) -> std::result::Result<crate::components::HarnessPlan, ExtError> {
+    let (_, loaded) = load_harness(store, fetch, source, pack_id)?;
+    Ok(crate::components::plan(
+        store,
+        pack_id,
+        &loaded.version,
+        &loaded.components,
+        opts,
+    )?)
+}
+
+/// Carry out the plan the person confirmed. The pack is read and planned again; if anything
+/// differs from what they saw (`plan_id`), nothing is written.
+pub fn confirm_harness(
+    store: &Store,
+    fetch: &dyn Fetch,
+    source: &Source,
+    pack_id: &str,
+    plan_id: &str,
+    language: &str,
+    opts: &crate::adapter::AdapterOptions,
+) -> std::result::Result<(ExtensionsView, crate::components::ApplyReport), ExtError> {
+    let (index, loaded) = load_harness(store, fetch, source, pack_id)?;
+    let plan = crate::components::plan(store, pack_id, &loaded.version, &loaded.components, opts)?;
+    if plan.plan_id != plan_id {
+        return Err(ExtError::Changed);
+    }
+    if plan.blocked {
+        return Err(ExtError::Conflict);
+    }
+    let report = match crate::components::apply(store, &source.id, &plan, plan_id) {
+        Err(Error::UserCancel(why)) if why.starts_with("components:changed") => {
+            return Err(ExtError::Changed)
+        }
+        other => other?,
+    };
+    let view = build_view(
+        store,
+        source,
+        Some(&index),
+        language,
+        None,
+        Some(now_rfc3339()),
+    );
+    Ok((view, report))
+}
+
+fn load_harness(
+    store: &Store,
+    fetch: &dyn Fetch,
+    source: &Source,
+    pack_id: &str,
+) -> std::result::Result<(VerifiedIndex, LoadedPack), ExtError> {
+    let (index, bytes) = fetch_index(fetch, source)?;
+    let entry = index
+        .packs
+        .iter()
+        .find(|pack| pack.id == pack_id && pack.kind == PackKind::Harness)
+        .ok_or(ExtError::Unknown)?;
+    if !compatible(entry) {
+        return Err(ExtError::Incompatible(entry.min_app_version.clone()));
+    }
+    let archive = fetch
+        .get(&entry.url, MAX_ARCHIVE_BYTES)
+        .map_err(ExtError::Offline)?;
+    let loaded = check_archive(&archive, entry)?;
+    write_cache(store, source, &bytes);
+    Ok((index, loaded))
 }

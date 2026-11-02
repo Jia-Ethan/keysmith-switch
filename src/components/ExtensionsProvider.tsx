@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import * as api from "../api";
-import type { ExtensionReport, ExtensionsView } from "../types";
+import type { ExtensionReport, ExtensionsView, HarnessReport } from "../types";
 
 export const EXT_FIRST_LOOK_DELAY_MS = 2500;
 /** A running app looks again this often, and when the window returns after this long. */
@@ -27,6 +27,8 @@ interface ExtensionsContextValue {
   refresh: () => Promise<ExtensionsView | null>;
   install: (id: string, enable?: boolean) => Promise<ExtensionReport>;
   uninstall: (id: string) => Promise<ExtensionReport>;
+  /** Write a harness plan the person read; `planId` names that plan. */
+  confirmHarness: (id: string, planId: string) => Promise<HarnessReport>;
 }
 
 const ExtensionsContext = createContext<ExtensionsContextValue | null>(null);
@@ -116,7 +118,7 @@ export function ExtensionsProvider({
 
   const refresh = useCallback(() => look(false), [look]);
 
-  const change = useCallback(async (id: string, run: () => Promise<{ view: ExtensionsView; report: ExtensionReport }>) => {
+  const change = useCallback(async <R,>(id: string, run: () => Promise<{ view: ExtensionsView; report: R }>) => {
     setBusyId(id);
     try {
       const result = await run();
@@ -132,6 +134,10 @@ export function ExtensionsProvider({
     [change],
   );
   const uninstall = useCallback((id: string) => change(id, () => api.uninstallExtension(id)), [change]);
+  const confirmHarness = useCallback(
+    (id: string, planId: string) => change(id, () => api.confirmHarness(id, planId)),
+    [change],
+  );
 
   const value = useMemo<ExtensionsContextValue>(
     () => ({
@@ -144,8 +150,9 @@ export function ExtensionsProvider({
       refresh,
       install,
       uninstall,
+      confirmHarness,
     }),
-    [enabled, view, refreshing, busyId, setEnabled, refresh, install, uninstall],
+    [enabled, view, refreshing, busyId, setEnabled, refresh, install, uninstall, confirmHarness],
   );
 
   return <ExtensionsContext.Provider value={value}>{children}</ExtensionsContext.Provider>;

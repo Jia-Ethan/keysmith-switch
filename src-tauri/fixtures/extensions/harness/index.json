@@ -1,0 +1,70 @@
+{
+  "generated_at": "2026-11-01T00:00:00Z",
+  "packs": [
+    {
+      "components": [
+        {
+          "id": "pre-pr-review",
+          "name": "pre-pr-review",
+          "title": {
+            "en": "Review before the PR",
+            "zh-CN": "开 PR 前审一遍"
+          },
+          "tools": [
+            "claude",
+            "codex",
+            "grok"
+          ],
+          "type": "skill"
+        },
+        {
+          "id": "review-staged",
+          "name": "review-staged",
+          "title": {
+            "en": "Review the staged change"
+          },
+          "tools": [
+            "claude",
+            "grok"
+          ],
+          "type": "command"
+        },
+        {
+          "id": "diff-reviewer",
+          "name": "diff-reviewer",
+          "title": {
+            "en": "Read-only reviewer"
+          },
+          "tools": [
+            "claude",
+            "codex",
+            "grok"
+          ],
+          "type": "agent"
+        }
+      ],
+      "description": {
+        "en": "Fixture harness pack for tests"
+      },
+      "id": "fixture.kit",
+      "item_count": 0,
+      "kind": "harness",
+      "min_app_version": "0.9.0",
+      "name": {
+        "en": "Fixture kit",
+        "zh-CN": "测试组件包"
+      },
+      "sha256": "4a4b24ce67b139411cb5e7884a95650eabe34eb4d9714bc32582f354fb98ce69",
+      "size": 1674,
+      "tier": 1,
+      "tools": [
+        "claude",
+        "codex",
+        "grok"
+      ],
+      "url": "https://github.com/Jia-Ethan/keysmith-switch-extensions/releases/download/test-harness/fixture.kit-0.1.0.zip",
+      "version": "0.1.0"
+    }
+  ],
+  "schema": 1
+}

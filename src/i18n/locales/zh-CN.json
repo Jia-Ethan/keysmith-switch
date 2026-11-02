@@ -463,7 +463,7 @@
   },
   "extensions": {
     "title": "拓展包",
-    "lead": "官方发布的提示词包。它们可以单独更新，不影响 App 本身。",
+    "lead": "官方发布的提示词包、规则包和组件包。它们可以单独更新，不影响 App 本身。",
     "offTitle": "打开拓展包",
     "offBody": "打开后，Keysmith Switch 才会联网读取官方拓展源。只读取清单和你选择安装的包，不会上传你的任何内容。",
     "notDeployed": "装入的提示词只会放进提示词库，不会自动部署。",
@@ -495,7 +495,9 @@
       "unknown-pack": "拓展源里已经没有这个包了。",
       "off": "拓展包还没有打开。",
       "store": "操作失败，没有做任何改动。",
-      "default": "操作失败，没有做任何改动。"
+      "default": "操作失败，没有做任何改动。",
+      "changed": "这个包或者你电脑上的文件在预览之后变了，没有写入。请重新查看。",
+      "conflict": "有文件不是由 Keysmith 写的，已经占用了要写入的位置，没有写入。"
     },
     "disableTitle": "停用拓展包？",
     "disableBody": "停用后不再联网检查拓展包更新，列表也会隐藏。已装入提示词库的提示词会保留，可以随时重新打开。",
@@ -520,6 +522,48 @@
       "updatedToast": "规则包已更新；正在启用的表需要在输入替换页确认后才会切换",
       "removedToast": "已移除这张规则表",
       "uninstallBody": "会从输入替换里移除这张规则表。复制到「我的规则」的内容会保留。"
+    },
+    "harness": {
+      "kind": "{{count}} 个组件",
+      "view": "查看并安装",
+      "planTitle": "组件包：{{name}}",
+      "planTitleUpdate": "更新组件包：{{name}} v{{from}} → v{{to}}",
+      "planBody": "下面每个文件都会写进对应 Agent 的目录。装上以后不会运行任何代码。卸载时只删除你没改过的文件。",
+      "planLoading": "正在读取这个包…",
+      "planBlocked": "有文件不是由 Keysmith 写的，已经占用了要写入的位置。为了不覆盖你的东西，这次不会安装。先移走或改名下面标出的文件，再试一次。",
+      "planNothing": "已经是这个版本，没有要改的文件。",
+      "sharedSkills": "Codex 的技能会写进共享目录 ~/.agents/skills，ZCode、pi、DSH 也会读到。",
+      "skipped": "这台电脑上没有 {{tools}}，这些组件先跳过。",
+      "confirmInstall": "安装组件",
+      "confirmUpdate": "确认更新",
+      "showText": "查看内容",
+      "hideText": "收起",
+      "types": {
+        "skill": "技能",
+        "command": "命令",
+        "agent": "子 Agent",
+        "rule": "规则"
+      },
+      "actions": {
+        "add": "新建",
+        "update": "更新",
+        "same": "不变",
+        "keep-modified": "你改过，保留",
+        "remove": "删除",
+        "release": "你改过，保留并不再管理",
+        "conflict": "已被占用"
+      },
+      "reasons": {
+        "exists": "这里已经有不是 Keysmith 写的文件或文件夹",
+        "not-a-file": "这里是链接或文件夹，不能写入",
+        "otherPack": "这里是另一个包（{{pack}}）的文件"
+      },
+      "modified": "{{count}} 个文件你改过",
+      "missing": "{{count}} 个文件不见了",
+      "installedToast": "已装入：新建 {{added}} 个文件",
+      "updatedToast": "已更新：更新 {{updated}} 个、新建 {{added}} 个、删除 {{removed}} 个，保留你改过的 {{kept}} 个",
+      "removedToast": "已卸载：删除 {{removed}} 个文件，保留你改过的 {{kept}} 个",
+      "uninstallBody": "会删除这个包写入、并且你没改过的文件。你改过的文件会保留。"
     }
   },
   "cleanup": {

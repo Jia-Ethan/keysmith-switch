@@ -86,6 +86,42 @@ def main() -> int:
         packlib.verify_release(target)
     print(f"built rules: {sorted(p.name for p in target.iterdir())}")
 
+    # A harness pack built by the same tooling: the community demo pack, copied from the
+    # extensions repo's tests so the app and packlib are proven to agree on kind "harness".
+    target = OUT / "harness"
+    shutil.rmtree(target, ignore_errors=True)
+    with tempfile.TemporaryDirectory() as tmp:
+        packs = Path(tmp) / "packs"
+        directory = packs / "fixture.kit"
+        texts = {
+            "components/pre-pr-review/SKILL.md": "---\nname: pre-pr-review\ndescription: Review the change before a pull request.\n---\n\n# Pre-PR review\n\nRead the whole diff first. See [checklist.md](checklist.md).\n",
+            "components/pre-pr-review/checklist.md": "# Severities\n\n- blocker\n- should-fix\n- nit\n",
+            "components/review-staged.md": "---\ndescription: Review the staged change\nargument-hint: \"[path]\"\n---\n\nReview $ARGUMENTS.\n",
+            "components/diff-reviewer.md": "---\nname: diff-reviewer\ndescription: Reviews a diff and reports problems by severity.\n---\n\nYou are a careful reviewer. You do not edit files.\n",
+        }
+        for name, text in texts.items():
+            (directory / name).parent.mkdir(parents=True, exist_ok=True)
+            (directory / name).write_text(text, encoding="utf-8")
+        entry = lambda name: {"path": name, "sha256": packlib.sha256_hex(texts[name].encode("utf-8"))}
+        manifest = {
+            "schema": 1, "id": "fixture.kit", "version": "0.1.0", "min_app_version": "0.9.0",
+            "kind": "harness", "tier": 1, "name": {"zh-CN": "测试组件包", "en": "Fixture kit"},
+            "description": {"en": "Fixture harness pack for tests"}, "tools": ["claude", "codex", "grok"],
+            "components": [
+                {"id": "pre-pr-review", "type": "skill", "name": "pre-pr-review", "tools": ["claude", "codex", "grok"],
+                 "title": {"zh-CN": "开 PR 前审一遍", "en": "Review before the PR"},
+                 "files": [entry("components/pre-pr-review/SKILL.md"), entry("components/pre-pr-review/checklist.md")]},
+                {"id": "review-staged", "type": "command", "name": "review-staged", "tools": ["claude", "grok"],
+                 "title": {"en": "Review the staged change"}, "files": [entry("components/review-staged.md")]},
+                {"id": "diff-reviewer", "type": "agent", "name": "diff-reviewer", "tools": ["claude", "codex", "grok"],
+                 "title": {"en": "Read-only reviewer"}, "files": [entry("components/diff-reviewer.md")]},
+            ],
+        }
+        (directory / "pack.json").write_bytes(packlib.canonical_json(manifest))
+        packlib.build_index(packs, target, f"{BASE}/test-harness", "2026-11-01T00:00:00Z")
+        packlib.verify_release(target)
+    print(f"built harness: {sorted(p.name for p in target.iterdir())}")
+
     for name, packs_spec in releases.items():
         target = OUT / name
         shutil.rmtree(target, ignore_errors=True)

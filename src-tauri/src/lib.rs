@@ -2,6 +2,7 @@ pub mod adapter;
 pub mod announcements;
 pub mod cleanup;
 pub mod commands;
+pub mod components;
 pub mod data;
 pub mod db;
 pub mod desktop;
@@ -98,6 +99,8 @@ pub fn run() {
             commands::extension_install,
             commands::extension_uninstall,
             commands::extension_preview_rules,
+            commands::extension_plan_harness,
+            commands::extension_confirm_harness,
             commands::adopt_live_prompt,
             commands::remove_harness,
             commands::recover_tool,

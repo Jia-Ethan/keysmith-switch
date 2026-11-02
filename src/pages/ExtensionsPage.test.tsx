@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ExtensionsProvider } from "../components/ExtensionsProvider";
-import type { ExtensionPack, ExtensionsView } from "../types";
+import type { ExtensionPack, ExtensionsView, HarnessPlan } from "../types";
 import { ExtensionsPage } from "./ExtensionsPage";
 
 const extensionsState = vi.fn();
@@ -9,6 +9,8 @@ const extensionsRefresh = vi.fn();
 const installExtension = vi.fn();
 const previewExtensionRules = vi.fn();
 const uninstallExtension = vi.fn();
+const planHarness = vi.fn();
+const confirmHarness = vi.fn();
 
 vi.mock("../api", () => ({
   extensionsState: (...args: unknown[]) => extensionsState(...args),
@@ -16,6 +18,8 @@ vi.mock("../api", () => ({
   installExtension: (...args: unknown[]) => installExtension(...args),
   previewExtensionRules: (...args: unknown[]) => previewExtensionRules(...args),
   uninstallExtension: (...args: unknown[]) => uninstallExtension(...args),
+  planHarness: (...args: unknown[]) => planHarness(...args),
+  confirmHarness: (...args: unknown[]) => confirmHarness(...args),
 }));
 
 const base: ExtensionPack = {
@@ -309,5 +313,116 @@ describe("ExtensionsPage", () => {
     expect(screen.getByRole("dialog")).not.toHaveTextContent("foo");
     fireEvent.click(screen.getByTestId("extensions-rules-install-enable"));
     await waitFor(() => expect(installExtension).toHaveBeenCalledWith("x.sealed", true));
+  });
+
+  describe("harness packs", () => {
+    const kit: ExtensionPack = {
+      ...base,
+      id: "jia.review-kit",
+      kind: "harness",
+      name: "审查工具箱",
+      minAppVersion: "0.9.0",
+      tools: ["claude", "codex", "grok"],
+      itemCount: 0,
+      components: [
+        { id: "pre-pr-review", type: "skill", name: "pre-pr-review", title: "开 PR 前审一遍", tools: ["claude", "codex", "grok"] },
+        { id: "diff-reviewer", type: "agent", name: "diff-reviewer", title: "只读审查员", tools: ["claude"] },
+      ],
+    };
+    const plan = (over: Partial<HarnessPlan> = {}): HarnessPlan => ({
+      planId: "plan-1",
+      packId: kit.id,
+      version: "0.1.0",
+      fromVersion: null,
+      files: [
+        {
+          component: "pre-pr-review",
+          type: "skill",
+          name: "pre-pr-review",
+          tool: "codex",
+          path: "/home/u/.agents/skills/pre-pr-review/SKILL.md",
+          display: "~/.agents/skills/pre-pr-review/SKILL.md",
+          action: "add",
+          content: "---\nname: pre-pr-review\n---\n\nRead the diff.\n",
+          diff: null,
+          reason: null,
+        },
+      ],
+      skippedTools: [],
+      sharedSkills: true,
+      blocked: false,
+      nothingToDo: false,
+      ...over,
+    });
+
+    it("shows the components on the card, never a prompt count", async () => {
+      extensionsState.mockResolvedValue(view([kit]));
+      extensionsRefresh.mockResolvedValue(view([kit]));
+      renderPage(true);
+      const card = await screen.findByTestId("extension-jia.review-kit");
+      expect(card).toHaveTextContent("2 个组件");
+      expect(screen.getByTestId("extension-components-jia.review-kit")).toHaveTextContent("/pre-pr-review");
+      expect(screen.getByTestId("extension-components-jia.review-kit")).toHaveTextContent("diff-reviewer");
+    });
+
+    it("installs only from a plan the person read, with every file and its text", async () => {
+      extensionsState.mockResolvedValue(view([kit]));
+      extensionsRefresh.mockResolvedValue(view([kit]));
+      planHarness.mockResolvedValue(plan());
+      confirmHarness.mockResolvedValue({ view: view([{ ...kit, installedVersion: "0.1.0" }]), report: { added: 1, updated: 0, kept: 0, removed: 0 } });
+      renderPage(true);
+      fireEvent.click(await screen.findByTestId("extension-install-jia.review-kit"));
+      expect(installExtension).not.toHaveBeenCalled();
+      expect(await screen.findByTestId("harness-plan")).toHaveTextContent("~/.agents/skills/pre-pr-review/SKILL.md");
+      expect(screen.getByTestId("harness-plan-shared")).toHaveTextContent("ZCode、pi、DSH");
+      fireEvent.click(screen.getByTestId("harness-file-toggle"));
+      expect(screen.getByTestId("harness-file-body")).toHaveTextContent("Read the diff.");
+      fireEvent.click(screen.getByTestId("extensions-harness-confirm"));
+      await waitFor(() => expect(confirmHarness).toHaveBeenCalledWith("jia.review-kit", "plan-1"));
+      await waitFor(() => expect(toast.ok).toHaveBeenCalledWith("已装入：新建 1 个文件"));
+    });
+
+    it("a conflict blocks the install and says which file", async () => {
+      extensionsState.mockResolvedValue(view([kit]));
+      extensionsRefresh.mockResolvedValue(view([kit]));
+      const blocked = plan({
+        blocked: true,
+        files: [{ ...plan().files[0], action: "conflict", content: null, reason: "exists" }],
+      });
+      planHarness.mockResolvedValue(blocked);
+      renderPage(true);
+      fireEvent.click(await screen.findByTestId("extension-install-jia.review-kit"));
+      expect(await screen.findByTestId("harness-plan-blocked")).toBeInTheDocument();
+      expect(screen.getByTestId("harness-file-conflict")).toHaveTextContent("不是 Keysmith 写的");
+      expect(screen.getByTestId("extensions-harness-confirm")).toBeDisabled();
+    });
+
+    it("a stale plan is read again instead of written", async () => {
+      extensionsState.mockResolvedValue(view([kit]));
+      extensionsRefresh.mockResolvedValue(view([kit]));
+      planHarness.mockResolvedValueOnce(plan()).mockResolvedValueOnce(plan({ planId: "plan-2" }));
+      confirmHarness.mockRejectedValue(new Error("extensions:changed:"));
+      renderPage(true);
+      fireEvent.click(await screen.findByTestId("extension-install-jia.review-kit"));
+      await screen.findByTestId("harness-plan");
+      fireEvent.click(screen.getByTestId("extensions-harness-confirm"));
+      await waitFor(() => expect(planHarness).toHaveBeenCalledTimes(2));
+      expect(toast.err).toHaveBeenCalledWith(expect.stringContaining("预览之后变了"));
+    });
+
+    it("is never part of update all", async () => {
+      const packs = [
+        { ...base, installedVersion: "0.0.9", updateAvailable: true },
+        { ...base, id: "keysmith.other", installedVersion: "0.0.9", updateAvailable: true },
+        { ...kit, installedVersion: "0.0.9", updateAvailable: true },
+      ];
+      extensionsState.mockResolvedValue(view(packs));
+      extensionsRefresh.mockResolvedValue(view(packs));
+      installExtension.mockResolvedValue({ view: view(packs), report: { added: 0, updated: 1, copied: 0, linked: 0, kept: 0, removed: 0 } });
+      renderPage(true);
+      fireEvent.click(await screen.findByTestId("extensions-update-all"));
+      await waitFor(() => expect(installExtension).toHaveBeenCalledTimes(2));
+      expect(installExtension).not.toHaveBeenCalledWith("jia.review-kit", expect.anything());
+    });
   });
 });

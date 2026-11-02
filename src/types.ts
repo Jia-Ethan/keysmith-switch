@@ -398,8 +398,8 @@ export const TOOL_IDS: ToolId[] = ["claude", "codex", "grok", "zcode", "pi", "ds
 /** An extension pack as the interface shows it; the text is already in the app's language. */
 export interface ExtensionPack {
   id: string;
-  /** "rules" packs add an input rewrite table instead of prompts. */
-  kind: "prompts" | "rules";
+  /** "rules" packs add an input rewrite table; "harness" packs add agent components. */
+  kind: "prompts" | "rules" | "harness";
   version: string;
   minAppVersion: string;
   name: string;
@@ -414,6 +414,63 @@ export interface ExtensionPack {
   updateAvailable: boolean;
   /** A sealed rule pack: the interface never shows from / to. */
   opaque?: boolean;
+  /** A harness pack's components; empty for other kinds. */
+  components?: HarnessComponent[];
+  /** An installed harness pack: files the person changed, and files that are gone. */
+  modifiedFiles?: number;
+  missingFiles?: number;
+}
+
+export type ComponentType = "skill" | "command" | "agent" | "rule";
+
+export interface HarnessComponent {
+  id: string;
+  type: ComponentType;
+  name: string;
+  title: string;
+  tools: ToolId[];
+}
+
+export type HarnessFileAction = "add" | "update" | "same" | "keep-modified" | "remove" | "release" | "conflict";
+
+export interface HarnessPlannedFile {
+  component: string;
+  type: ComponentType;
+  name: string;
+  tool: ToolId;
+  path: string;
+  /** The path as the person reads it, starting with ~/ under the home folder. */
+  display: string;
+  action: HarnessFileAction;
+  content: string | null;
+  diff: string | null;
+  /** "exists", "not-a-file" or "other-pack:<id>". */
+  reason: string | null;
+}
+
+/** What installing or updating a harness pack would write. Confirm with the same planId. */
+export interface HarnessPlan {
+  planId: string;
+  packId: string;
+  version: string;
+  fromVersion: string | null;
+  files: HarnessPlannedFile[];
+  skippedTools: ToolId[];
+  sharedSkills: boolean;
+  blocked: boolean;
+  nothingToDo: boolean;
+}
+
+export interface HarnessReport {
+  added: number;
+  updated: number;
+  kept: number;
+  removed: number;
+}
+
+export interface HarnessChange {
+  view: ExtensionsView;
+  report: HarnessReport;
 }
 
 /** What the install dialog shows for a rule pack. */

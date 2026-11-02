@@ -222,6 +222,13 @@ flowchart LR
 - **不覆盖你的修改。** 你改过的提示词在更新时不会被覆盖，新内容另存一份。
 - **卡片不显示包摘要。** 拓展页的每张卡片只有名称、官方角标、条数、大小、版本和安装状态；已上架、已安装和以后发布的包一律如此。
 - 有新版本时，“拓展”按钮上会显示可更新的包数；两个及以上时可以在拓展页一键全部更新。
+- **组件包。** 组件包（`kind: "harness"`）装的是 Agent 自己的组件：技能、斜杠命令、子 Agent、附加规则文件，适用于 Claude Code、Codex、Grok Build。
+  - **只收第 1 层。** 装上不运行任何代码；frontmatter 只收白名单里的键，`allowed-tools`、`hooks`、`model`、`mcpServers` 等一律拒绝，`` !`命令` `` 这类会执行 shell 的写法也拒绝。App 安装前按格式规则再查一遍。
+  - **先看再装。** 安装和更新都先列出每个文件：给哪个 Agent、写到哪里、完整内容；更新时显示差异。你确认后才写。组件包不参与“全部更新”。
+  - **不覆盖别人的文件。** 目标位置已经有不是 Switch 写的文件或文件夹，整次安装都会被拦下，并标出是哪个文件。
+  - **只删自己写的。** Switch 在 `~/.keysmith-switch/components/ledger.json` 记下每个写入的文件和当时的哈希。卸载只删除内容没变的文件；你改过的保留，更新时也不覆盖。
+  - **落点。** Claude Code 写进 `~/.claude/{skills,commands,agents,rules}`；Grok Build 写进 `~/.grok/{skills,commands,agents}` 和 `~/.grok/rules/60-<名字>.md`；Codex 的子 Agent 转成 `~/.codex/agents/<名字>.toml`，技能写进共享目录 `~/.agents/skills`（ZCode、pi、DSH 也会读到，安装前会提示）。遵守 `CLAUDE_CONFIG_DIR`、`CODEX_HOME`、`GROK_HOME`。没装的 Agent 跳过，不会替它新建目录。
+  - **不碰提示词部署。** 组件包不碰 `CLAUDE.md` 托管块、`model_instructions_file`、`99-keysmith.md` 等部署文件。清理 Agent 时，它装的组件和所在目录一起保存进版本，回滚时一起放回。
 
 ## ⇄ 输入替换
 
@@ -267,6 +274,7 @@ flowchart LR
 | `~/.keysmith-switch/backups/<operation-id>/` | 部署前的备份 |
 | `~/.keysmith-switch/snapshots/` | 清理前保存的版本 |
 | `~/.keysmith-switch/logs/` | 日志（中转服务日志为 `relay.log`） |
+| `~/.keysmith-switch/components/` | 组件包：写入过的每个文件和哈希 `ledger.json`；写入中途的日志 `journal.json`，下次启动时补完。清除全部数据不会删它，因为它记的是仍留在 Agent 目录里的文件 |
 | `~/.keysmith-switch/input-rewrite/` | 输入替换：中转服务读取的规则快照 `rules.json`、端口与转发地址 `relay.json`、各 Agent 的连接记录（`codex-link.json`、`claude-link.json`、`zcode-link.json`）、中转服务程序 |
 
 测试时可以用 `KEYSMITH_SWITCH_HOME` 覆盖数据根目录。

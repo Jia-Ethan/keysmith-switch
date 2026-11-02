@@ -15,6 +15,8 @@ import type {
   DataDirs,
   Envelope,
   ExtensionChange,
+  HarnessChange,
+  HarnessPlan,
   ExtensionsView,
   RewriteRule,
   RulePreview,
@@ -393,6 +395,16 @@ export function installExtension(packId: string, enable = false): Promise<Extens
 /** The rules a rule pack would add, read from the verified archive; installs nothing. */
 export function previewExtensionRules(packId: string): Promise<RulePreview> {
   return call("extension_preview_rules", { packId });
+}
+
+/** What installing or updating a harness pack would write, file by file; writes nothing. */
+export function planHarness(packId: string): Promise<HarnessPlan> {
+  return call("extension_plan_harness", { packId });
+}
+
+/** Write the plan the person read; refused if the pack or the disk changed since. */
+export function confirmHarness(packId: string, planId: string): Promise<HarnessChange> {
+  return call("extension_confirm_harness", { packId, planId });
 }
 
 export function uninstallExtension(packId: string): Promise<ExtensionChange> {
