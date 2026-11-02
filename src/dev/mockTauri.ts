@@ -91,6 +91,11 @@ const extPacks = [
   { id: "third.party", version: "0.2.0", minAppVersion: "0.2.5", name: "第三方提示词", description: "非官方来源的包，只用来预览没有角标的样子。", tools: ["claude"], itemCount: 1, size: 900, official: false, compatible: true, installedVersion: null as string | null, updateAvailable: false },
   { id: "example.rules", kind: "rules", version: "0.1.0", minAppVersion: "0.4.0", name: "示例规则包", description: "预览规则包的样子。", tools: ["codex"], itemCount: 0, size: 600, official: true, compatible: true, installedVersion: null as string | null, updateAvailable: false, opaque: false },
   { id: "example.sealed", kind: "rules", version: "0.1.0", minAppVersion: "0.6.5", name: "密封规则包", description: "预览密封规则包的样子。", tools: ["codex"], itemCount: 0, size: 600, official: true, compatible: true, installedVersion: null as string | null, updateAvailable: false, opaque: true },
+  { id: "jia.review-kit", kind: "harness", version: "0.1.0", minAppVersion: "0.9.0", name: "审查工具箱", description: "预览组件包的样子。", tools: ["claude", "codex", "grok"], itemCount: 0, size: 3200, official: true, compatible: true, installedVersion: null as string | null, updateAvailable: false, components: [
+    { id: "pre-pr-review", type: "skill", name: "pre-pr-review", title: "开 PR 前审一遍", tools: ["claude", "codex", "grok"] },
+    { id: "review-staged", type: "command", name: "review-staged", title: "审查暂存的改动", tools: ["claude", "grok"] },
+    { id: "diff-reviewer", type: "agent", name: "diff-reviewer", title: "只读审查员", tools: ["claude", "codex", "grok"] },
+  ] },
   { id: "keysmith.future", version: "1.0.0", minAppVersion: "9.0.0", name: "需要新版 App 的包", description: "这个包要求比现在更新的 App。", tools: ["claude"], itemCount: 5, size: 8800, official: true, compatible: false, installedVersion: null as string | null, updateAvailable: false },
 ];
 const annMarks = { read: new Set<string>(), dismissed: new Set<string>() };
@@ -245,6 +250,35 @@ async function handle(cmd: string, args: Record<string, any> = {}): Promise<unkn
         return delay({ opaque: true, count: 12, rules: [] }, 500);
       }
       return delay({ opaque: false, count: 2, rules: [{ from: "foo", to: "bar" }, { from: "提示词", to: "指令" }] }, 500);
+    }
+    case "extension_plan_harness": {
+      // ?harness=conflict shows a blocked plan.
+      const conflict = new URLSearchParams(window.location.search).get("harness") === "conflict";
+      const skill = "---\nname: pre-pr-review\ndescription: Review the current change like a careful teammate before a pull request is opened.\n---\n\n# Pre-PR review\n\nRead the whole change once before commenting.\n";
+      const command = "---\ndescription: Review the staged change before you commit\nargument-hint: \"[path or focus]\"\n---\n\nReview the change that is staged for commit.\n\nFocus: $ARGUMENTS\n";
+      const agent = "---\nname: diff-reviewer\ndescription: Reviews a diff and reports problems by severity.\n---\n\nYou are a careful code reviewer. You do not edit files.\n";
+      const toml = "name = \"diff-reviewer\"\ndescription = \"Reviews a diff and reports problems by severity.\"\ndeveloper_instructions = '''\nYou are a careful code reviewer. You do not edit files.\n'''\n";
+      const row = (component: string, type: string, name: string, tool: string, display: string, content: string, action = "add", reason: string | null = null) => ({
+        component, type, name, tool, path: display.replace("~", "/Users/you"), display, action, content: action === "conflict" ? null : content, diff: null, reason,
+      });
+      const files = [
+        row("pre-pr-review", "skill", "pre-pr-review", "claude", "~/.claude/skills/pre-pr-review/SKILL.md", skill),
+        row("pre-pr-review", "skill", "pre-pr-review", "codex", "~/.agents/skills/pre-pr-review/SKILL.md", skill),
+        row("pre-pr-review", "skill", "pre-pr-review", "grok", "~/.grok/skills/pre-pr-review/SKILL.md", skill),
+        conflict
+          ? row("review-staged", "command", "review-staged", "claude", "~/.claude/commands/review-staged.md", command, "conflict", "exists")
+          : row("review-staged", "command", "review-staged", "claude", "~/.claude/commands/review-staged.md", command),
+        row("review-staged", "command", "review-staged", "grok", "~/.grok/commands/review-staged.md", command),
+        row("diff-reviewer", "agent", "diff-reviewer", "claude", "~/.claude/agents/diff-reviewer.md", agent),
+        row("diff-reviewer", "agent", "diff-reviewer", "codex", "~/.codex/agents/diff-reviewer.toml", toml),
+        row("diff-reviewer", "agent", "diff-reviewer", "grok", "~/.grok/agents/diff-reviewer.md", agent),
+      ];
+      return delay({ planId: "mock-plan", packId: args.packId, version: "0.1.0", fromVersion: null, files, skippedTools: [], sharedSkills: true, blocked: conflict, nothingToDo: false }, 500);
+    }
+    case "extension_confirm_harness": {
+      const pack = extPacks.find((p) => p.id === args.packId)!;
+      pack.installedVersion = pack.version;
+      return delay({ view: extView(), report: { added: 8, updated: 0, kept: 0, removed: 0 } }, 900);
     }
     case "extension_uninstall": {
       const pack = extPacks.find((p) => p.id === args.packId)!;

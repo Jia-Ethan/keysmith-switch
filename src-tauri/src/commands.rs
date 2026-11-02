@@ -2123,6 +2123,56 @@ pub async fn extension_uninstall(
     .await
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HarnessChange {
+    pub view: crate::extensions::ExtensionsView,
+    pub report: crate::components::ApplyReport,
+}
+
+/// What installing or updating a harness pack would write, file by file. Writes nothing.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn extension_plan_harness(
+    app: tauri::AppHandle,
+    pack_id: String,
+) -> Result<crate::components::HarnessPlan> {
+    blocking(app, move |state| {
+        require_extensions(state)?;
+        Ok(crate::extensions::plan_harness(
+            &state.store,
+            &crate::extensions::CurlFetch,
+            &crate::extensions::Source::official(),
+            &pack_id,
+            &opts(),
+        )?)
+    })
+    .await
+}
+
+/// Write the harness plan the person read. `plan_id` is that plan's id: if the pack or the
+/// disk changed since, nothing is written.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn extension_confirm_harness(
+    app: tauri::AppHandle,
+    pack_id: String,
+    plan_id: String,
+) -> Result<HarnessChange> {
+    blocking(app, move |state| {
+        let language = require_extensions(state)?;
+        let (view, report) = crate::extensions::confirm_harness(
+            &state.store,
+            &crate::extensions::CurlFetch,
+            &crate::extensions::Source::official(),
+            &pack_id,
+            &plan_id,
+            &language,
+            &opts(),
+        )?;
+        Ok(HarnessChange { view, report })
+    })
+    .await
+}
+
 /// The rules a rule pack would add, so the person can read them before installing.
 /// An opaque pack returns a count and an empty list.
 #[tauri::command(rename_all = "camelCase")]

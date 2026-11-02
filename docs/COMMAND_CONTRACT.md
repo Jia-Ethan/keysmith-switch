@@ -85,6 +85,8 @@
 | `confirm_official_action` | `{ planId, confirmed: true }` | `OfficialResult` |
 | `list_advanced_tools` | `{}` | `{ tools, enabled }` |
 | `run_advanced` | `{ kind, args }` | `AdvancedResult` |
+| `extension_plan_harness` | `{ packId }` | `HarnessPlan`：组件包每个文件的 Agent、落点、动作（`add` / `update` / `same` / `keep-modified` / `remove` / `release` / `conflict`）、全文或 diff；`blocked` 为真时不能确认。只读不写 |
+| `extension_confirm_harness` | `{ packId, planId }` | `{ view, report }`；重新读包并重新规划，`planId` 不一致时报 `extensions:changed:`，有冲突时报 `extensions:conflict:`，都不写入 |
 
 ## Settings
 

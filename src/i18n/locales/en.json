@@ -463,7 +463,7 @@
   },
   "extensions": {
     "title": "Extension packs",
-    "lead": "Prompt packs published by the official source. They update on their own, apart from the app.",
+    "lead": "Prompt, rule and harness packs published by the official source. They update on their own, apart from the app.",
     "offTitle": "Turn on extension packs",
     "offBody": "Keysmith Switch reads the official source only once this is on. It fetches the list and the packs you choose, and uploads nothing of yours.",
     "notDeployed": "Installed prompts go into your library only. Nothing is deployed automatically.",
@@ -495,7 +495,9 @@
       "unknown-pack": "That pack is no longer in the source.",
       "off": "Extension packs are off.",
       "store": "That failed and nothing was changed.",
-      "default": "That failed and nothing was changed."
+      "default": "That failed and nothing was changed.",
+      "changed": "The pack or the files on this computer changed after the preview. Nothing was written; review it again.",
+      "conflict": "A file Keysmith did not write is where this pack would write. Nothing was written."
     },
     "disableTitle": "Turn off extension packs?",
     "disableBody": "The app stops checking the source and hides this list. Prompts already in your library stay, and you can turn this back on any time.",
@@ -520,6 +522,48 @@
       "updatedToast": "Rule pack updated. A table that is on switches only after you accept it on the Rewrite page",
       "removedToast": "Rule table removed",
       "uninstallBody": "Removes this table from Input rewrite. Anything you copied to My rules stays."
+    },
+    "harness": {
+      "kind": "{{count}} components",
+      "view": "Review and install",
+      "planTitle": "Harness pack: {{name}}",
+      "planTitleUpdate": "Update {{name}}: v{{from}} → v{{to}}",
+      "planBody": "Each file below is written into that agent's own folder. Nothing in it runs code. Uninstalling removes only the files you have not changed.",
+      "planLoading": "Reading the pack…",
+      "planBlocked": "A file Keysmith did not write is already where this pack would write, so nothing is installed and nothing of yours is overwritten. Move or rename the files marked below, then try again.",
+      "planNothing": "This version is already installed; nothing to change.",
+      "sharedSkills": "Codex skills go into the shared ~/.agents/skills, which ZCode, pi and DSH read too.",
+      "skipped": "{{tools}} is not on this computer, so its components are skipped for now.",
+      "confirmInstall": "Install components",
+      "confirmUpdate": "Update",
+      "showText": "Show text",
+      "hideText": "Hide",
+      "types": {
+        "skill": "Skill",
+        "command": "Command",
+        "agent": "Subagent",
+        "rule": "Rule"
+      },
+      "actions": {
+        "add": "New",
+        "update": "Update",
+        "same": "Unchanged",
+        "keep-modified": "You changed it; kept",
+        "remove": "Remove",
+        "release": "You changed it; kept, no longer managed",
+        "conflict": "Taken"
+      },
+      "reasons": {
+        "exists": "A file or folder Keysmith did not write is already here",
+        "not-a-file": "This is a link or a folder and cannot be written",
+        "otherPack": "This file belongs to another pack ({{pack}})"
+      },
+      "modified": "{{count}} files changed by you",
+      "missing": "{{count}} files missing",
+      "installedToast": "Installed: {{added}} files written",
+      "updatedToast": "Updated: {{updated}} changed, {{added}} new, {{removed}} removed, {{kept}} of your edits kept",
+      "removedToast": "Uninstalled: {{removed}} files removed, {{kept}} of your edits kept",
+      "uninstallBody": "Removes the files this pack wrote that you have not changed. Files you changed stay."
     }
   },
   "cleanup": {

@@ -1380,3 +1380,72 @@ async fn turning_off_a_grok_record_with_nothing_left_on_disk_clears_it() {
     assert!(grok_record_active(&world));
     assert!(grok.join("rules").join("99-keysmith.md").is_file());
 }
+
+/// A Codex skill a harness pack put in the shared `~/.agents/skills` goes with the rest of
+/// Codex's setup and comes back on rollback; another program's skill there is left alone.
+#[tokio::test]
+async fn cleaning_codex_takes_its_shared_skills_and_rolling_back_restores_them() {
+    if !python3_available() {
+        return;
+    }
+    use keysmith_switch_lib::components;
+    let world = codex_world(false);
+    let home = world.home.clone();
+    std::fs::create_dir_all(home.join(".codex")).unwrap();
+    std::fs::write(home.join(".codex/config.toml"), "").unwrap();
+    write(
+        home.join(".agents/skills/someone-else/SKILL.md"),
+        "not ours\n",
+    );
+
+    let manifest = serde_json::json!({
+        "schema": 1, "kind": "harness", "id": "jia.kit", "version": "0.1.0",
+        "min_app_version": "0.9.0", "tier": 1, "name": {"en": "Kit"}, "description": {"en": "Kit"},
+        "tools": ["codex"],
+        "components": [{"id": "tidy", "type": "skill", "name": "tidy", "tools": ["codex"],
+            "title": {"en": "Tidy"},
+            "files": [{"path": "components/tidy/SKILL.md", "sha256": hex::encode(<sha2::Sha256 as sha2::Digest>::digest(SKILL_TEXT.as_bytes()))}]}]
+    });
+    let mut files = std::collections::BTreeMap::new();
+    files.insert(
+        "components/tidy/SKILL.md".to_string(),
+        SKILL_TEXT.as_bytes().to_vec(),
+    );
+    let loaded = components::load(&manifest, &mut files, "jia.kit", &["codex"], (0, 9, 0)).unwrap();
+    let plan = components::plan(&world.store, "jia.kit", "0.1.0", &loaded, &world.opts).unwrap();
+    components::apply(&world.store, "official", &plan, &plan.plan_id).unwrap();
+    let skill = home.join(".agents/skills/tidy/SKILL.md");
+    assert!(skill.is_file());
+
+    let cleanup = plan_cleanup(&world.store, ToolKind::Codex, &world.opts)
+        .await
+        .unwrap();
+    assert!(
+        cleanup
+            .extras
+            .iter()
+            .any(|e| e.name == ".agents/skills/tidy"),
+        "{cleanup:?}"
+    );
+    assert!(!cleanup
+        .extras
+        .iter()
+        .any(|e| e.name.contains("someone-else")));
+    let done = confirm_cleanup(&world.store, &cleanup.operation_id, false, &world.opts)
+        .await
+        .unwrap();
+    assert!(!skill.exists());
+    assert!(home.join(".agents/skills/someone-else/SKILL.md").exists());
+    assert_eq!(components::installed(&world.store)["jia.kit"].missing, 1);
+
+    let back = plan_rollback(&world.store, &done.snapshot_id.unwrap(), &world.opts)
+        .await
+        .unwrap();
+    confirm_rollback(&world.store, &back.operation_id, &world.opts)
+        .await
+        .unwrap();
+    assert_eq!(std::fs::read_to_string(&skill).unwrap(), SKILL_TEXT);
+    assert_eq!(components::installed(&world.store)["jia.kit"].missing, 0);
+}
+
+const SKILL_TEXT: &str = "---\nname: tidy\ndescription: Tidy the working tree.\n---\n\nTidy up.\n";

@@ -24,6 +24,11 @@
 //! snapshot's `extras` folder and copied back on rollback. A piece that is a link, or holds a git
 //! project or a login file, is left where it is.
 //!
+//! Components a harness pack installed go with the folders they are in, and come back with them
+//! on rollback; for Codex that includes the skill folders the pack put in the shared
+//! `~/.agents/skills`. The components ledger keeps naming them, so the extensions page shows
+//! them as missing until a rollback puts them back.
+//!
 //! Project files, project and local scope deployments, logins and credentials, any other agent
 //! folder (Codex's database, sessions and so on) and the prompt library are never touched.
 
@@ -196,6 +201,7 @@ const GROK: Table = Table {
         ".grok/rules",
         ".grok/agents",
         ".grok/skills",
+        ".grok/commands",
         ".grok/AGENTS.md",
         ".grok/memory",
         ".grok/memory-v2",
@@ -781,7 +787,12 @@ fn prefixed(home: &Path, folder: &str, prefix: &str) -> Vec<String> {
 
 /// Which pieces to look at, in a fixed order: the agent's tables, the old copies of its config
 /// files, and the wrapper the adapter reports when it lies inside the agent's folder.
-fn extra_entries(tool: ToolKind, envelope: &Envelope, opts: &AdapterOptions) -> Result<Vec<Entry>> {
+fn extra_entries(
+    store: &Store,
+    tool: ToolKind,
+    envelope: &Envelope,
+    opts: &AdapterOptions,
+) -> Result<Vec<Entry>> {
     let (Some(table), Some(home)) = (table(tool), agent_home(tool, opts)?) else {
         return Ok(Vec::new());
     };
@@ -799,6 +810,12 @@ fn extra_entries(tool: ToolKind, envelope: &Envelope, opts: &AdapterOptions) -> 
     }
     for (folder, prefix) in table.saved_prefixes {
         for name in prefixed(&home, folder, prefix) {
+            add(name, "saved");
+        }
+    }
+    // Skills a harness pack installed for Codex live in the shared `~/.agents/skills`.
+    if tool == ToolKind::Codex {
+        for name in crate::components::codex_shared_skills(store, &home) {
             add(name, "saved");
         }
     }
@@ -1598,7 +1615,7 @@ pub async fn plan_cleanup(
     }
     let memory_meta = memory.as_ref().map(|(info, _)| info.clone());
     let memories = current_memories(tool, opts)?;
-    let entries = extra_entries(tool, &envelope, opts)?;
+    let entries = extra_entries(store, tool, &envelope, opts)?;
     let extras = current_extras(tool, &entries, opts)?;
     let login_in_keychain = !keychain_services(tool, opts).is_empty();
     let nothing_to_do = !deployment.present

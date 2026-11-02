@@ -209,6 +209,7 @@ fn entry_for(archive: &[u8]) -> IndexPack {
         sha256: sha(archive),
         size: archive.len() as u64,
         opaque: false,
+        components: Vec::new(),
     }
 }
 
@@ -1193,4 +1194,181 @@ fn an_opaque_rule_pack_that_allows_older_apps_is_not_listed() {
     assert!(refresh(&store, &fetch, &source("roldopaque"), "en")
         .packs
         .is_empty());
+}
+
+// ----- harness packs ---------------------------------------------------------------------
+
+/// The harness pack built by the extensions repo's packlib (make-extension-fixtures.py).
+const HARNESS_MIN: &str = "0.9.0";
+
+/// Until the release raises the app version to 0.9.0, a harness pack is listed as needing a
+/// newer app and is neither planned nor installed.
+fn harness_installs() -> bool {
+    let app: Vec<u64> = keysmith_switch_lib::models::APP_VERSION
+        .split('.')
+        .map(|part| part.parse().unwrap())
+        .collect();
+    app >= vec![0, 9, 0]
+}
+
+fn agents_home() -> (
+    tempfile::TempDir,
+    keysmith_switch_lib::adapter::AdapterOptions,
+) {
+    let tmp = tempfile::tempdir().unwrap();
+    for dir in [".claude", ".codex", ".grok"] {
+        std::fs::create_dir_all(tmp.path().join(dir)).unwrap();
+    }
+    let opts = keysmith_switch_lib::adapter::AdapterOptions {
+        home: Some(tmp.path().to_path_buf()),
+        ..Default::default()
+    };
+    (tmp, opts)
+}
+
+#[test]
+fn a_harness_pack_built_by_the_publisher_tooling_is_listed_with_its_components() {
+    let (_tmp, store) = store();
+    let fetch = Fixture::with(&["harness"]);
+    let view = refresh(&store, &fetch, &source("harness"), "zh-CN");
+    assert_eq!(view.error, None);
+    assert_eq!(view.packs.len(), 1);
+    let pack = &view.packs[0];
+    assert_eq!(pack.kind, PackKind::Harness);
+    assert_eq!(pack.min_app_version, HARNESS_MIN);
+    assert_eq!(pack.compatible, harness_installs());
+    let names: Vec<_> = pack.components.iter().map(|c| c.name.as_str()).collect();
+    assert_eq!(names, ["pre-pr-review", "review-staged", "diff-reviewer"]);
+    assert_eq!(pack.components[0].title, "开 PR 前审一遍");
+
+    // The archive passes the app's own checks: the two validators agree.
+    let index = keysmith_switch_lib::extensions::parse_index(
+        &fetch.files.borrow()[&Fixture::url("harness", "index.json")],
+        &source("harness"),
+    )
+    .unwrap();
+    let entry = &index.packs[0];
+    let archive = fetch.files.borrow()[&entry.url].clone();
+    let loaded = check_archive(&archive, entry).unwrap();
+    assert_eq!(loaded.components.len(), 3);
+    assert_eq!(loaded.components[0].files.len(), 2);
+}
+
+#[test]
+fn a_harness_pack_is_never_installed_without_a_plan() {
+    let (_tmp, store) = store();
+    let fetch = Fixture::with(&["harness"]);
+    let error = install(
+        &store,
+        &fetch,
+        &source("harness"),
+        "fixture.kit",
+        "en",
+        false,
+    )
+    .unwrap_err();
+    assert!(
+        matches!(error.code(), "invalid" | "incompatible"),
+        "{}",
+        error.code()
+    );
+}
+
+#[test]
+fn a_harness_plan_then_confirm_writes_the_files_and_uninstall_takes_them_out() {
+    let (_tmp, store) = store();
+    let (home, opts) = agents_home();
+    let fetch = Fixture::with(&["harness"]);
+    let planned = keysmith_switch_lib::extensions::plan_harness(
+        &store,
+        &fetch,
+        &source("harness"),
+        "fixture.kit",
+        &opts,
+    );
+    if !harness_installs() {
+        assert_eq!(planned.unwrap_err().code(), "incompatible");
+        return;
+    }
+    let plan = planned.unwrap();
+    assert!(!plan.blocked && plan.shared_skills);
+    let (view, report) = keysmith_switch_lib::extensions::confirm_harness(
+        &store,
+        &fetch,
+        &source("harness"),
+        "fixture.kit",
+        &plan.plan_id,
+        "en",
+        &opts,
+    )
+    .unwrap();
+    // The skill's two files on three agents, the command on two, the agent on three.
+    assert_eq!(report.added, 11);
+    assert_eq!(view.packs[0].installed_version.as_deref(), Some("0.1.0"));
+    assert!(home
+        .path()
+        .join(".agents/skills/pre-pr-review/checklist.md")
+        .is_file());
+    assert!(home
+        .path()
+        .join(".codex/agents/diff-reviewer.toml")
+        .is_file());
+
+    let (view, report) = uninstall(&store, &source("harness"), "fixture.kit", "en").unwrap();
+    assert_eq!(report.removed, 11);
+    assert_eq!(view.packs[0].installed_version, None);
+    assert!(!home.path().join(".claude/skills").exists());
+}
+
+#[test]
+fn a_harness_confirm_with_a_stale_plan_writes_nothing() {
+    let (_tmp, store) = store();
+    let (home, opts) = agents_home();
+    let fetch = Fixture::with(&["harness"]);
+    if !harness_installs() {
+        return;
+    }
+    let plan = keysmith_switch_lib::extensions::plan_harness(
+        &store,
+        &fetch,
+        &source("harness"),
+        "fixture.kit",
+        &opts,
+    )
+    .unwrap();
+    std::fs::create_dir_all(home.path().join(".grok/agents")).unwrap();
+    std::fs::write(home.path().join(".grok/agents/diff-reviewer.md"), "mine\n").unwrap();
+    let error = keysmith_switch_lib::extensions::confirm_harness(
+        &store,
+        &fetch,
+        &source("harness"),
+        "fixture.kit",
+        &plan.plan_id,
+        "en",
+        &opts,
+    )
+    .unwrap_err();
+    assert_eq!(error.code(), "changed");
+    assert!(!home.path().join(".claude/skills").exists());
+}
+
+#[test]
+fn an_index_entry_for_tier_two_or_an_old_app_is_not_listed() {
+    let (_tmp, store) = store();
+    let fetch = Fixture::with(&["harness"]);
+    let url = Fixture::url("harness", "index.json");
+    let original: serde_json::Value = serde_json::from_slice(&fetch.files.borrow()[&url]).unwrap();
+    for change in [
+        serde_json::json!({"tier": 2}),
+        serde_json::json!({"min_app_version": "0.8.4"}),
+        serde_json::json!({"components": []}),
+    ] {
+        let mut index = original.clone();
+        for (key, value) in change.as_object().unwrap() {
+            index["packs"][0][key] = value.clone();
+        }
+        fetch.set(&url, serde_json::to_vec(&index).unwrap());
+        let view = refresh(&store, &fetch, &source("harness"), "en");
+        assert!(view.packs.is_empty(), "{change}");
+    }
 }
