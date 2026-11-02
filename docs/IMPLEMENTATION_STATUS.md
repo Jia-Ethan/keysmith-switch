@@ -1,14 +1,27 @@
 # Keysmith Switch 实现状态
 
-更新日期：2026-10-26（Asia/Shanghai）
+更新日期：2026-11-02（Asia/Shanghai）
 
-阶段：公开稳定版为 [`v0.8.3`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.8.3)，含 macOS Apple Silicon 与 Windows x64 安装包。此文下方 `v0.1.3`／`v0.1.4` 的验证记录是历史记录。
+阶段：公开稳定版为 [`v0.8.4`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.8.4)，含 macOS Apple Silicon 与 Windows x64 安装包。此文下方 `v0.1.3`／`v0.1.4` 的验证记录是历史记录。
 
-## v0.8.4 发布准备
+## v0.9.0 发布准备
+
+- [#163](https://github.com/Jia-Ethan/keysmith-switch/pull/163) 已合并为 `3380fb3`：拓展页支持组件包（`kind: "harness"`，`tier: 1`，`min_app_version` ≥ 0.9.0）。新模块 `src-tauri/src/components.rs` 按 extensions 仓库 packlib 的同一套规则再校验一遍（frontmatter 白名单、shell 注入与外部文件引用、隐藏字符、保留名、ASCII 路径段与 Windows 设备名），按 `CLAUDE_CONFIG_DIR` / `CODEX_HOME` / `GROK_HOME` 解析落点，没装的 Agent 跳过。台账 `~/.keysmith-switch/components/ledger.json` 与写入日志 `journal.json` 放在 `extensions/` 之外；`plan_id` 绑定预览与磁盘状态，`HomeLock` 内逐项复核磁盘，新文件以临时文件 + 硬链接落地，不覆盖预览后才出现的文件；卸载只删哈希未变的台账文件，经过链接的路径一律跳过。
+- APFS 会把 `ſ` / `s`、`K`（开尔文）/ `K`、NFC / NFD 等视为同一文件名；格式规则改为每段 ASCII（[extensions#20](https://github.com/Jia-Ethan/keysmith-switch-extensions/pull/20)，社区仓库 [#5](https://github.com/Jia-Ethan/keysmith-community-packs/pull/5) 同步），App 与 packlib 用同一条规则。
+- 清理衔接：Grok 的 `.grok/commands` 进入保存清单；Codex 清理时，台账中写在共享 `~/.agents/skills` 的技能目录一并存入快照。
+- 七处版本声明为 0.9.0；本地 `cargo test --workspace` 366 项、`npm test` 327 项通过，含此前被版本门槛跳过的组件包安装、更新、卸载测试。旧版 App 的 index 解析会忽略未知 `kind`，不会列出组件包。
+- 官方拓展快照 [`2026.11.02.1`](https://github.com/Jia-Ethan/keysmith-switch-extensions/releases/tag/2026.11.02.1)（[extensions#21](https://github.com/Jia-Ethan/keysmith-switch-extensions/pull/21)）加入第一个官方组件包 `keysmith.review-kit` 0.1.0：技能 `/ks-review`、命令 `/ks-review-staged`、只读子 Agent `ks-reviewer`。用 0.9.0 的代码对本地构建的同一组包做过临时测试：列为可安装，计划 11 个文件，Codex 子 Agent 转成 `~/.codex/agents/ks-reviewer.toml`，卸载删回 11 个。同一快照首次发布 `keysmith.dsh` 0.2.0，门槛改为 0.8.4。P1 只开官方源，社区源属于 P2。
+- 当前公开稳定版仍为 v0.8.4；签名候选构建、公开发布、真实 App 中安装 / 更新 / 卸载组件包，以及 v0.8.4 → v0.9.0 应用内升级尚未完成。
+
+## v0.8.4 发布记录
 
 - [#157](https://github.com/Jia-Ethan/keysmith-switch/pull/157) 已合并（[#155](https://github.com/Jia-Ethan/keysmith-switch/issues/155)）：未设置 `https_proxy` / `all_proxy` 时，macOS 从 `scutil --proxy` 读取系统代理（HTTPS → HTTP → SOCKS）传给 curl；updater 插件的检查和下载在 macOS / Windows 上使用系统 HTTP 代理。回环 endpoint 不走代理。
 - 随包 dsh-keysmith 固定到上游 commit `c15f990`（0.4.0，[#156](https://github.com/Jia-Ethan/keysmith-switch/pull/156)）。部署面是 `profiles/web` 的 Cordis 插件，不再 dump `AGENTS.md`。0.4.0 读到 0.2.2 的 manifest 时报 `drift`，停用只撤插件，不还原旧版写下的 home `AGENTS.md` / `cordis.patch.yml`；发布说明提示需要还原的用户先在旧版停用。
-- 当前公开稳定版仍为 v0.8.3；v0.8.4 正在准备版本声明与发布说明，签名候选构建、公开发布、开着系统代理的 macOS 上 v0.8.3 → v0.8.4 应用内升级、以及 DSH 0.2.2 → 0.4.0 实体机迁移验收尚未完成。
+- 2026-10-26，发布准备 PR [#158](https://github.com/Jia-Ethan/keysmith-switch/pull/158) 合并为 `271e3edb70ca168990a6171675b4c1cafb438efb`，main CI run [`40221034839`](https://github.com/Jia-Ethan/keysmith-switch/actions/runs/40221034839) 五项检查通过。GitHub-verified annotated tag [`v0.8.4`](https://github.com/Jia-Ethan/keysmith-switch/releases/tag/v0.8.4) 指向该提交。
+- Source release run [`40221809784`](https://github.com/Jia-Ethan/keysmith-switch/actions/runs/40221809784) 的 source-gates、macOS、Windows 和 metadata 均成功；公开发布 run [`40224050469`](https://github.com/Jia-Ethan/keysmith-switch-releases/actions/runs/40224050469) 经 `production` 审批后成功。
+- 独立下载验证了候选的 8 个发布文件、provenance、SHA-256、`latest.json`（size / sha256 / 签名与文件一致，updater 门槛 0.1.3）和签名 key ID `0D03A636FF048B9F`（与 v0.8.3 相同）。macOS updater 内 sidecar：DSH 0.4.0、ZCode 0.3.4，其余与 v0.8.3 相同；DMG 内 app 与 updater archive 逐文件一致；Windows installer 含 8 个 `keysmith-*.exe`。随包 DSH sidecar 在隔离 home 部署为 `active`，未写 home `AGENTS.md`。
+- 公开 Release 为 stable、Latest、非 draft、immutable，8 个公开资产与候选一致，发布说明与 `scripts/release-notes.md` 一致；匿名 stable feed 与候选 `latest.json` 字节一致。
+- 开着系统代理的 macOS 上 v0.8.3 → v0.8.4 应用内升级（v0.8.3 本身仍有 #155 的问题，可能需要 TUN 模式或手动下载）、Windows 系统代理下的插件下载，以及 DSH 0.2.2 → 0.4.0 实体机迁移仍需独立验收。
 
 ## v0.8.3 发布记录
 
