@@ -537,7 +537,7 @@ fn an_update_shows_a_diff_keeps_edits_and_removes_what_the_pack_dropped() {
     let command = plan
         .files
         .iter()
-        .find(|f| f.path.ends_with(".claude/commands/review-staged.md"))
+        .find(|f| f.display.ends_with(".claude/commands/review-staged.md"))
         .unwrap();
     assert_eq!(command.action, FileAction::Update);
     assert!(command
@@ -551,9 +551,11 @@ fn an_update_shows_a_diff_keeps_edits_and_removes_what_the_pack_dropped() {
         .find(|f| f.path == edited.to_string_lossy())
         .unwrap();
     assert_eq!(agent.action, FileAction::KeepModified);
-    assert!(plan.files.iter().any(
-        |f| f.action == FileAction::Remove && f.path.ends_with(".grok/rules/60-house-style.md")
-    ));
+    assert!(plan
+        .files
+        .iter()
+        .any(|f| f.action == FileAction::Remove
+            && f.display.ends_with(".grok/rules/60-house-style.md")));
 
     let report = components::apply(&world.store, "official", &plan, &plan.plan_id).unwrap();
     // The command on Claude and Grok, the agent on Grok and Codex; Claude's agent was edited.
