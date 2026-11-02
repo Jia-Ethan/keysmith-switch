@@ -10,7 +10,7 @@
 - APFS 会把 `ſ` / `s`、`K`（开尔文）/ `K`、NFC / NFD 等视为同一文件名；格式规则改为每段 ASCII（[extensions#20](https://github.com/Jia-Ethan/keysmith-switch-extensions/pull/20)，社区仓库 [#5](https://github.com/Jia-Ethan/keysmith-community-packs/pull/5) 同步），App 与 packlib 用同一条规则。
 - 清理衔接：Grok 的 `.grok/commands` 进入保存清单；Codex 清理时，台账中写在共享 `~/.agents/skills` 的技能目录一并存入快照。
 - 七处版本声明为 0.9.0；本地 `cargo test --workspace` 366 项、`npm test` 327 项通过，含此前被版本门槛跳过的组件包安装、更新、卸载测试。旧版 App 的 index 解析会忽略未知 `kind`，不会列出组件包。
-- 官方拓展快照 `2026.10.21.1` 里还没有组件包；P1 只开官方源，社区源属于 P2。
+- 官方拓展快照 [`2026.11.02.1`](https://github.com/Jia-Ethan/keysmith-switch-extensions/releases/tag/2026.11.02.1)（[extensions#21](https://github.com/Jia-Ethan/keysmith-switch-extensions/pull/21)）加入第一个官方组件包 `keysmith.review-kit` 0.1.0：技能 `/ks-review`、命令 `/ks-review-staged`、只读子 Agent `ks-reviewer`。用 0.9.0 的代码对本地构建的同一组包做过临时测试：列为可安装，计划 11 个文件，Codex 子 Agent 转成 `~/.codex/agents/ks-reviewer.toml`，卸载删回 11 个。同一快照首次发布 `keysmith.dsh` 0.2.0，门槛改为 0.8.4。P1 只开官方源，社区源属于 P2。
 - 当前公开稳定版仍为 v0.8.4；签名候选构建、公开发布、真实 App 中安装 / 更新 / 卸载组件包，以及 v0.8.4 → v0.9.0 应用内升级尚未完成。
 
 ## v0.8.4 发布记录
