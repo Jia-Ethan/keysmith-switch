@@ -2,16 +2,21 @@
 
 更新日期：2026-11-02（Asia/Shanghai）
 
-阶段：公开稳定版为 [`v0.8.4`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.8.4)，含 macOS Apple Silicon 与 Windows x64 安装包。此文下方 `v0.1.3`／`v0.1.4` 的验证记录是历史记录。
+阶段：公开稳定版为 [`v0.9.0`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.9.0)，含 macOS Apple Silicon 与 Windows x64 安装包。此文下方 `v0.1.3`／`v0.1.4` 的验证记录是历史记录。
 
-## v0.9.0 发布准备
+## v0.9.0 发布记录
 
 - [#163](https://github.com/Jia-Ethan/keysmith-switch/pull/163) 已合并为 `3380fb3`：拓展页支持组件包（`kind: "harness"`，`tier: 1`，`min_app_version` ≥ 0.9.0）。新模块 `src-tauri/src/components.rs` 按 extensions 仓库 packlib 的同一套规则再校验一遍（frontmatter 白名单、shell 注入与外部文件引用、隐藏字符、保留名、ASCII 路径段与 Windows 设备名），按 `CLAUDE_CONFIG_DIR` / `CODEX_HOME` / `GROK_HOME` 解析落点，没装的 Agent 跳过。台账 `~/.keysmith-switch/components/ledger.json` 与写入日志 `journal.json` 放在 `extensions/` 之外；`plan_id` 绑定预览与磁盘状态，`HomeLock` 内逐项复核磁盘，新文件以临时文件 + 硬链接落地，不覆盖预览后才出现的文件；卸载只删哈希未变的台账文件，经过链接的路径一律跳过。
 - APFS 会把 `ſ` / `s`、`K`（开尔文）/ `K`、NFC / NFD 等视为同一文件名；格式规则改为每段 ASCII（[extensions#20](https://github.com/Jia-Ethan/keysmith-switch-extensions/pull/20)，社区仓库 [#5](https://github.com/Jia-Ethan/keysmith-community-packs/pull/5) 同步），App 与 packlib 用同一条规则。
 - 清理衔接：Grok 的 `.grok/commands` 进入保存清单；Codex 清理时，台账中写在共享 `~/.agents/skills` 的技能目录一并存入快照。
 - 七处版本声明为 0.9.0；本地 `cargo test --workspace` 366 项、`npm test` 327 项通过，含此前被版本门槛跳过的组件包安装、更新、卸载测试。旧版 App 的 index 解析会忽略未知 `kind`，不会列出组件包。
 - 官方拓展快照 [`2026.11.02.1`](https://github.com/Jia-Ethan/keysmith-switch-extensions/releases/tag/2026.11.02.1)（[extensions#21](https://github.com/Jia-Ethan/keysmith-switch-extensions/pull/21)）加入第一个官方组件包 `keysmith.review-kit` 0.1.0：技能 `/ks-review`、命令 `/ks-review-staged`、只读子 Agent `ks-reviewer`。用 0.9.0 的代码对本地构建的同一组包做过临时测试：列为可安装，计划 11 个文件，Codex 子 Agent 转成 `~/.codex/agents/ks-reviewer.toml`，卸载删回 11 个。同一快照首次发布 `keysmith.dsh` 0.2.0，门槛改为 0.8.4。P1 只开官方源，社区源属于 P2。
-- 当前公开稳定版仍为 v0.8.4；签名候选构建、公开发布、真实 App 中安装 / 更新 / 卸载组件包，以及 v0.8.4 → v0.9.0 应用内升级尚未完成。
+- 2026-11-02，发布准备 PR [#164](https://github.com/Jia-Ethan/keysmith-switch/pull/164) 合并为 `2fb4bda906af05a85e1f56d880ad2b5aaeeb1d9f`，main CI run [`41384000422`](https://github.com/Jia-Ethan/keysmith-switch/actions/runs/41384000422) 五项检查通过。GitHub-verified annotated tag [`v0.9.0`](https://github.com/Jia-Ethan/keysmith-switch/releases/tag/v0.9.0) 指向该提交。
+- Source release run [`41384699416`](https://github.com/Jia-Ethan/keysmith-switch/actions/runs/41384699416) 的 source-gates、macOS、Windows 和 metadata 均成功；公开发布 run [`41387649895`](https://github.com/Jia-Ethan/keysmith-switch-releases/actions/runs/41387649895) 经 `production` 审批后成功。
+- 独立下载验证了候选的 8 个发布文件、provenance、SHA-256、`latest.json`（size / sha256 / 签名与文件一致，updater 门槛 0.1.3）和签名 key ID `0D03A636FF048B9F`（与 v0.8.4 相同）。macOS updater 内各 sidecar 版本与 v0.8.4 相同；DMG 内 app 与 updater archive 一致；Windows installer 含 8 个 `keysmith-*.exe`。
+- 候选 `.app` 在隔离 home（`KEYSMITH_SWITCH_HOME` / `TOOL_HOME` / `SCAN_HOME` / `LAUNCH_AGENTS_DIR`）中走过组件包流程：`keysmith.review-kit` 计划 11 个文件，确认后新建 11 个；改动其中 1 个后卡片标出「1 个文件你改过」；卸载删除 10 个，保留改过的 1 个。
+- 公开 Release 为 stable、Latest、非 draft、immutable，8 个公开资产与候选一致，发布说明与 `scripts/release-notes.md` 一致；匿名 stable feed 与候选 `latest.json` 字节一致。
+- v0.8.4 → v0.9.0 应用内升级、Windows 实体机上安装 / 卸载组件包，以及在真实（非隔离）home 中写入 Claude Code / Codex / Grok Build 目录仍需独立验收。
 
 ## v0.8.4 发布记录
 
