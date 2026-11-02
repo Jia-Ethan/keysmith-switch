@@ -1,8 +1,17 @@
 # Keysmith Switch 实现状态
 
-更新日期：2026-10-26（Asia/Shanghai）
+更新日期：2026-11-02（Asia/Shanghai）
 
 阶段：公开稳定版为 [`v0.8.4`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.8.4)，含 macOS Apple Silicon 与 Windows x64 安装包。此文下方 `v0.1.3`／`v0.1.4` 的验证记录是历史记录。
+
+## v0.9.0 发布准备
+
+- [#163](https://github.com/Jia-Ethan/keysmith-switch/pull/163) 已合并为 `3380fb3`：拓展页支持组件包（`kind: "harness"`，`tier: 1`，`min_app_version` ≥ 0.9.0）。新模块 `src-tauri/src/components.rs` 按 extensions 仓库 packlib 的同一套规则再校验一遍（frontmatter 白名单、shell 注入与外部文件引用、隐藏字符、保留名、ASCII 路径段与 Windows 设备名），按 `CLAUDE_CONFIG_DIR` / `CODEX_HOME` / `GROK_HOME` 解析落点，没装的 Agent 跳过。台账 `~/.keysmith-switch/components/ledger.json` 与写入日志 `journal.json` 放在 `extensions/` 之外；`plan_id` 绑定预览与磁盘状态，`HomeLock` 内逐项复核磁盘，新文件以临时文件 + 硬链接落地，不覆盖预览后才出现的文件；卸载只删哈希未变的台账文件，经过链接的路径一律跳过。
+- APFS 会把 `ſ` / `s`、`K`（开尔文）/ `K`、NFC / NFD 等视为同一文件名；格式规则改为每段 ASCII（[extensions#20](https://github.com/Jia-Ethan/keysmith-switch-extensions/pull/20)，社区仓库 [#5](https://github.com/Jia-Ethan/keysmith-community-packs/pull/5) 同步），App 与 packlib 用同一条规则。
+- 清理衔接：Grok 的 `.grok/commands` 进入保存清单；Codex 清理时，台账中写在共享 `~/.agents/skills` 的技能目录一并存入快照。
+- 七处版本声明为 0.9.0；本地 `cargo test --workspace` 366 项、`npm test` 327 项通过，含此前被版本门槛跳过的组件包安装、更新、卸载测试。旧版 App 的 index 解析会忽略未知 `kind`，不会列出组件包。
+- 官方拓展快照 `2026.10.21.1` 里还没有组件包；P1 只开官方源，社区源属于 P2。
+- 当前公开稳定版仍为 v0.8.4；签名候选构建、公开发布、真实 App 中安装 / 更新 / 卸载组件包，以及 v0.8.4 → v0.9.0 应用内升级尚未完成。
 
 ## v0.8.4 发布记录
 

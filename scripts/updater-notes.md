@@ -1,1 +1,1 @@
-Keysmith Switch v0.8.4：检查和下载更新会使用 macOS / Windows 系统代理，修复开着代理时更新超时或下载失败；随包 DSH 适配器升级到 0.4.0，改为在 profiles/web 安装插件。部署过 DSH 并想还原 ~/.dsh/AGENTS.md 的，请先在当前版本停用 DSH 再升级。
+Keysmith Switch v0.9.0：拓展页新增组件包，把技能、斜杠命令、子 Agent 和规则文件装进 Claude Code、Codex、Grok Build 的目录。装上不运行代码，先列出每个文件再确认写入；卸载只删你没改过的文件。

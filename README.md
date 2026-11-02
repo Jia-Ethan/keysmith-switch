@@ -364,6 +364,7 @@ npx tauri build --target aarch64-apple-darwin --config src-tauri/tauri.preview.m
 
 | 版本 | 更新内容 |
 | --- | --- |
+| `v0.9.0`（准备中） | 拓展页新增组件包：把技能、斜杠命令、子 Agent 和附加规则文件装进 Claude Code（`~/.claude`）、Codex（`~/.codex/agents`、共享的 `~/.agents/skills`）和 Grok Build（`~/.grok`）。只收第 1 层纯文本组件，装上不运行任何代码；安装和更新都先逐个列出文件、目标位置和完整内容，确认后才写；已有不是 Keysmith 写的文件时整次拦下；卸载只删没改过的文件。台账在 `~/.keysmith-switch/components/`。[#163](https://github.com/Jia-Ethan/keysmith-switch/pull/163) |
 | [`v0.8.4`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.8.4) | 检查更新、下载更新和扩展拉取会使用 macOS 系统代理，应用内下载也会使用 macOS / Windows 系统 HTTP 代理，修复开着 Clash 等代理时检查更新超时、或能检查到更新但下载失败。[#155](https://github.com/Jia-Ethan/keysmith-switch/issues/155) 随包升级 dsh-keysmith 0.4.0：部署改为把 Cordis 插件装进 `profiles/web`，不再写 `~/.dsh/AGENTS.md` 或 home `cordis.patch.yml`；停用不会还原旧版写下的文件，想还原的请先在旧版停用 DSH 再升级。对应上游 [#6](https://github.com/Jia-Ethan/dsh-keysmith/pull/6)。 |
 | [`v0.8.3`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.8.3) | 修复 Windows / ZCode 3.16.x 部署成功但提示词不生效：随包升级 zcode-keysmith 0.3.4，识别新版启动方式并保留官方 agent-server，备份、补丁实际 runtime，停用时还原；同步 macOS 的 memory 覆盖与自动重补丁修复。对应上游 [#44](https://github.com/Jia-Ethan/zcode-keysmith/pull/44)。 |
 | [`v0.8.2`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.8.2) | 修复 DSH 部署或停用失败时的状态误报；不完整的 `profiles/web` 跳过配置合成并提示回退，避免自动创建 profile 文件；同步 DSH 适配器版本。[#152](https://github.com/Jia-Ethan/keysmith-switch/pull/152) |
