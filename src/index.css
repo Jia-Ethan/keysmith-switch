@@ -227,6 +227,14 @@ html[data-titlebar="overlay"] .app-rail {
     width 320ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* When even the folded agents do not fit, their list scrolls and fades out at its edges. */
+.rail-agents-scroll {
+  padding-block: 8px;
+  scrollbar-gutter: stable both-edges;
+  mask-image: linear-gradient(180deg, transparent, black 8px, black calc(100% - 14px), transparent);
+  -webkit-mask-image: linear-gradient(180deg, transparent, black 8px, black calc(100% - 14px), transparent);
+}
+
 .rail-tile {
   transition:
     transform 360ms cubic-bezier(0.34, 1.56, 0.64, 1),
