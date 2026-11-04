@@ -187,6 +187,10 @@ pub fn scan_import_candidates(store: &Store, user_home: &Path) -> Result<Vec<Imp
     Ok(out)
 }
 
+/// Profiles dsh-keysmith deploys into: DSH Desktop boots only `desktop`, `dsh web`
+/// boots `web`. Desktop first, since that is where an automatic deploy goes.
+const DSH_PROFILES: [&str; 2] = ["desktop", "web"];
+
 fn native_prompt_files(tool: ToolKind, home: &Path) -> Vec<PathBuf> {
     let roots = match tool {
         ToolKind::Claude => vec![home.join(".claude").join("keysmith")],
@@ -207,22 +211,24 @@ fn native_prompt_files(tool: ToolKind, home: &Path) -> Vec<PathBuf> {
             };
         }
         // dsh's home holds sessions, storages, provider settings and credentials.
-        // 0.4.0 deploys the contract inside the profile plugin; a leftover
-        // user-global AGENTS.md is still a prompt candidate.
+        // dsh-keysmith deploys the contract inside one profile's plugin: `desktop`
+        // for DSH Desktop, `web` for `dsh web`. A leftover user-global AGENTS.md is
+        // still a prompt candidate.
         ToolKind::Dsh => {
             let dsh = home.join(".dsh");
-            let contract = dsh
-                .join("profiles")
-                .join("web")
-                .join("node_modules")
-                .join("dsh-keysmith")
-                .join("lib")
-                .join("contract.md");
+            let mut files: Vec<PathBuf> = DSH_PROFILES
+                .iter()
+                .map(|profile| {
+                    dsh.join("profiles")
+                        .join(profile)
+                        .join("node_modules")
+                        .join("dsh-keysmith")
+                        .join("lib")
+                        .join("contract.md")
+                })
+                .filter(|contract| contract.is_file())
+                .collect();
             let agents = dsh.join("AGENTS.md");
-            let mut files = Vec::new();
-            if contract.is_file() {
-                files.push(contract);
-            }
             if agents.is_file() {
                 files.push(agents);
             }

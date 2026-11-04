@@ -62,6 +62,11 @@ pub struct HarnessState {
     /// The agent's config was changed by hand after the last deploy.
     #[serde(default)]
     pub drifted: bool,
+    /// DSH only: the deployment is intact but sits in a profile the host does not
+    /// boot (`profiles/web` while DSH Desktop reads `profiles/desktop`, issue #162).
+    /// A redeploy moves it; nothing was edited by hand.
+    #[serde(default)]
+    pub wrong_profile: bool,
     pub error: Option<String>,
     /// The library prompt the machine is running, when it can be identified.
     #[serde(default)]
@@ -114,6 +119,7 @@ pub async fn harness_state(
             tool,
             deployed: false,
             drifted: false,
+            wrong_profile: false,
             error: Some(reason.to_string()),
             prompt_id: None,
             prompt_title: None,
@@ -129,6 +135,7 @@ pub async fn harness_state(
             let drifted =
                 envelope.status == ToolStatus::Drift || codex_prompt_in_use(tool, &envelope);
             let deployed = envelope.status == ToolStatus::Active || drifted;
+            let wrong_profile = drifted && dsh_in_wrong_profile(tool, &envelope);
             let prompt = if deployed {
                 deployed_prompt(store, tool, live_fingerprint(tool, &envelope).as_deref())
             } else {
@@ -142,6 +149,7 @@ pub async fn harness_state(
                 tool,
                 deployed,
                 drifted,
+                wrong_profile,
                 error: None,
                 prompt_id,
                 prompt_title,
@@ -151,11 +159,22 @@ pub async fn harness_state(
             tool,
             deployed: false,
             drifted: false,
+            wrong_profile: false,
             error: Some(error.to_string()),
             prompt_id: None,
             prompt_title: None,
         }),
     }
+}
+
+/// dsh-keysmith 0.4.1 reports a deployment outside the profile it now targets as drift
+/// with a `profile_target:` note. Every other drift note means a hand edit.
+fn dsh_in_wrong_profile(tool: ToolKind, envelope: &crate::adapter::Envelope) -> bool {
+    tool == ToolKind::Dsh
+        && envelope
+            .warnings
+            .iter()
+            .any(|note| note.starts_with("profile_target:"))
 }
 
 /// Roles the adapters use for the file that holds the live prompt itself.

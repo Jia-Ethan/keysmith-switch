@@ -150,6 +150,9 @@ export function WorkspacePage({
     const ids = activeIdsFor(activations, tool, "user", "");
     return livePromptId && !ids.includes(livePromptId) ? [...ids, livePromptId] : ids;
   }, [activations, livePromptId, tool]);
+  // The live library prompt, when it can be planned again from the library (DSH #162:
+  // a redeploy moves a deployment out of a profile DSH Desktop does not read).
+  const redeployId = activeIds?.find((id) => prompts.some((item) => item.id === id)) ?? null;
   const deployedTitle = useMemo(() => {
     if (!activeIds?.length) return entry?.promptTitle ?? null;
     const hit = prompts.find((item) => activeIds.includes(item.id));
@@ -722,6 +725,9 @@ export function WorkspacePage({
           name={toolName}
           machine={machine}
           drifted={machine === "deployed" && Boolean(entry?.drifted)}
+          wrongProfile={machine === "deployed" && Boolean(entry?.wrongProfile)}
+          onRedeploy={redeployId ? () => void deployFromLibrary(redeployId) : undefined}
+          redeploying={redeployId !== null && pending === `deploy:${redeployId}`}
           reading={reading}
           statusError={statusError}
           deployedTitle={deployedTitle}

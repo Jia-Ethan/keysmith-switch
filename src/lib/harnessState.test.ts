@@ -27,10 +27,21 @@ describe("harnessState", () => {
     expect(store.getHarnessStatus("claude")).toEqual({
       machine: "undeployed",
       drifted: false,
+      wrongProfile: false,
       error: null,
       promptId: null,
       promptTitle: null,
     });
+  });
+
+  it("carries the DSH wrong-profile flag only for a deployment", async () => {
+    const store = await load();
+    getHarnessState.mockResolvedValue({ tool: "dsh", deployed: true, drifted: true, wrongProfile: true, error: null, promptId: "d", promptTitle: "DSH" });
+    await store.loadHarnessStatus("dsh", true);
+    expect(store.getHarnessStatus("dsh")).toMatchObject({ machine: "deployed", drifted: true, wrongProfile: true });
+    getHarnessState.mockResolvedValue({ tool: "dsh", deployed: false, wrongProfile: true, error: null });
+    await store.loadHarnessStatus("dsh", true);
+    expect(store.getHarnessStatus("dsh")).toMatchObject({ machine: "undeployed", wrongProfile: false });
   });
 
   it("keeps a drifted deployment as deployed and says it drifted", async () => {

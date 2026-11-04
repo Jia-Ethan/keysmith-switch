@@ -443,7 +443,9 @@
     "emptyTitle": "No prompt deployed yet",
     "emptyHint": "Pick one below or create a new one. One click and it is live.",
     "edit": "Edit",
-    "drifted": "This agent's config was changed by hand after the deploy. The prompt is still in use; redeploy it or use Clean up to start over."
+    "drifted": "This agent's config was changed by hand after the deploy. The prompt is still in use; redeploy it or use Clean up to start over.",
+    "wrongProfile": "The plugin is in the DSH web profile, which DSH Desktop does not read. Redeploy to move it, then fully quit DSH from the tray or app menu and reopen it.",
+    "redeploy": "Redeploy"
   },
   "palette": {
     "title": "Command palette",

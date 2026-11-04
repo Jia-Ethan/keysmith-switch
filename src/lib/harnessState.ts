@@ -16,6 +16,8 @@ export interface HarnessEntry {
   machine: HarnessMachine;
   /** Deployed, but the agent's config was changed by hand since. */
   drifted?: boolean;
+  /** DSH only: deployed into a profile the host does not boot; a redeploy moves it. */
+  wrongProfile?: boolean;
   error: string | null;
   /** The library prompt live on the machine; null when unknown or not deployed. */
   promptId: string | null;
@@ -65,6 +67,7 @@ async function read(tool: ToolId): Promise<HarnessEntry> {
     return {
       machine: deployed ? "deployed" : "undeployed",
       drifted: deployed && Boolean(state.drifted),
+      wrongProfile: deployed && Boolean(state.wrongProfile),
       error: state.error,
       promptId: deployed ? state.promptId ?? null : null,
       promptTitle: deployed ? state.promptTitle ?? null : null,

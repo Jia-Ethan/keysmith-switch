@@ -632,6 +632,8 @@ fn normalize_dsh(
 
     let dsh_dir = json.get("dsh_dir").and_then(Value::as_str);
     let dir_exists = json_bool(&json, "dsh_dir_exists").unwrap_or(false);
+    // 0.4.1 picks `desktop` when DSH Desktop's profile exists (issue #162), so the
+    // profile comes from the envelope; `web` is only the 0.4.0 default.
     let profile = json
         .get("profile")
         .and_then(Value::as_str)

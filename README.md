@@ -318,7 +318,7 @@ npx tauri build --target aarch64-apple-darwin --config src-tauri/tauri.preview.m
 
 每个 Agent 的适配器（`third_party/keysmith/`）和 App 要求的版本（`ToolKind::expected_version`）必须一致，否则确认部署会被拒绝。`src-tauri/tests/version_pins.rs` 在两者不一致时让测试失败。升级适配器时，要同时修改这两处，以及 `src-tauri/tests/fixtures/cli/` 里的默认版本号。
 
-当前发行包包含六个 legacy adapter sidecar，用于兼容 Claude Code、Codex、Grok Build、ZCode、pi 与 DSH 的目标配置协议。pi 只管理全局 `~/.pi/agent/SYSTEM.md`，并且 Switch 不会创建这个目录：没装过 pi 时部署会被拦下并说明原因。DSH 把 Cordis 插件装进 `profiles/web`（`node_modules/dsh-keysmith` + bundles + insert），同样不创建 `~/.dsh`，也不写 home `AGENTS.md`。它们是执行实现，不是快速部署的默认提示词来源；快速部署不会自动抓取这些仓库的提示词，也不要求用户安装对应的 Keysmith 仓库。
+当前发行包包含六个 legacy adapter sidecar，用于兼容 Claude Code、Codex、Grok Build、ZCode、pi 与 DSH 的目标配置协议。pi 只管理全局 `~/.pi/agent/SYSTEM.md`，并且 Switch 不会创建这个目录：没装过 pi 时部署会被拦下并说明原因。DSH 把 Cordis 插件装进一个 profile（`node_modules/dsh-keysmith` + bundles + insert）：装了 DSH 桌面版（有 `profiles/desktop`）就装进 `desktop`，否则装进 `dsh web` 用的 `web`。同样不创建 `~/.dsh` 或 `profiles/desktop`，也不写 home `AGENTS.md`。它们是执行实现，不是快速部署的默认提示词来源；快速部署不会自动抓取这些仓库的提示词，也不要求用户安装对应的 Keysmith 仓库。
 
 `third_party/keysmith/` 中的版本锁只约束 legacy adapter artifact 的构建与审计。后续 Agent registry 会把这些 artifact 迁移到统一的 adapter manifest；用户提示词库和适配器供应链保持独立。
 
