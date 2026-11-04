@@ -921,8 +921,11 @@ async fn real_dsh_targets_the_desktop_profile_and_moves_an_old_web_deploy() {
     assert!(done.envelope.ok, "{:?}", done.envelope);
     assert!(!desktop.join("node_modules/dsh-keysmith").exists());
     // DSH refuses a comment-only profile patch; the uninstall leaves a YAML array.
+    // The CLI writes text mode, so Windows gets CRLF (as 0.4.0 did); YAML reads both.
     assert_eq!(
-        std::fs::read_to_string(desktop.join("cordis.patch.yml")).unwrap(),
+        std::fs::read_to_string(desktop.join("cordis.patch.yml"))
+            .unwrap()
+            .replace("\r\n", "\n"),
         "# Your patch layer\n[]\n"
     );
 }
