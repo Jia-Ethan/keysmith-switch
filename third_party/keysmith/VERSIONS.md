@@ -11,7 +11,7 @@ Keysmith Switch.
 | grok | grok/grok-keysmith.py | `d87def09` (`v0.8.0`) | v0.8.0 |
 | zcode | zcode/zcode-keysmith.py | `3c3bea8f994d3670c2cd571e9bd87449fc868788` (merged #44; v0.3.4 tag pending) | 0.3.4 |
 | pi | pi/pi-keysmith.py | `37f69cac` (`v0.2.0`) | v0.2.0 |
-| dsh | dsh/dsh-keysmith.py | `7d02fca` ([#7](https://github.com/Jia-Ethan/dsh-keysmith/pull/7), not merged yet; v0.4.1 tag pending) | v0.4.1 |
+| dsh | dsh/dsh-keysmith.py | `7dc6424` (`v0.4.1`, merged [#7](https://github.com/Jia-Ethan/dsh-keysmith/pull/7)) | v0.4.1 |
 
 ZCode 0.3.4 recognizes `supportsStorageStartup` in `resources/app.asar` on Windows,
 keeps the official agent-server, and reversibly patches `resources/glm/zcode.cjs`.
@@ -37,7 +37,7 @@ does not rewrite the home `cordis.patch.yml`, and does not patch
 `--recover` is a documented no-op (no journals). `adapter_patch` is always
 `absent`.
 
-dsh 0.4.1 ([#7](https://github.com/Jia-Ethan/dsh-keysmith/pull/7), for
+dsh 0.4.1 (tag `v0.4.1`, [#7](https://github.com/Jia-Ethan/dsh-keysmith/pull/7), for
 [#162](https://github.com/Jia-Ethan/keysmith-switch/issues/162)) picks the profile
 when `--profile` is absent: `desktop` when `profiles/desktop` exists (DSH Desktop
 boots only that profile), else `web`; an explicit `--profile` recorded in the
