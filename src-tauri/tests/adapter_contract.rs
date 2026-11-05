@@ -1022,9 +1022,10 @@ fn pi_token_must_be_lowercase_hex() {
 
 // ─── dsh ────────────────────────────────────────────────────────────────────
 //
-// dsh-keysmith 0.4.0 differs from pi in three ways the contract has to pin
+// dsh-keysmith 0.4.x differs from pi in three ways the contract has to pin
 // down: it names its own state, it has no preview token, and it installs a
-// profile plugin rather than dumping AGENTS.md.
+// profile plugin rather than dumping AGENTS.md. 0.4.1 also picks the profile
+// (`desktop` when DSH Desktop created it, else `web`).
 
 fn dsh_status() -> AdapterCommand {
     AdapterCommand::Status {
@@ -1229,6 +1230,57 @@ async fn dsh_reports_drift_and_a_deploy_still_plans() {
     .await
     .unwrap();
     assert!(off.ok, "{off:?}");
+}
+
+/// Issue #162: once DSH Desktop has created `profiles/desktop`, a deployment left in
+/// `profiles/web` is reported as drift with a `profile_target:` note, the target path
+/// follows the profile the CLI names, and a redeploy plans into `desktop`.
+#[tokio::test]
+async fn dsh_desktop_profile_is_the_target_once_it_exists() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let opts = opts(&home, "dsh-keysmith.py");
+    let dsh_dir = home.join(".dsh");
+    std::fs::create_dir_all(&dsh_dir).unwrap();
+    let file = home.join("prompt.md");
+    std::fs::write(&file, "hello dsh\n").unwrap();
+    run_adapter_with(ToolKind::Dsh, dsh_activate(&file), &opts)
+        .await
+        .unwrap();
+    std::fs::create_dir_all(dsh_dir.join("profiles").join("desktop")).unwrap();
+
+    let drifted = run_adapter_with(ToolKind::Dsh, dsh_status(), &opts)
+        .await
+        .unwrap();
+    assert_eq!(drifted.status, ToolStatus::Drift, "{drifted:?}");
+    assert!(
+        drifted
+            .warnings
+            .iter()
+            .any(|note| note.starts_with("profile_target:")),
+        "{:?}",
+        drifted.warnings
+    );
+    // The live prompt is still the one in `web`, so it is still recognised.
+    assert_eq!(
+        drifted.current_fingerprint.as_deref(),
+        Some(keysmith_switch_lib::models::sha256_hex("hello dsh\n").as_str())
+    );
+
+    let plan = run_adapter_with(ToolKind::Dsh, dsh_plan(&file), &opts)
+        .await
+        .unwrap();
+    assert!(plan.ok, "{plan:?}");
+    assert_eq!(plan.status, ToolStatus::Inactive);
+    let desktop = dsh_dir.join("profiles").join("desktop");
+    assert!(
+        plan.planned_files
+            .iter()
+            .any(|entry| std::path::Path::new(&entry.path).starts_with(&desktop)),
+        "{:?}",
+        plan.planned_files
+    );
 }
 
 #[tokio::test]

@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Deterministic dsh Keysmith fixture emitting dsh-keysmith/v1.
 
-Mirrors dsh-keysmith 0.4.0's payload shape so the adapter contract can be tested
+Mirrors dsh-keysmith 0.4.1's payload shape so the adapter contract can be tested
 without the real CLI. State comes from files under --dsh-dir:
 
 - no `.dsh-keysmith-manifest.json` and no live plugin/bundles/insert: not-installed
 - manifest present (or leftover plugin pieces) matching the live profile: active
 - plugin / bundles / insert mismatch: drift
+- deployed outside the target profile (0.4.1 auto picks `desktop` when
+  `profiles/desktop` exists): drift with a `profile_target:` note
 
 `--file` overlays `profiles/<profile>/node_modules/dsh-keysmith/lib/contract.md`.
 Home `AGENTS.md` is never written. `--recover` is a no-op.
@@ -26,7 +28,7 @@ import sys
 from pathlib import Path
 
 SCHEMA = "dsh-keysmith/v1"
-VERSION = os.environ.get("FIXTURE_VERSION", "0.4.0")
+VERSION = os.environ.get("FIXTURE_VERSION", "0.4.1")
 MANIFEST = ".dsh-keysmith-manifest.json"
 PLUGIN = "dsh-keysmith"
 DEFAULT_PROFILE = "web"
@@ -80,6 +82,12 @@ def live_state(root: Path, profile: str) -> tuple[bool, bool, bool]:
     return copied, in_bundles, inserted
 
 
+def target_profile(root: Path, requested: str | None) -> str:
+    if requested:
+        return requested
+    return "desktop" if profile_dir(root, "desktop").is_dir() else DEFAULT_PROFILE
+
+
 def inspect(root: Path, profile: str) -> tuple[str, list[str], dict | None]:
     manifest = load_manifest(root)
     used = str((manifest or {}).get("profile") or profile)
@@ -101,6 +109,11 @@ def inspect(root: Path, profile: str) -> tuple[str, list[str], dict | None]:
         notes.append("profile_bundles: changed since deploy")
     if not inserted:
         notes.append("profile_insert: changed since deploy")
+    if used != profile:
+        notes.append(
+            f"profile_target: deployed to profiles/{used}, but DSH Desktop only reads "
+            f"profiles/{profile}; redeploy to move it"
+        )
     return ("drift" if notes else "active"), notes, manifest
 
 
@@ -316,7 +329,7 @@ def main(argv: list[str]) -> int:
     if os.environ.get("FIXTURE_DIR_MISSING") == "1":
         root = Path("/nonexistent/fixture-dsh")
     name = flag(argv, "--name") or "dsh-unrestricted"
-    profile = flag(argv, "--profile") or DEFAULT_PROFILE
+    profile = target_profile(root, flag(argv, "--profile"))
     yes = "--yes" in argv
     source = flag(argv, "--file")
     if "--status" in argv:

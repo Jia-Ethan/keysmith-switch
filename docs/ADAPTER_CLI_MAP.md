@@ -123,7 +123,7 @@ doctor / install 继续解析文本行，不传 `--json`。0.3.4 的 `uninstall 
 | recover | `--recover --dsh-dir <abs> --json --lang en`。确认时加 `--yes` |
 | backups / restore / reconcile | 不支持 |
 
-`--dsh-dir` 每次都传，且必须是绝对路径：隔离 home 时是 `<home>/.dsh`，否则解析真实 home——`$DSH_HOME` 设了就用它（与 CLI 自己的 `_default_dsh_home` 一致），否则 `~/.dsh`。唯一的例外是 Mirasim 的会话挂载点：Mirasim 用 `DSH_HOME=~/.mirasim/agent-homes/dsh/<id>` 启动每个 dsh 会话，那个目录是一栋指回 `~/.dsh` 的符号链接楼，只属于当次会话，所以继承到的值若落在 `agent-homes/` 下面就忽略，仍然部署到 `~/.dsh`。CLI 从不创建它，也不会替用户跑一次 dsh；目录不存在时 `dsh_dir_exists=false`、state 为 `not-installed`，部署以 exit 2 被拦下。schema: `dsh-keysmith/v1`，随包版本 0.4.0。
+`--dsh-dir` 每次都传，且必须是绝对路径：隔离 home 时是 `<home>/.dsh`，否则解析真实 home——`$DSH_HOME` 设了就用它（与 CLI 自己的 `_default_dsh_home` 一致），否则 `~/.dsh`。唯一的例外是 Mirasim 的会话挂载点：Mirasim 用 `DSH_HOME=~/.mirasim/agent-homes/dsh/<id>` 启动每个 dsh 会话，那个目录是一栋指回 `~/.dsh` 的符号链接楼，只属于当次会话，所以继承到的值若落在 `agent-homes/` 下面就忽略，仍然部署到 `~/.dsh`。CLI 从不创建它，也不会替用户跑一次 dsh；目录不存在时 `dsh_dir_exists=false`、state 为 `not-installed`，部署以 exit 2 被拦下。schema: `dsh-keysmith/v1`，随包版本 0.4.1。
 
 `normalize_dsh` 的约定：
 
@@ -134,8 +134,11 @@ doctor / install 继续解析文本行，不传 `--json`。0.3.4 的 `uninstall 
 - `mode` 是 `preview` / `execute`，envelope 的 `preview` 布尔由它换算。
 - `blockers` / `warnings` / `error` 原样取用，`--lang` 不影响它们（CLI 的 JSON 消息恒为英文），所以 Switch 统一传 `--lang en`；i18n 由界面负责。
 - 线上生效的契约是 `profiles/<profile>/node_modules/dsh-keysmith/lib/contract.md`。`currentFingerprint` 取该文件的 sha256，用来认出库里哪条提示词。
+- **profile 由 CLI 选，Switch 不传 `--profile`。** DSH 桌面版（Electron）只启动 `profiles/desktop`，`dsh web` 启动 `profiles/web`。0.4.1 不带 `--profile` 时：manifest 里是显式选过的 profile 就沿用；否则 `profiles/desktop` 存在就选 `desktop`，再否则沿用 manifest 或 `web`（[#162](https://github.com/Jia-Ethan/keysmith-switch/issues/162)）。Switch 用 envelope 的 `profile` 拼路径，`web` 只是缺字段时的回退。
+- 部署在 `web`、目标却是 `desktop` 时，`--status` 报 `drift`，并带一条 `profile_target:` 开头的说明。`harness_state` 据此置 `wrongProfile`：界面不说「配置被手动改过」，而是说桌面版读不到，并给出「重新部署」。重新部署先装进 `desktop`，再从 `web` 撤掉插件、bundles 条目和 insert；预览把这三项列为 `previous_profile_*`。
+- 导入扫描读 `profiles/desktop` 和 `profiles/web` 两处的 `contract.md`。
 - `actions[]` 里 `noop` / `skip` 不进 `plannedFiles`：它们描述已经到位的资源，列成计划写入会夸大确认的效果。
-- `adapter_patch` 恒为 `absent`（0.4.0 不打 llm 热修），不再为此加 warning。
+- `adapter_patch` 恒为 `absent`（0.4.x 不打 llm 热修），不再为此加 warning。
 - 退出码 2 是用法或目录缺失，保证零写入；exit 1 带 blocker 是无 manifest 卸载。
 
 托管三个资源：`profiles/web/node_modules/dsh-keysmith/`（Cordis 插件）、该 profile 的 `package.json` `dsh.profile.bundles`、以及该 profile 的 `cordis.patch.yml` insert。home `AGENTS.md`、home `cordis.patch.yml`、`@deepseek-ai` `node_modules`、`settings.yaml`、`.credentials.yaml`、`sessions/`、`storages/` 一律不碰。停用时卸掉插件拷贝、bundles 名和 insert，不还原 `AGENTS.md`（从未写过）。

@@ -599,7 +599,7 @@ async fn real_dsh_deploys_reads_back_and_leaves_the_rest_of_its_home_alone() {
         status.status,
         keysmith_switch_lib::models::ToolStatus::NotInstalled
     );
-    assert_eq!(status.adapter_version.as_deref(), Some("0.4.0"));
+    assert_eq!(status.adapter_version.as_deref(), Some("0.4.1"));
 
     let body = "# Real dsh prompt\nAsk before deleting.\n";
     let deployed = keysmith_switch_lib::harness::deploy_harness_with(
@@ -780,5 +780,152 @@ async fn real_dsh_drift_blocks_deactivate_and_a_redeploy_clears_it() {
     assert_eq!(
         std::fs::read_to_string(dsh_dir.join("AGENTS.md")).unwrap(),
         "hand edited\n"
+    );
+}
+
+/// Issue #162: DSH Desktop boots only `profiles/desktop`. A Switch deploy (which never
+/// passes `--profile`) lands there once DSH Desktop has created that profile, and an
+/// older deploy in `profiles/web` reads as "in the wrong profile" until a redeploy
+/// moves it.
+#[tokio::test]
+async fn real_dsh_targets_the_desktop_profile_and_moves_an_old_web_deploy() {
+    if !python3_available() {
+        return;
+    }
+    let Some(cli) = vendor("dsh/dsh-keysmith.py") else {
+        return;
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let user_home = tmp.path().join("home");
+    let dsh_dir = user_home.join(".dsh");
+    std::fs::create_dir_all(dsh_dir.join("profiles")).unwrap();
+    let paths = AppPaths::from_home(tmp.path().join("switch"));
+    paths.ensure().unwrap();
+    let store = Store::open(&paths).unwrap();
+    let opts = AdapterOptions {
+        home: Some(user_home.clone()),
+        cli_override: Some(cli),
+        ..AdapterOptions::default()
+    };
+
+    // No DSH Desktop yet: the deploy goes to `web`, as 0.4.0 did.
+    let first = keysmith_switch_lib::harness::deploy_harness_with(
+        &store,
+        ToolKind::Dsh,
+        &opts,
+        Some("# web first\n".into()),
+    )
+    .await
+    .unwrap();
+    assert!(first.ok, "{first:?}");
+    let web_plugin = dsh_dir.join("profiles/web/node_modules/dsh-keysmith");
+    assert!(web_plugin.join("lib/contract.md").is_file());
+
+    // DSH Desktop's first launch seeds `profiles/desktop` from the web template.
+    let desktop = dsh_dir.join("profiles/desktop");
+    std::fs::create_dir_all(&desktop).unwrap();
+    std::fs::write(
+        desktop.join("package.json"),
+        "{\n  \"name\": \"dsh-profile-desktop\",\n  \"private\": true,\n  \"dependencies\": {},\n  \"dsh\": {\"profile\": {\"bundles\": [\"@deepseek-ai/dsh-base\", \"@deepseek-ai/dsh-web-app\"]}}\n}\n",
+    )
+    .unwrap();
+    std::fs::write(desktop.join("cordis.patch.yml"), "# Your patch layer\n[]\n").unwrap();
+
+    let state = keysmith_switch_lib::harness::harness_state(&store, ToolKind::Dsh, &opts)
+        .await
+        .unwrap();
+    assert!(state.deployed && state.drifted, "{state:?}");
+    assert!(
+        state.wrong_profile,
+        "a web deploy is in the wrong profile now: {state:?}"
+    );
+    assert_eq!(
+        state.prompt_id, first.prompt_id,
+        "the live prompt is still named"
+    );
+
+    let moved = keysmith_switch_lib::harness::deploy_harness_with(
+        &store,
+        ToolKind::Dsh,
+        &opts,
+        Some("# desktop now\n".into()),
+    )
+    .await
+    .unwrap();
+    assert!(moved.ok, "{moved:?}");
+    assert_eq!(
+        std::fs::read_to_string(desktop.join("node_modules/dsh-keysmith/lib/contract.md")).unwrap(),
+        "# desktop now\n"
+    );
+    let pkg: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(desktop.join("package.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        pkg["dsh"]["profile"]["bundles"],
+        serde_json::json!([
+            "@deepseek-ai/dsh-base",
+            "@deepseek-ai/dsh-web-app",
+            "dsh-keysmith"
+        ])
+    );
+    assert!(!web_plugin.exists(), "the move takes the plugin out of web");
+
+    let after = keysmith_switch_lib::harness::harness_state(&store, ToolKind::Dsh, &opts)
+        .await
+        .unwrap();
+    assert!(
+        after.deployed && !after.drifted && !after.wrong_profile,
+        "{after:?}"
+    );
+    assert_eq!(after.prompt_id, moved.prompt_id);
+
+    let status = tool_status(&store, ToolKind::Dsh, Scope::User, None, &opts)
+        .await
+        .unwrap();
+    assert!(
+        status
+            .target_paths
+            .iter()
+            .any(|entry| entry.role == "instruction"
+                && std::path::Path::new(&entry.path).starts_with(&desktop)
+                && entry.exists),
+        "{:?}",
+        status.target_paths
+    );
+
+    // A desktop-profile prompt is an import candidate too.
+    let candidates = keysmith_switch_lib::data::scan_import_candidates(&store, &user_home).unwrap();
+    assert!(
+        candidates.iter().any(|item| item.tool == ToolKind::Dsh
+            && std::path::Path::new(&item.path).starts_with(&desktop)),
+        "{candidates:?}"
+    );
+
+    let off = keysmith_switch_lib::ops::plan_deactivate(
+        &store,
+        keysmith_switch_lib::models::PlanDeactivateInput {
+            tool: ToolKind::Dsh,
+            scope: Scope::User,
+            project_dir: None,
+            prompt_id: None,
+            salvage_config: false,
+        },
+        &opts,
+    )
+    .await
+    .unwrap();
+    assert!(off.envelope.ok, "{:?}", off.envelope);
+    let done = keysmith_switch_lib::ops::confirm_deactivate(&store, &off.operation_id, &opts)
+        .await
+        .unwrap();
+    assert!(done.envelope.ok, "{:?}", done.envelope);
+    assert!(!desktop.join("node_modules/dsh-keysmith").exists());
+    // DSH refuses a comment-only profile patch; the uninstall leaves a YAML array.
+    // The CLI writes text mode, so Windows gets CRLF (as 0.4.0 did); YAML reads both.
+    assert_eq!(
+        std::fs::read_to_string(desktop.join("cordis.patch.yml"))
+            .unwrap()
+            .replace("\r\n", "\n"),
+        "# Your patch layer\n[]\n"
     );
 }

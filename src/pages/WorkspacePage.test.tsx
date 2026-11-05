@@ -354,6 +354,32 @@ describe("Workspace: Quick Deploy composer", () => {
     expect(screen.queryByText("No prompt deployed yet")).toBeNull();
   });
 
+  it("says a DSH deploy sits in the wrong profile and offers the redeploy that moves it (#162)", async () => {
+    listTools.mockResolvedValue({
+      tools: [{ id: "dsh", name: "DSH", adapterVersion: "0.4.1", available: true, unavailableReason: null, supportedScopes: ["user"], cliPath: null }],
+    });
+    getHarnessState.mockResolvedValue({ tool: "dsh", deployed: true, drifted: true, wrongProfile: true, error: null, promptId: "d", promptTitle: "DSH Keysmith" });
+    listPrompts.mockResolvedValue({ prompts: [prompt({ id: "d", title: "DSH Keysmith", tool: "dsh" })] });
+    listActivations.mockResolvedValue({
+      activations: [{ id: "x", tool: "dsh", promptId: "d", promptTitle: "DSH Keysmith", scope: "user", projectDir: "", active: true, createdAt: "2026-10-26T05:46:14Z", fingerprint: null }],
+    });
+    await renderPage({ tool: "dsh" });
+    expect(await screen.findByTestId("agent-wrong-profile")).toHaveTextContent("DSH 桌面版读不到");
+    // Not the "changed by hand" message: nothing was edited.
+    expect(screen.queryByTestId("agent-drifted")).toBeNull();
+    fireEvent.click(screen.getByTestId("hero-redeploy"));
+    await waitFor(() => expect(planActivate).toHaveBeenCalledWith({ promptId: "d", scope: "user" }));
+  });
+
+  it("keeps the hand-edit message for ordinary DSH drift", async () => {
+    getHarnessState.mockResolvedValue({ tool: "dsh", deployed: true, drifted: true, wrongProfile: false, error: null, promptId: "d", promptTitle: "DSH Keysmith" });
+    listPrompts.mockResolvedValue({ prompts: [prompt({ id: "d", title: "DSH Keysmith", tool: "dsh" })] });
+    await renderPage({ tool: "dsh" });
+    expect(await screen.findByTestId("agent-drifted")).toBeInTheDocument();
+    expect(screen.queryByTestId("agent-wrong-profile")).toBeNull();
+    expect(screen.queryByTestId("hero-redeploy")).toBeNull();
+  });
+
   it("shows the remove button as working while its plan is prepared", async () => {
     getHarnessState.mockResolvedValue({ tool: "codex", deployed: true, error: null, promptId: "a", promptTitle: "Live one" });
     let release!: (value: unknown) => void;

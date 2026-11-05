@@ -18,6 +18,9 @@ export function AgentHero({
   name,
   machine,
   drifted = false,
+  wrongProfile = false,
+  onRedeploy,
+  redeploying = false,
   reading,
   statusError,
   deployedTitle,
@@ -37,6 +40,11 @@ export function AgentHero({
   machine: AgentMachine;
   /** Deployed, but the agent's config was changed by hand since the deploy. */
   drifted?: boolean;
+  /** DSH: deployed into a profile the host does not boot. Says so instead of "changed by hand". */
+  wrongProfile?: boolean;
+  /** Plan the live prompt's deploy again (offered with `wrongProfile`). */
+  onRedeploy?: () => void;
+  redeploying?: boolean;
   reading: boolean;
   statusError: string | null | undefined;
   /** Title of the library prompt that is live, or null when it is not known. */
@@ -150,7 +158,13 @@ export function AgentHero({
                 )}
               </p>
             ) : null}
-            {showLive && drifted ? (
+            {showLive && drifted && wrongProfile ? (
+              <p className="mt-1.5 flex items-start gap-1.5 text-[12px] text-warning" data-testid="agent-wrong-profile">
+                <IconAlert size={13} className="mt-px shrink-0" />
+                <span className="min-w-0">{t("hero.wrongProfile")}</span>
+              </p>
+            ) : null}
+            {showLive && drifted && !wrongProfile ? (
               <p className="mt-1.5 flex items-start gap-1.5 text-[12px] text-warning" data-testid="agent-drifted">
                 <IconAlert size={13} className="mt-px shrink-0" />
                 <span className="min-w-0">{t("hero.drifted")}</span>
@@ -174,6 +188,19 @@ export function AgentHero({
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
+          {showLive && drifted && wrongProfile && onRedeploy ? (
+            <Button
+              size="md"
+              variant="primary"
+              loading={redeploying}
+              disabled={removeDisabled && !redeploying}
+              data-testid="hero-redeploy"
+              onClick={onRedeploy}
+            >
+              <IconRefresh size={14} />
+              {t("hero.redeploy")}
+            </Button>
+          ) : null}
           {showLive && onEdit ? (
             <Button
               size="md"

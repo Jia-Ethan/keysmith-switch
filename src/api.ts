@@ -192,6 +192,8 @@ export interface HarnessState {
   deployed: boolean;
   /** The agent's config was changed by hand after the last deploy. */
   drifted?: boolean;
+  /** DSH only: deployed into a profile the host does not boot (#162); a redeploy moves it. */
+  wrongProfile?: boolean;
   error: string | null;
   /** The library prompt the machine is running, when the backend could identify it. */
   promptId?: string | null;
