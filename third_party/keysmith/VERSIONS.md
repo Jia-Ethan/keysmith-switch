@@ -9,7 +9,7 @@ Keysmith Switch.
 | claude | claude/claude-instruct.py | `7dbfa253` (`v7.2`) | v7.2 |
 | codex | codex/codex-instruct.py | `33cf4049` (`v0.6.0`) | v0.6.0 |
 | grok | grok/grok-keysmith.py | `d87def09` (`v0.8.0`) | v0.8.0 |
-| zcode | zcode/zcode-keysmith.py | `f67d31c0bfbe21d64ec618b926c32e353c5e2aed` (upstream [#45](https://github.com/Jia-Ethan/zcode-keysmith/pull/45); v0.3.5 tag pending) | 0.3.5 |
+| zcode | zcode/zcode-keysmith.py | `91050cd3d625543cc3a937ac64739313430256b3` (merged [#45](https://github.com/Jia-Ethan/zcode-keysmith/pull/45); v0.3.5 tag pending) | 0.3.5 |
 | pi | pi/pi-keysmith.py | `37f69cac` (`v0.2.0`) | v0.2.0 |
 | dsh | dsh/dsh-keysmith.py | `7dc6424` (`v0.4.1`, merged [#7](https://github.com/Jia-Ethan/dsh-keysmith/pull/7)) | v0.4.1 |
 
