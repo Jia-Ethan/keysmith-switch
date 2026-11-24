@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { RewriteView, RuleTable } from "../types";
+import { DEFAULT_SETTINGS, type RewriteView, type RuleTable } from "../types";
 import { RewritePage, ruleDiff } from "./RewritePage";
 
 const rewriteState = vi.fn();
@@ -19,6 +19,7 @@ const rewriteConnectGrok = vi.fn();
 const rewriteDisconnectGrok = vi.fn();
 const rewriteDisconnectZcode = vi.fn();
 const rewriteSetTableTools = vi.fn();
+const listRuntimes = vi.fn();
 
 vi.mock("../api", () => ({
   rewriteState: (...a: unknown[]) => rewriteState(...a),
@@ -37,6 +38,7 @@ vi.mock("../api", () => ({
   rewriteDisconnectGrok: (...a: unknown[]) => rewriteDisconnectGrok(...a),
   rewriteDisconnectZcode: (...a: unknown[]) => rewriteDisconnectZcode(...a),
   rewriteSetTableTools: (...a: unknown[]) => rewriteSetTableTools(...a),
+  listRuntimes: (...a: unknown[]) => listRuntimes(...a),
 }));
 
 const mine: RuleTable = {
@@ -118,6 +120,18 @@ describe("RewritePage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     rewriteState.mockResolvedValue(view());
+    listRuntimes.mockResolvedValue({
+      runtimes: [{
+        target: { kind: "native" },
+        label: "Windows local",
+        isDefault: true,
+        state: "running",
+        wslVersion: null,
+        available: true,
+        unavailableReason: null,
+        home: "C:\\Users\\test",
+      }],
+    });
     try {
       localStorage.clear();
     } catch {
@@ -155,6 +169,28 @@ describe("RewritePage", () => {
     await waitFor(() => expect(rewriteSetSwitches).toHaveBeenCalledWith({ enabled: true }));
     await waitFor(() => expect(screen.getByTestId("rewrite-master")).toBeChecked());
     expect(screen.queryByTestId("rewrite-paused")).not.toBeInTheDocument();
+  });
+
+  it("keeps WSL rewrite reads and link changes on the selected distribution and user", async () => {
+    const target = { kind: "wsl", distribution: "Ubuntu-24.04", user: "root" } as const;
+    const onSettingsSave = vi.fn().mockResolvedValue({ ...DEFAULT_SETTINGS, rewriteRuntimeTarget: target });
+    listRuntimes.mockResolvedValue({
+      runtimes: [
+        { target: { kind: "native" }, label: "Windows local", isDefault: true, state: "running", wslVersion: null, available: true, unavailableReason: null, home: "C:\\Users\\test" },
+        { target, label: "WSL2 · Ubuntu-24.04 · root", isDefault: false, state: "running", wslVersion: 2, available: true, unavailableReason: null, home: "/root" },
+      ],
+    });
+    rewriteConnectCodex.mockResolvedValue(view());
+    render(<RewritePage toast={toast as never} settings={DEFAULT_SETTINGS} onSettingsSave={onSettingsSave} />);
+
+    fireEvent.click(await screen.findByTestId("rewrite-runtime-selector"));
+    fireEvent.click(await screen.findByTestId("rewrite-runtime-option-wsl-Ubuntu-24-04-root"));
+    await waitFor(() => expect(onSettingsSave).toHaveBeenCalledWith({ rewriteRuntimeTarget: target }));
+    await waitFor(() => expect(rewriteState).toHaveBeenCalledWith(target));
+
+    fireEvent.click(await screen.findByTestId("rewrite-connect-codex"));
+    fireEvent.click(screen.getByTestId("rewrite-connect-confirm"));
+    await waitFor(() => expect(rewriteConnectCodex).toHaveBeenCalledWith(target));
   });
 
   it("adds, validates and saves rules", async () => {

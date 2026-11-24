@@ -284,8 +284,9 @@ export function installAppUpdate(channel?: UpdateChannel): Promise<UpdateInstall
 export function planOfficialAction(
   product: OfficialProductId,
   action: OfficialAction,
+  runtimeTarget?: RuntimeTarget,
 ): Promise<OfficialPlan> {
-  return call("plan_official_action", { product, action });
+  return call("plan_official_action", { product, action, runtimeTarget });
 }
 
 export function confirmOfficialAction(planId: string): Promise<OfficialResult> {
@@ -303,8 +304,12 @@ export function listAdvancedTools(): Promise<{
   return call("list_advanced_tools", {});
 }
 
-export function runAdvanced(kind: AdvancedKind, args: Record<string, string>): Promise<AdvancedResult> {
-  return call("run_advanced", { kind, args });
+export function runAdvanced(
+  kind: AdvancedKind,
+  args: Record<string, string>,
+  runtimeTarget?: RuntimeTarget,
+): Promise<AdvancedResult> {
+  return call("run_advanced", { kind, args, runtimeTarget });
 }
 
 export function getStartupReport(): Promise<FirstRunReport> {
@@ -376,13 +381,13 @@ export function markFirstRunDone(): Promise<Settings> {
 }
 
 /** The last verified list of extension packs; never touches the network. */
-export function extensionsState(): Promise<ExtensionsView> {
-  return call("extensions_state", {});
+export function extensionsState(runtimeTarget?: RuntimeTarget): Promise<ExtensionsView> {
+  return call("extensions_state", { runtimeTarget });
 }
 
 /** Ask the network. Needs extensions to be switched on. */
-export function extensionsRefresh(): Promise<ExtensionsView> {
-  return call("extensions_refresh", {});
+export function extensionsRefresh(runtimeTarget?: RuntimeTarget): Promise<ExtensionsView> {
+  return call("extensions_refresh", { runtimeTarget });
 }
 
 /** The announcements known now; never touches the network. */
@@ -401,8 +406,8 @@ export function markAnnouncements(ids: string[], dismiss = false): Promise<Annou
 }
 
 /** `enable` switches a newly installed rule table on; prompt packs ignore it. */
-export function installExtension(packId: string, enable = false): Promise<ExtensionChange> {
-  return call("extension_install", { packId, enable });
+export function installExtension(packId: string, enable = false, runtimeTarget?: RuntimeTarget): Promise<ExtensionChange> {
+  return call("extension_install", { packId, enable, runtimeTarget });
 }
 
 /** The rules a rule pack would add, read from the verified archive; installs nothing. */
@@ -411,22 +416,22 @@ export function previewExtensionRules(packId: string): Promise<RulePreview> {
 }
 
 /** What installing or updating a harness pack would write, file by file; writes nothing. */
-export function planHarness(packId: string): Promise<HarnessPlan> {
-  return call("extension_plan_harness", { packId });
+export function planHarness(packId: string, runtimeTarget?: RuntimeTarget): Promise<HarnessPlan> {
+  return call("extension_plan_harness", { packId, runtimeTarget });
 }
 
 /** Write the plan the person read; refused if the pack or the disk changed since. */
-export function confirmHarness(packId: string, planId: string): Promise<HarnessChange> {
-  return call("extension_confirm_harness", { packId, planId });
+export function confirmHarness(packId: string, planId: string, runtimeTarget?: RuntimeTarget): Promise<HarnessChange> {
+  return call("extension_confirm_harness", { packId, planId, runtimeTarget });
 }
 
-export function uninstallExtension(packId: string): Promise<ExtensionChange> {
-  return call("extension_uninstall", { packId });
+export function uninstallExtension(packId: string, runtimeTarget?: RuntimeTarget): Promise<ExtensionChange> {
+  return call("extension_uninstall", { packId, runtimeTarget });
 }
 
 /** Preview a cleanup: what would be removed, nothing is changed. */
-export function planCleanup(tool: ToolId): Promise<CleanupPlan> {
-  return call("plan_cleanup", { tool });
+export function planCleanup(tool: ToolId, runtimeTarget?: RuntimeTarget): Promise<CleanupPlan> {
+  return call("plan_cleanup", { tool, runtimeTarget });
 }
 
 /** Save a snapshot, then remove the deployment (and Claude Code's user-level memory file). */
@@ -451,8 +456,8 @@ export function deleteSnapshot(snapshotId: string): Promise<OkResult> {
 }
 
 /** Input rewrite rules, switches and Codex link state. Reads files only. */
-export function rewriteState(): Promise<RewriteView> {
-  return call("rewrite_state", {});
+export function rewriteState(runtimeTarget?: RuntimeTarget): Promise<RewriteView> {
+  return call("rewrite_state", { runtimeTarget });
 }
 
 export function rewriteSetSwitches(input: {
@@ -461,65 +466,65 @@ export function rewriteSetSwitches(input: {
   claudeEnabled?: boolean;
   grokEnabled?: boolean;
   zcodeEnabled?: boolean;
-}): Promise<RewriteView> {
-  return call("rewrite_set_switches", input);
+}, runtimeTarget?: RuntimeTarget): Promise<RewriteView> {
+  return call("rewrite_set_switches", { ...input, runtimeTarget });
 }
 
 /** Narrow a rule table to some agents, or null for every agent. */
-export function rewriteConnectClaude(): Promise<RewriteView> {
-  return call("rewrite_connect_claude", {});
+export function rewriteConnectClaude(runtimeTarget?: RuntimeTarget): Promise<RewriteView> {
+  return call("rewrite_connect_claude", { runtimeTarget });
 }
 
-export function rewriteDisconnectClaude(): Promise<RewriteView> {
-  return call("rewrite_disconnect_claude", {});
+export function rewriteDisconnectClaude(runtimeTarget?: RuntimeTarget): Promise<RewriteView> {
+  return call("rewrite_disconnect_claude", { runtimeTarget });
 }
 
-export function rewriteConnectZcode(): Promise<RewriteView> {
-  return call("rewrite_connect_zcode", {});
+export function rewriteConnectZcode(runtimeTarget?: RuntimeTarget): Promise<RewriteView> {
+  return call("rewrite_connect_zcode", { runtimeTarget });
 }
 
-export function rewriteDisconnectZcode(): Promise<RewriteView> {
-  return call("rewrite_disconnect_zcode", {});
+export function rewriteDisconnectZcode(runtimeTarget?: RuntimeTarget): Promise<RewriteView> {
+  return call("rewrite_disconnect_zcode", { runtimeTarget });
 }
 
-export function rewriteConnectGrok(): Promise<RewriteView> {
-  return call("rewrite_connect_grok", {});
+export function rewriteConnectGrok(runtimeTarget?: RuntimeTarget): Promise<RewriteView> {
+  return call("rewrite_connect_grok", { runtimeTarget });
 }
 
-export function rewriteDisconnectGrok(): Promise<RewriteView> {
-  return call("rewrite_disconnect_grok", {});
+export function rewriteDisconnectGrok(runtimeTarget?: RuntimeTarget): Promise<RewriteView> {
+  return call("rewrite_disconnect_grok", { runtimeTarget });
 }
 
-export function rewriteSetTableTools(id: string, tools: ToolId[] | null): Promise<RewriteView> {
-  return call("rewrite_set_table_tools", { id, tools });
+export function rewriteSetTableTools(id: string, tools: ToolId[] | null, runtimeTarget?: RuntimeTarget): Promise<RewriteView> {
+  return call("rewrite_set_table_tools", { id, tools, runtimeTarget });
 }
 
-export function rewriteSaveUserRules(rules: RewriteRule[]): Promise<RewriteView> {
-  return call("rewrite_save_user_rules", { rules });
+export function rewriteSaveUserRules(rules: RewriteRule[], runtimeTarget?: RuntimeTarget): Promise<RewriteView> {
+  return call("rewrite_save_user_rules", { rules, runtimeTarget });
 }
 
-export function rewriteSetTableEnabled(id: string, enabled: boolean): Promise<RewriteView> {
-  return call("rewrite_set_table_enabled", { id, enabled });
+export function rewriteSetTableEnabled(id: string, enabled: boolean, runtimeTarget?: RuntimeTarget): Promise<RewriteView> {
+  return call("rewrite_set_table_enabled", { id, enabled, runtimeTarget });
 }
 
-export function rewriteReorderTables(ids: string[]): Promise<RewriteView> {
-  return call("rewrite_reorder_tables", { ids });
+export function rewriteReorderTables(ids: string[], runtimeTarget?: RuntimeTarget): Promise<RewriteView> {
+  return call("rewrite_reorder_tables", { ids, runtimeTarget });
 }
 
-export function rewriteCopyToUser(id: string): Promise<RewriteView> {
-  return call("rewrite_copy_to_user", { id });
+export function rewriteCopyToUser(id: string, runtimeTarget?: RuntimeTarget): Promise<RewriteView> {
+  return call("rewrite_copy_to_user", { id, runtimeTarget });
 }
 
-export function rewriteAcceptUpdate(id: string): Promise<RewriteView> {
-  return call("rewrite_accept_update", { id });
+export function rewriteAcceptUpdate(id: string, runtimeTarget?: RuntimeTarget): Promise<RewriteView> {
+  return call("rewrite_accept_update", { id, runtimeTarget });
 }
 
 /** Start the relay and point Codex's config at it. */
-export function rewriteConnectCodex(): Promise<RewriteView> {
-  return call("rewrite_connect_codex", {});
+export function rewriteConnectCodex(runtimeTarget?: RuntimeTarget): Promise<RewriteView> {
+  return call("rewrite_connect_codex", { runtimeTarget });
 }
 
 /** Point Codex back at its own provider and stop the relay. Rules stay. */
-export function rewriteDisconnectCodex(): Promise<RewriteView> {
-  return call("rewrite_disconnect_codex", {});
+export function rewriteDisconnectCodex(runtimeTarget?: RuntimeTarget): Promise<RewriteView> {
+  return call("rewrite_disconnect_codex", { runtimeTarget });
 }

@@ -8,7 +8,7 @@ use keysmith_rewrite::{validate_table, Rule, Tool};
 
 use super::Store;
 use crate::error::{Error, Result};
-use crate::models::now_rfc3339;
+use crate::models::{now_rfc3339, RuntimeTarget};
 
 pub const USER_TABLE_ID: &str = "user";
 
@@ -47,6 +47,27 @@ pub struct RuleTable {
     pub rules: Vec<Rule>,
     /// A pack update that waits for the person to accept it.
     pub pending: Option<PendingUpdate>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RewriteSwitches {
+    pub enabled: bool,
+    pub codex_enabled: bool,
+    pub claude_enabled: bool,
+    pub grok_enabled: bool,
+    pub zcode_enabled: bool,
+}
+
+impl Default for RewriteSwitches {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            codex_enabled: true,
+            claude_enabled: true,
+            grok_enabled: true,
+            zcode_enabled: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -110,14 +131,20 @@ fn invalid_rules(error: keysmith_rewrite::RuleError) -> Error {
 impl Store {
     /// Every table, "My rules" first and the packs after it in priority order.
     pub fn list_rule_tables(&self) -> Result<Vec<RuleTable>> {
+        self.list_rule_tables_for(&RuntimeTarget::Native)
+    }
+
+    pub fn list_rule_tables_for(&self, runtime_target: &RuntimeTarget) -> Result<Vec<RuleTable>> {
+        let runtime_key = runtime_target.storage_key();
         let conn = self.conn()?;
         let mut stmt = conn.prepare(
             "SELECT id, kind, title, enabled, priority, pack_id, pack_version, pending_json, tools_json, opaque
              FROM rule_tables
+             WHERE runtime_target = ?1
              ORDER BY CASE kind WHEN 'user' THEN 0 ELSE 1 END, priority, created_at",
         )?;
         let mut tables = stmt
-            .query_map([], |row| {
+            .query_map(params![runtime_key], |row| {
                 let kind: String = row.get(1)?;
                 let pending: Option<String> = row.get(7)?;
                 let tools: Option<String> = row.get(8)?;
@@ -143,11 +170,12 @@ impl Store {
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         let mut rules = conn.prepare(
-            "SELECT from_text, to_text FROM rules WHERE table_id = ?1 ORDER BY position",
+            "SELECT from_text, to_text FROM rules
+             WHERE table_id = ?1 AND runtime_target = ?2 ORDER BY position",
         )?;
         for table in &mut tables {
             table.rules = rules
-                .query_map(params![table.id], |row| {
+                .query_map(params![table.id, runtime_key], |row| {
                     Ok(Rule::new(
                         row.get::<_, String>(0)?,
                         row.get::<_, String>(1)?,
@@ -183,8 +211,16 @@ impl Store {
 
     /// The rules of every enabled table that applies to `tool`, highest priority first.
     pub fn active_rules(&self, tool: Tool) -> Result<Vec<Rule>> {
+        self.active_rules_for(tool, &RuntimeTarget::Native)
+    }
+
+    pub fn active_rules_for(
+        &self,
+        tool: Tool,
+        runtime_target: &RuntimeTarget,
+    ) -> Result<Vec<Rule>> {
         Ok(self
-            .list_rule_tables()?
+            .list_rule_tables_for(runtime_target)?
             .into_iter()
             .filter(|table| table.enabled && table.applies_to(tool))
             .flat_map(|table| table.rules)
@@ -194,6 +230,15 @@ impl Store {
     /// Narrow a table to some agents, or `None` for every agent. An empty list is refused:
     /// turn the table off instead.
     pub fn set_rule_table_tools(&self, id: &str, tools: Option<&[Tool]>) -> Result<Vec<RuleTable>> {
+        self.set_rule_table_tools_for(id, tools, &RuntimeTarget::Native)
+    }
+
+    pub fn set_rule_table_tools_for(
+        &self,
+        id: &str,
+        tools: Option<&[Tool]>,
+        runtime_target: &RuntimeTarget,
+    ) -> Result<Vec<RuleTable>> {
         if tools.is_some_and(<[Tool]>::is_empty) {
             return Err(Error::invalid(
                 "a rule table must apply to at least one agent",
@@ -203,72 +248,118 @@ impl Store {
             let mut conn = self.conn()?;
             let tx = conn.transaction()?;
             if id == USER_TABLE_ID {
-                ensure_user_table(&tx)?;
+                ensure_user_table(&tx, runtime_target)?;
             }
             let changed = tx.execute(
-                "UPDATE rule_tables SET tools_json = ?2, updated_at = ?3 WHERE id = ?1",
-                params![id, tools.map(tools_json), now_rfc3339()],
+                "UPDATE rule_tables SET tools_json = ?3, updated_at = ?4
+                 WHERE id = ?1 AND runtime_target = ?2",
+                params![
+                    id,
+                    runtime_target.storage_key(),
+                    tools.map(tools_json),
+                    now_rfc3339()
+                ],
             )?;
             if changed == 0 {
                 return Err(Error::invalid("rule table not found"));
             }
             tx.commit()?;
         }
-        self.list_rule_tables()
+        self.list_rule_tables_for(runtime_target)
     }
 
     /// Replace "My rules" with these, in this order.
     pub fn save_user_rules(&self, rules: &[Rule]) -> Result<Vec<RuleTable>> {
+        self.save_user_rules_for(rules, &RuntimeTarget::Native)
+    }
+
+    pub fn save_user_rules_for(
+        &self,
+        rules: &[Rule],
+        runtime_target: &RuntimeTarget,
+    ) -> Result<Vec<RuleTable>> {
         validate_table(rules).map_err(invalid_rules)?;
         {
             let mut conn = self.conn()?;
             let tx = conn.transaction()?;
-            ensure_user_table(&tx)?;
-            replace_rules(&tx, USER_TABLE_ID, rules)?;
-            touch(&tx, USER_TABLE_ID)?;
+            ensure_user_table(&tx, runtime_target)?;
+            replace_rules(&tx, USER_TABLE_ID, runtime_target, rules)?;
+            touch(&tx, USER_TABLE_ID, runtime_target)?;
             tx.commit()?;
         }
-        self.list_rule_tables()
+        self.list_rule_tables_for(runtime_target)
     }
 
     pub fn set_rule_table_enabled(&self, id: &str, enabled: bool) -> Result<Vec<RuleTable>> {
+        self.set_rule_table_enabled_for(id, enabled, &RuntimeTarget::Native)
+    }
+
+    pub fn set_rule_table_enabled_for(
+        &self,
+        id: &str,
+        enabled: bool,
+        runtime_target: &RuntimeTarget,
+    ) -> Result<Vec<RuleTable>> {
         {
             let mut conn = self.conn()?;
             let tx = conn.transaction()?;
             if id == USER_TABLE_ID {
-                ensure_user_table(&tx)?;
+                ensure_user_table(&tx, runtime_target)?;
             }
             let changed = tx.execute(
-                "UPDATE rule_tables SET enabled = ?2, updated_at = ?3 WHERE id = ?1",
-                params![id, enabled as i64, now_rfc3339()],
+                "UPDATE rule_tables SET enabled = ?3, updated_at = ?4
+                 WHERE id = ?1 AND runtime_target = ?2",
+                params![
+                    id,
+                    runtime_target.storage_key(),
+                    enabled as i64,
+                    now_rfc3339()
+                ],
             )?;
             if changed == 0 {
                 return Err(Error::invalid("rule table not found"));
             }
             tx.commit()?;
         }
-        self.list_rule_tables()
+        self.list_rule_tables_for(runtime_target)
     }
 
     /// Put the pack tables in this order. "My rules" always stays first.
     pub fn reorder_rule_tables(&self, ids: &[String]) -> Result<Vec<RuleTable>> {
+        self.reorder_rule_tables_for(ids, &RuntimeTarget::Native)
+    }
+
+    pub fn reorder_rule_tables_for(
+        &self,
+        ids: &[String],
+        runtime_target: &RuntimeTarget,
+    ) -> Result<Vec<RuleTable>> {
         {
             let mut conn = self.conn()?;
             let tx = conn.transaction()?;
             for (index, id) in ids.iter().enumerate() {
                 tx.execute(
-                    "UPDATE rule_tables SET priority = ?2 WHERE id = ?1 AND kind = 'pack'",
-                    params![id, index as i64 + 1],
+                    "UPDATE rule_tables SET priority = ?3
+                     WHERE id = ?1 AND runtime_target = ?2 AND kind = 'pack'",
+                    params![id, runtime_target.storage_key(), index as i64 + 1],
                 )?;
             }
             tx.commit()?;
         }
-        self.list_rule_tables()
+        self.list_rule_tables_for(runtime_target)
     }
 
     /// Append the rules of a pack table to "My rules", skipping text "My rules" already matches.
     pub fn copy_rules_to_user(&self, id: &str) -> Result<Vec<RuleTable>> {
-        let tables = self.list_rule_tables()?;
+        self.copy_rules_to_user_for(id, &RuntimeTarget::Native)
+    }
+
+    pub fn copy_rules_to_user_for(
+        &self,
+        id: &str,
+        runtime_target: &RuntimeTarget,
+    ) -> Result<Vec<RuleTable>> {
+        let tables = self.list_rule_tables_for(runtime_target)?;
         let source = tables
             .iter()
             .find(|table| table.id == id && table.kind == TableKind::Pack)
@@ -288,7 +379,7 @@ impl Store {
                 mine.push(rule.clone());
             }
         }
-        self.save_user_rules(&mine)
+        self.save_user_rules_for(&mine, runtime_target)
     }
 
     /// Install a pack table or update one that is not enabled. An enabled table keeps its
@@ -305,32 +396,60 @@ impl Store {
         enable: bool,
         opaque: bool,
     ) -> Result<bool> {
+        self.upsert_pack_rules_for(
+            pack_id,
+            version,
+            title,
+            rules,
+            tools,
+            enable,
+            opaque,
+            &RuntimeTarget::Native,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn upsert_pack_rules_for(
+        &self,
+        pack_id: &str,
+        version: &str,
+        title: &str,
+        rules: &[Rule],
+        tools: &[Tool],
+        enable: bool,
+        opaque: bool,
+        runtime_target: &RuntimeTarget,
+    ) -> Result<bool> {
         validate_table(rules).map_err(invalid_rules)?;
         let id = pack_table_id(pack_id);
+        let runtime_key = runtime_target.storage_key();
         let mut conn = self.conn()?;
         let tx = conn.transaction()?;
         let existing: Option<(bool, Option<String>)> = tx
             .query_row(
-                "SELECT enabled, pack_version FROM rule_tables WHERE id = ?1",
-                params![id],
+                "SELECT enabled, pack_version FROM rule_tables
+                 WHERE id = ?1 AND runtime_target = ?2",
+                params![id, runtime_key],
                 |row| Ok((row.get::<_, i64>(0)? != 0, row.get(1)?)),
             )
             .optional()?;
         let pending = match existing {
             None => {
                 let priority: i64 = tx.query_row(
-                    "SELECT COALESCE(MAX(priority), 0) + 1 FROM rule_tables WHERE kind = 'pack'",
-                    [],
+                    "SELECT COALESCE(MAX(priority), 0) + 1 FROM rule_tables
+                     WHERE runtime_target = ?1 AND kind = 'pack'",
+                    params![runtime_key],
                     |row| row.get(0),
                 )?;
                 let now = now_rfc3339();
                 tx.execute(
                     "INSERT INTO rule_tables
-                     (id, kind, title, enabled, priority, pack_id, pack_version, tools_json,
-                      opaque, created_at, updated_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)",
+                     (id, runtime_target, kind, title, enabled, priority, pack_id, pack_version,
+                      tools_json, opaque, created_at, updated_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)",
                     params![
                         id,
+                        runtime_key,
                         TableKind::Pack.as_str(),
                         title,
                         enable as i64,
@@ -342,7 +461,7 @@ impl Store {
                         now
                     ],
                 )?;
-                replace_rules(&tx, &id, rules)?;
+                replace_rules(&tx, &id, runtime_target, rules)?;
                 false
             }
             Some((enabled, current)) if enabled && current.as_deref() != Some(version) => {
@@ -354,19 +473,26 @@ impl Store {
                     opaque,
                 };
                 tx.execute(
-                    "UPDATE rule_tables SET pending_json = ?2, updated_at = ?3 WHERE id = ?1",
-                    params![id, serde_json::to_string(&pending)?, now_rfc3339()],
+                    "UPDATE rule_tables SET pending_json = ?3, updated_at = ?4
+                     WHERE id = ?1 AND runtime_target = ?2",
+                    params![
+                        id,
+                        runtime_key,
+                        serde_json::to_string(&pending)?,
+                        now_rfc3339()
+                    ],
                 )?;
                 true
             }
             Some(_) => {
                 tx.execute(
                     "UPDATE rule_tables
-                     SET title = ?2, pack_version = ?3, pending_json = NULL,
-                         enabled = MAX(enabled, ?4), opaque = ?5, updated_at = ?6
-                     WHERE id = ?1",
+                     SET title = ?3, pack_version = ?4, pending_json = NULL,
+                         enabled = MAX(enabled, ?5), opaque = ?6, updated_at = ?7
+                     WHERE id = ?1 AND runtime_target = ?2",
                     params![
                         id,
+                        runtime_key,
                         title,
                         version,
                         enable as i64,
@@ -374,7 +500,7 @@ impl Store {
                         now_rfc3339()
                     ],
                 )?;
-                replace_rules(&tx, &id, rules)?;
+                replace_rules(&tx, &id, runtime_target, rules)?;
                 false
             }
         };
@@ -384,13 +510,22 @@ impl Store {
 
     /// Switch an enabled pack table to the update it was holding.
     pub fn accept_pack_update(&self, id: &str) -> Result<Vec<RuleTable>> {
+        self.accept_pack_update_for(id, &RuntimeTarget::Native)
+    }
+
+    pub fn accept_pack_update_for(
+        &self,
+        id: &str,
+        runtime_target: &RuntimeTarget,
+    ) -> Result<Vec<RuleTable>> {
         {
             let mut conn = self.conn()?;
             let tx = conn.transaction()?;
             let pending: Option<String> = tx
                 .query_row(
-                    "SELECT pending_json FROM rule_tables WHERE id = ?1 AND kind = 'pack'",
-                    params![id],
+                    "SELECT pending_json FROM rule_tables
+                     WHERE id = ?1 AND runtime_target = ?2 AND kind = 'pack'",
+                    params![id, runtime_target.storage_key()],
                     |row| row.get(0),
                 )
                 .optional()?
@@ -401,23 +536,158 @@ impl Store {
             validate_table(&pending.rules).map_err(invalid_rules)?;
             tx.execute(
                 "UPDATE rule_tables
-                 SET title = ?2, pack_version = ?3, pending_json = NULL, opaque = ?4, updated_at = ?5
-                 WHERE id = ?1",
-                params![id, pending.title, pending.version, pending.opaque as i64, now_rfc3339()],
+                 SET title = ?3, pack_version = ?4, pending_json = NULL,
+                     opaque = ?5, updated_at = ?6
+                 WHERE id = ?1 AND runtime_target = ?2",
+                params![
+                    id,
+                    runtime_target.storage_key(),
+                    pending.title,
+                    pending.version,
+                    pending.opaque as i64,
+                    now_rfc3339()
+                ],
             )?;
-            replace_rules(&tx, id, &pending.rules)?;
+            replace_rules(&tx, id, runtime_target, &pending.rules)?;
             tx.commit()?;
         }
-        self.list_rule_tables()
+        self.list_rule_tables_for(runtime_target)
     }
 
     pub fn remove_pack_rules(&self, pack_id: &str) -> Result<()> {
+        self.remove_pack_rules_for(pack_id, &RuntimeTarget::Native)
+    }
+
+    pub fn remove_pack_rules_for(
+        &self,
+        pack_id: &str,
+        runtime_target: &RuntimeTarget,
+    ) -> Result<()> {
         let conn = self.conn()?;
         conn.execute(
-            "DELETE FROM rule_tables WHERE id = ?1 AND kind = 'pack'",
-            params![pack_table_id(pack_id)],
+            "DELETE FROM rule_tables
+             WHERE id = ?1 AND runtime_target = ?2 AND kind = 'pack'",
+            params![pack_table_id(pack_id), runtime_target.storage_key()],
         )?;
         Ok(())
+    }
+
+    pub fn rewrite_switches(&self, runtime_target: &RuntimeTarget) -> Result<RewriteSwitches> {
+        let conn = self.conn()?;
+        conn.query_row(
+            "SELECT enabled, codex_enabled, claude_enabled, grok_enabled, zcode_enabled
+             FROM rewrite_profiles WHERE runtime_target = ?1",
+            params![runtime_target.storage_key()],
+            |row| {
+                Ok(RewriteSwitches {
+                    enabled: row.get::<_, i64>(0)? != 0,
+                    codex_enabled: row.get::<_, i64>(1)? != 0,
+                    claude_enabled: row.get::<_, i64>(2)? != 0,
+                    grok_enabled: row.get::<_, i64>(3)? != 0,
+                    zcode_enabled: row.get::<_, i64>(4)? != 0,
+                })
+            },
+        )
+        .optional()
+        .map(|value| value.unwrap_or_default())
+        .map_err(Error::from)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn update_rewrite_switches(
+        &self,
+        runtime_target: &RuntimeTarget,
+        enabled: Option<bool>,
+        codex_enabled: Option<bool>,
+        claude_enabled: Option<bool>,
+        grok_enabled: Option<bool>,
+        zcode_enabled: Option<bool>,
+    ) -> Result<RewriteSwitches> {
+        let current = self.rewrite_switches(runtime_target)?;
+        let next = RewriteSwitches {
+            enabled: enabled.unwrap_or(current.enabled),
+            codex_enabled: codex_enabled.unwrap_or(current.codex_enabled),
+            claude_enabled: claude_enabled.unwrap_or(current.claude_enabled),
+            grok_enabled: grok_enabled.unwrap_or(current.grok_enabled),
+            zcode_enabled: zcode_enabled.unwrap_or(current.zcode_enabled),
+        };
+        let mut conn = self.conn()?;
+        let tx = conn.transaction()?;
+        tx.execute(
+            "INSERT INTO rewrite_profiles (
+                runtime_target, enabled, codex_enabled, claude_enabled, grok_enabled,
+                zcode_enabled, updated_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(runtime_target) DO UPDATE SET
+                enabled = excluded.enabled,
+                codex_enabled = excluded.codex_enabled,
+                claude_enabled = excluded.claude_enabled,
+                grok_enabled = excluded.grok_enabled,
+                zcode_enabled = excluded.zcode_enabled,
+                updated_at = excluded.updated_at",
+            params![
+                runtime_target.storage_key(),
+                next.enabled as i64,
+                next.codex_enabled as i64,
+                next.claude_enabled as i64,
+                next.grok_enabled as i64,
+                next.zcode_enabled as i64,
+                now_rfc3339(),
+            ],
+        )?;
+        if runtime_target.is_native() {
+            for (key, value) in [
+                ("rewriteEnabled", next.enabled),
+                ("rewriteCodexEnabled", next.codex_enabled),
+                ("rewriteClaudeEnabled", next.claude_enabled),
+                ("rewriteGrokEnabled", next.grok_enabled),
+                ("rewriteZcodeEnabled", next.zcode_enabled),
+            ] {
+                tx.execute(
+                    "INSERT INTO settings (key, value) VALUES (?1, ?2)
+                     ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    params![key, value.to_string()],
+                )?;
+            }
+        }
+        tx.commit()?;
+        Ok(next)
+    }
+
+    pub fn rewrite_runtime_targets(&self) -> Result<Vec<RuntimeTarget>> {
+        let conn = self.conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT runtime_target FROM rewrite_profiles
+             UNION SELECT runtime_target FROM rule_tables",
+        )?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        let mut targets = Vec::new();
+        for row in rows {
+            if let Ok(target) = RuntimeTarget::from_storage_key(&row?) {
+                targets.push(target);
+            }
+        }
+        if !targets.contains(&RuntimeTarget::Native) {
+            targets.push(RuntimeTarget::Native);
+        }
+        Ok(targets)
+    }
+
+    pub fn has_pack_rules_for(
+        &self,
+        pack_id: &str,
+        runtime_target: &RuntimeTarget,
+    ) -> Result<bool> {
+        let conn = self.conn()?;
+        conn.query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM rule_tables
+                WHERE id = ?1 AND runtime_target = ?2 AND kind = 'pack'
+             )",
+            params![pack_table_id(pack_id), runtime_target.storage_key()],
+            |row| row.get(0),
+        )
+        .map_err(Error::from)
     }
 }
 
@@ -425,31 +695,48 @@ pub fn pack_table_id(pack_id: &str) -> String {
     format!("pack:{pack_id}")
 }
 
-fn ensure_user_table(tx: &Transaction<'_>) -> Result<()> {
+fn ensure_user_table(tx: &Transaction<'_>, runtime_target: &RuntimeTarget) -> Result<()> {
     let now = now_rfc3339();
     tx.execute(
-        "INSERT OR IGNORE INTO rule_tables (id, kind, title, enabled, priority, created_at, updated_at)
-         VALUES (?1, 'user', '', 1, 0, ?2, ?2)",
-        params![USER_TABLE_ID, now],
+        "INSERT OR IGNORE INTO rule_tables
+         (id, runtime_target, kind, title, enabled, priority, created_at, updated_at)
+         VALUES (?1, ?2, 'user', '', 1, 0, ?3, ?3)",
+        params![USER_TABLE_ID, runtime_target.storage_key(), now],
     )?;
     Ok(())
 }
 
-fn replace_rules(tx: &Transaction<'_>, table_id: &str, rules: &[Rule]) -> Result<()> {
-    tx.execute("DELETE FROM rules WHERE table_id = ?1", params![table_id])?;
+fn replace_rules(
+    tx: &Transaction<'_>,
+    table_id: &str,
+    runtime_target: &RuntimeTarget,
+    rules: &[Rule],
+) -> Result<()> {
+    let runtime_key = runtime_target.storage_key();
+    tx.execute(
+        "DELETE FROM rules WHERE table_id = ?1 AND runtime_target = ?2",
+        params![table_id, runtime_key],
+    )?;
     let mut insert = tx.prepare(
-        "INSERT INTO rules (table_id, position, from_text, to_text) VALUES (?1, ?2, ?3, ?4)",
+        "INSERT INTO rules (table_id, runtime_target, position, from_text, to_text)
+         VALUES (?1, ?2, ?3, ?4, ?5)",
     )?;
     for (position, rule) in rules.iter().enumerate() {
-        insert.execute(params![table_id, position as i64, rule.from, rule.to])?;
+        insert.execute(params![
+            table_id,
+            runtime_key,
+            position as i64,
+            rule.from,
+            rule.to
+        ])?;
     }
     Ok(())
 }
 
-fn touch(tx: &Transaction<'_>, id: &str) -> Result<()> {
+fn touch(tx: &Transaction<'_>, id: &str, runtime_target: &RuntimeTarget) -> Result<()> {
     tx.execute(
-        "UPDATE rule_tables SET updated_at = ?2 WHERE id = ?1",
-        params![id, now_rfc3339()],
+        "UPDATE rule_tables SET updated_at = ?3 WHERE id = ?1 AND runtime_target = ?2",
+        params![id, runtime_target.storage_key(), now_rfc3339()],
     )?;
     Ok(())
 }

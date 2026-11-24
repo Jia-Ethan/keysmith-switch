@@ -35,7 +35,7 @@
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 use crate::adapter::{AdapterOptions, Envelope};
@@ -44,8 +44,8 @@ use crate::error::{Error, Result};
 use crate::harness;
 use crate::lock::HomeLock;
 use crate::models::{
-    now_rfc3339, OperationKind, OperationStatus, PlanActivateInput, PlanDeactivateInput, Scope,
-    ToolKind, ToolStatus,
+    now_rfc3339, OperationKind, OperationStatus, PlanActivateInput, PlanDeactivateInput,
+    RuntimeTarget, Scope, ToolKind, ToolStatus,
 };
 use crate::ops;
 
@@ -355,6 +355,9 @@ pub struct ExtraMeta {
     pub path: String,
     pub files: u64,
     pub bytes: u64,
+    /// Runtime-side metadata fingerprint used to reject changes after a WSL preview.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fingerprint: Option<String>,
     /// `saved`, `saved-without-login` (a copy with every key removed) or `erased` (not saved).
     #[serde(default = "kind_saved")]
     pub kind: String,
@@ -371,6 +374,8 @@ pub struct MemoriesMeta {
     pub path: String,
     pub files: u64,
     pub bytes: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fingerprint: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -379,6 +384,9 @@ pub struct SnapshotMeta {
     pub id: String,
     pub created_at: String,
     pub tool: ToolKind,
+    /// Windows, or the exact WSL distribution and Linux user this state belongs to.
+    #[serde(default)]
+    pub runtime_target: RuntimeTarget,
     /// "cleanup" or "before-rollback".
     pub kind: String,
     pub deployment: DeploymentMeta,
@@ -396,6 +404,7 @@ pub struct SnapshotMeta {
 pub struct CleanupPlan {
     pub operation_id: String,
     pub tool: ToolKind,
+    pub runtime_target: RuntimeTarget,
     pub deployment: DeploymentMeta,
     pub memory: Option<MemoryMeta>,
     /// The agent's memory folder, if it has one with something in it.
@@ -522,6 +531,10 @@ fn read_snapshot(store: &Store, id: &str) -> Result<SnapshotMeta> {
     serde_json::from_slice(&bytes).map_err(|_| Error::invalid("snapshot is damaged"))
 }
 
+pub fn get_snapshot(store: &Store, id: &str) -> Result<SnapshotMeta> {
+    read_snapshot(store, id)
+}
+
 fn snapshot_prompt(store: &Store, meta: &SnapshotMeta) -> Result<Option<String>> {
     if !meta.deployment.restorable {
         return Ok(None);
@@ -570,12 +583,40 @@ fn home_dir(opts: &AdapterOptions) -> Result<PathBuf> {
         .ok_or_else(|| Error::invalid("the home folder is unknown"))
 }
 
+fn agent_config_dir(tool: ToolKind, opts: &AdapterOptions) -> Result<Option<PathBuf>> {
+    let Some(table) = table(tool) else {
+        return Ok(None);
+    };
+    Ok(Some(opts.config_dirs.get(&tool).cloned().unwrap_or(
+        crate::runtime::join_path(&home_dir(opts)?, table.folder),
+    )))
+}
+
+fn entry_path(tool: ToolKind, name: &str, opts: &AdapterOptions) -> Result<PathBuf> {
+    let table = table(tool).ok_or_else(|| Error::invalid("this agent has no cleanup table"))?;
+    let relative = Path::new(name);
+    let folder = Path::new(table.folder);
+    if relative == folder {
+        return agent_config_dir(tool, opts)?
+            .ok_or_else(|| Error::invalid("agent folder is unknown"));
+    }
+    if let Ok(suffix) = relative.strip_prefix(folder) {
+        let dir = agent_config_dir(tool, opts)?
+            .ok_or_else(|| Error::invalid("agent folder is unknown"))?;
+        return Ok(crate::runtime::join_path(&dir, suffix));
+    }
+    Ok(crate::runtime::join_path(&home_dir(opts)?, relative))
+}
+
 /// Where an agent's user-level memory file is, for the agents that have one.
 fn memory_expected(tool: ToolKind, opts: &AdapterOptions) -> Result<Option<PathBuf>> {
-    let home = home_dir(opts)?;
     Ok(match tool {
-        ToolKind::Claude => Some(home.join(".claude").join("CLAUDE.md")),
-        ToolKind::Codex => Some(home.join(".codex").join("AGENTS.md")),
+        ToolKind::Claude => {
+            agent_config_dir(tool, opts)?.map(|dir| crate::runtime::join_path(&dir, "CLAUDE.md"))
+        }
+        ToolKind::Codex => {
+            agent_config_dir(tool, opts)?.map(|dir| crate::runtime::join_path(&dir, "AGENTS.md"))
+        }
         _ => None,
     })
 }
@@ -634,7 +675,9 @@ fn memories_dir(tool: ToolKind, opts: &AdapterOptions) -> Result<Option<PathBuf>
     if tool != ToolKind::Codex {
         return Ok(None);
     }
-    let path = home_dir(opts)?.join(".codex").join("memories");
+    let dir = agent_config_dir(tool, opts)?
+        .ok_or_else(|| Error::invalid("the Codex folder is unknown"))?;
+    let path = crate::runtime::join_path(&dir, "memories");
     match std::fs::symlink_metadata(&path) {
         Ok(meta) if meta.is_dir() => Ok(Some(path)),
         Ok(_) => Err(Error::invalid(
@@ -670,6 +713,7 @@ fn memories_info(path: &Path) -> Result<MemoriesMeta> {
         path: path.to_string_lossy().into_owned(),
         files,
         bytes,
+        fingerprint: None,
     })
 }
 
@@ -761,12 +805,13 @@ fn is_secret_name(name: &std::ffi::OsStr) -> bool {
 type Entry = (String, String);
 
 /// Files in `folder` (under home) whose names start with `prefix`, as places under home.
-fn prefixed(home: &Path, folder: &str, prefix: &str) -> Vec<String> {
+fn prefixed(tool: ToolKind, opts: &AdapterOptions, folder: &str, prefix: &str) -> Vec<String> {
     let dir = if folder.is_empty() {
-        home.to_path_buf()
+        home_dir(opts).ok()
     } else {
-        home.join(folder)
+        entry_path(tool, folder, opts).ok()
     };
+    let Some(dir) = dir else { return Vec::new() };
     let mut found: Vec<String> = std::fs::read_dir(dir)
         .into_iter()
         .flatten()
@@ -809,13 +854,13 @@ fn extra_entries(
         add(name.to_string(), "saved-without-login");
     }
     for (folder, prefix) in table.saved_prefixes {
-        for name in prefixed(&home, folder, prefix) {
+        for name in prefixed(tool, opts, folder, prefix) {
             add(name, "saved");
         }
     }
     // Skills a harness pack installed for Codex live in the shared `~/.agents/skills`.
     if tool == ToolKind::Codex {
-        for name in crate::components::codex_shared_skills(store, &home) {
+        for name in crate::components::codex_shared_skills(store, &home, &opts.runtime_target) {
             add(name, "saved");
         }
     }
@@ -823,7 +868,7 @@ fn extra_entries(
         add(name.to_string(), "erased");
     }
     for (folder, prefix) in table.erased_prefixes {
-        for name in prefixed(&home, folder, prefix) {
+        for name in prefixed(tool, opts, folder, prefix) {
             let owned = table
                 .adapter_owned
                 .iter()
@@ -836,11 +881,15 @@ fn extra_entries(
             }
         }
     }
-    let agent_folder = home.join(table.folder);
+    let agent_folder =
+        agent_config_dir(tool, opts)?.ok_or_else(|| Error::invalid("agent folder is unknown"))?;
     for target in envelope.target_paths.iter().filter(|t| t.role == "wrapper") {
-        if let Ok(relative) = Path::new(&target.path).strip_prefix(&home) {
+        if let Ok(relative) = Path::new(&target.path).strip_prefix(&agent_folder) {
             if Path::new(&target.path).starts_with(&agent_folder) {
-                let name = relative.to_string_lossy().replace('\\', "/");
+                let name = Path::new(table.folder)
+                    .join(relative)
+                    .to_string_lossy()
+                    .replace('\\', "/");
                 if valid_extra_name(&name) {
                     add(name, "saved");
                 }
@@ -881,11 +930,16 @@ fn path_stats(path: &Path) -> Result<(u64, u64)> {
 /// One piece of setup as it is now, or `None` when it is missing, empty or a link. A saved folder
 /// that holds a git project or a login file is left alone as well, and so is a saved file that
 /// is itself a login file.
-fn extra_info(home: &Path, name: &str, kind: &str) -> Result<Option<ExtraMeta>> {
+fn extra_info(
+    tool: ToolKind,
+    name: &str,
+    kind: &str,
+    opts: &AdapterOptions,
+) -> Result<Option<ExtraMeta>> {
     if !valid_extra_name(name) {
         return Ok(None);
     }
-    let path = home.join(name);
+    let path = entry_path(tool, name, opts)?;
     let meta = match std::fs::symlink_metadata(&path) {
         Ok(meta) => meta,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -913,6 +967,7 @@ fn extra_info(home: &Path, name: &str, kind: &str) -> Result<Option<ExtraMeta>> 
         path: path.to_string_lossy().into_owned(),
         files,
         bytes,
+        fingerprint: None,
         kind: kind.to_string(),
     }))
 }
@@ -922,12 +977,12 @@ fn current_extras(
     entries: &[Entry],
     opts: &AdapterOptions,
 ) -> Result<Vec<ExtraMeta>> {
-    let Some(home) = agent_home(tool, opts)? else {
+    let Some(_) = agent_home(tool, opts)? else {
         return Ok(Vec::new());
     };
     let mut found = Vec::new();
     for (name, kind) in entries {
-        if let Some(info) = extra_info(&home, name, kind)? {
+        if let Some(info) = extra_info(tool, name, kind, opts)? {
             found.push(info);
         }
     }
@@ -1213,6 +1268,7 @@ fn memory_info(path: &Path) -> Result<(MemoryMeta, Vec<u8>)> {
 fn create_snapshot(
     store: &Store,
     tool: ToolKind,
+    runtime_target: &RuntimeTarget,
     kind: &str,
     deployment: DeploymentMeta,
     prompt: Option<&str>,
@@ -1231,6 +1287,7 @@ fn create_snapshot(
         id: id.clone(),
         created_at: now_rfc3339(),
         tool,
+        runtime_target: runtime_target.clone(),
         kind: kind.to_string(),
         deployment,
         memory: memory.as_ref().map(|(info, _)| info.clone()),
@@ -1323,12 +1380,12 @@ fn rewrite_meta(store: &Store, snapshot: &SnapshotMeta, change: impl FnOnce(&mut
 /// Move each piece of setup into the snapshot made for it, by rename only. A piece that is gone
 /// by now (the adapter's uninstall may take its wrapper away) is dropped from the snapshot, and
 /// so is every piece after one that cannot be moved. Returns how many were moved.
-fn move_extras_into(store: &Store, snapshot: &SnapshotMeta, root: &Path) -> Result<u64> {
+fn move_extras_into(store: &Store, snapshot: &SnapshotMeta) -> Result<u64> {
     let mut moved = Vec::new();
     let mut failure = None;
     let mut changed = false;
     for extra in &snapshot.extras {
-        let from = root.join(&extra.name);
+        let from = PathBuf::from(&extra.path);
         if std::fs::symlink_metadata(&from).is_err() {
             continue;
         }
@@ -1378,14 +1435,14 @@ fn move_extras_into(store: &Store, snapshot: &SnapshotMeta, root: &Path) -> Resu
 
 /// Delete what is not saved: logins, session history, plugins and caches. Everything is tried;
 /// the first failure is reported at the end. A link is never followed or removed.
-fn erase_extras(home: &Path, erased: &[ExtraMeta]) -> Result<u64> {
+fn erase_extras(erased: &[ExtraMeta]) -> Result<u64> {
     let mut count = 0;
     let mut failure = None;
     for extra in erased {
         if !valid_extra_name(&extra.name) {
             continue;
         }
-        let path = home.join(&extra.name);
+        let path = PathBuf::from(&extra.path);
         let meta = match std::fs::symlink_metadata(&path) {
             Ok(meta) => meta,
             Err(_) => continue,
@@ -1513,6 +1570,207 @@ type CurrentState = (
     Option<(MemoryMeta, Vec<u8>)>,
 );
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct WslCleanupScan {
+    memory: Option<MemoryMeta>,
+    memories: Option<MemoriesMeta>,
+    #[serde(default)]
+    extras: Vec<ExtraMeta>,
+    #[serde(default)]
+    agent_running: bool,
+}
+
+fn deployment_state(
+    store: &Store,
+    tool: ToolKind,
+    envelope: &Envelope,
+) -> (DeploymentMeta, Option<String>) {
+    let present = envelope.status == ToolStatus::Active;
+    let body = present
+        .then(|| harness::proven_live_body(tool, envelope))
+        .flatten();
+    let title = present
+        .then(|| deployed_title(store, tool, envelope, body.as_deref()))
+        .flatten();
+    (
+        DeploymentMeta {
+            present,
+            title,
+            restorable: body.is_some(),
+        },
+        body,
+    )
+}
+
+fn wsl_cleanup_scan(
+    store: &Store,
+    tool: ToolKind,
+    envelope: &Envelope,
+    opts: &AdapterOptions,
+    frozen: Option<&[ExtraMeta]>,
+) -> Result<WslCleanupScan> {
+    let mut entries = Vec::new();
+    let mut prefixes = Vec::new();
+    if let Some(frozen) = frozen {
+        entries.extend(
+            frozen
+                .iter()
+                .map(|extra| json!({ "name": extra.name, "path": extra.path, "kind": extra.kind })),
+        );
+    } else if let Some(table) = table(tool) {
+        for (names, kind) in [
+            (table.saved, "saved"),
+            (table.without_login, "saved-without-login"),
+            (table.erased, "erased"),
+        ] {
+            for name in names {
+                entries.push(json!({
+                    "name": name,
+                    "path": entry_path(tool, name, opts)?.to_string_lossy(),
+                    "kind": kind,
+                }));
+            }
+        }
+        for (list, kind) in [
+            (table.saved_prefixes, "saved"),
+            (table.erased_prefixes, "erased"),
+        ] {
+            for (folder, prefix) in list {
+                let owned: Vec<&str> = table
+                    .adapter_owned
+                    .iter()
+                    .filter(|(owned_folder, _)| owned_folder == folder)
+                    .map(|(_, owned_prefix)| *owned_prefix)
+                    .collect();
+                prefixes.push(json!({
+                    "directory": if folder.is_empty() {
+                        home_dir(opts)?
+                    } else {
+                        entry_path(tool, folder, opts)?
+                    }.to_string_lossy(),
+                    "logicalFolder": folder,
+                    "prefix": prefix,
+                    "kind": kind,
+                    "ownedPrefixes": owned,
+                }));
+            }
+        }
+        if tool == ToolKind::Codex {
+            let home = home_dir(opts)?;
+            for name in crate::components::codex_shared_skills(store, &home, &opts.runtime_target) {
+                entries.push(json!({
+                    "path": entry_path(tool, &name, opts)?.to_string_lossy(),
+                    "name": name,
+                    "kind": "saved",
+                }));
+            }
+        }
+        let config = agent_config_dir(tool, opts)?
+            .ok_or_else(|| Error::invalid("agent folder is unknown"))?;
+        let config_text = config.to_string_lossy().replace('\\', "/");
+        for target in envelope
+            .target_paths
+            .iter()
+            .filter(|target| target.role == "wrapper")
+        {
+            let target_text = target.path.replace('\\', "/");
+            if let Some(relative) = target_text
+                .strip_prefix(config_text.trim_end_matches('/'))
+                .and_then(|value| value.strip_prefix('/'))
+            {
+                let name = format!("{}/{relative}", table.folder.trim_end_matches('/'));
+                if valid_extra_name(&name) {
+                    entries.push(json!({ "name": name, "path": target_text, "kind": "saved" }));
+                }
+            }
+        }
+    }
+    let memory_path = memory_expected(tool, opts)?.map(|path| path.to_string_lossy().into_owned());
+    let memories_path = (tool == ToolKind::Codex)
+        .then(|| agent_config_dir(tool, opts).ok().flatten())
+        .flatten()
+        .map(|dir| {
+            crate::runtime::join_path(&dir, "memories")
+                .to_string_lossy()
+                .into_owned()
+        });
+    let response = crate::runtime::invoke_helper(
+        &opts.runtime_target,
+        &json!({
+            "command": "cleanupScan",
+            "tool": tool.as_str(),
+            "memoryPath": memory_path,
+            "memoriesPath": memories_path,
+            "maxMemoryBytes": MAX_MEMORY_BYTES,
+            "entries": entries,
+            "prefixes": prefixes,
+        }),
+    )?;
+    serde_json::from_value(response).map_err(Error::from)
+}
+
+async fn create_wsl_snapshot(
+    store: &Store,
+    tool: ToolKind,
+    kind: &str,
+    deployment: DeploymentMeta,
+    prompt: Option<&str>,
+    memory: Option<MemoryMeta>,
+    memories: Option<MemoriesMeta>,
+    extras: Vec<ExtraMeta>,
+    opts: &AdapterOptions,
+) -> Result<SnapshotMeta> {
+    let _lock = HomeLock::acquire(store.paths())?;
+    let id = format!(
+        "{}-{}-{}",
+        chrono::Utc::now().format("%Y%m%dT%H%M%SZ"),
+        tool.as_str(),
+        &uuid::Uuid::new_v4().simple().to_string()[..6]
+    );
+    let meta = SnapshotMeta {
+        id: id.clone(),
+        created_at: now_rfc3339(),
+        tool,
+        runtime_target: opts.runtime_target.clone(),
+        kind: kind.to_string(),
+        deployment,
+        memory,
+        memories,
+        extras,
+    };
+    let root = snapshots_dir(store);
+    std::fs::create_dir_all(&root)?;
+    let staging = root.join(format!(".{id}.writing"));
+    let translated = crate::runtime::translate_path(&opts.runtime_target, &staging).await?;
+    let prepared = crate::runtime::invoke_helper(
+        &opts.runtime_target,
+        &json!({
+            "command": "snapshotPrepare",
+            "staging": translated.to_string_lossy(),
+            "memory": meta.memory,
+            "extras": meta.extras,
+        }),
+    );
+    if let Err(error) = prepared {
+        let _ = std::fs::remove_dir_all(&staging);
+        return Err(error);
+    }
+    let written = (|| -> Result<()> {
+        if let Some(prompt) = prompt {
+            std::fs::write(staging.join("prompt.md"), prompt)?;
+        }
+        std::fs::write(staging.join("meta.json"), serde_json::to_vec_pretty(&meta)?)?;
+        std::fs::rename(&staging, root.join(&id))?;
+        Ok(())
+    })();
+    if let Err(error) = written {
+        let _ = std::fs::remove_dir_all(&staging);
+        return Err(error);
+    }
+    Ok(meta)
+}
+
 fn current_state(
     store: &Store,
     tool: ToolKind,
@@ -1589,6 +1847,59 @@ fn zcode_app_patched(tool: ToolKind, opts: &AdapterOptions) -> Result<bool> {
 const ZCODE_PATCHED: &str =
     "the ZCode app is still patched by Switch and its original would be lost; repair it first";
 
+async fn plan_cleanup_wsl(
+    store: &Store,
+    tool: ToolKind,
+    opts: &AdapterOptions,
+) -> Result<CleanupPlan> {
+    let envelope = ops::tool_status(store, tool, Scope::User, None, opts).await?;
+    let (deployment, _) = deployment_state(store, tool, &envelope);
+    let scan = wsl_cleanup_scan(store, tool, &envelope, opts, None)?;
+    let config_drifted = envelope.status == ToolStatus::Drift;
+    let mut blockers = Vec::new();
+    if envelope.recovery_required {
+        blockers.push(
+            "the agent's setup was changed after the last deploy; repair it first".to_string(),
+        );
+    }
+    let nothing_to_do = !deployment.present
+        && scan.memory.as_ref().is_none_or(|memory| memory.bytes == 0)
+        && scan.memories.is_none()
+        && scan.extras.is_empty();
+    let operation = ops::store_preview(
+        store,
+        tool,
+        OperationKind::Cleanup,
+        None,
+        Scope::User,
+        None,
+        json!({
+            "tool": tool,
+            "runtimeTarget": opts.runtime_target,
+            "deployed": deployment.present,
+            "memorySha": scan.memory.as_ref().map(|memory| memory.sha256.clone()),
+            "memories": scan.memories.as_ref().map(|memory| json!({ "files": memory.files, "bytes": memory.bytes })),
+            "extras": extras_json(&scan.extras),
+            "wslExtras": scan.extras.clone(),
+        }),
+        &preview_envelope(&envelope, "plan-cleanup"),
+    )?;
+    Ok(CleanupPlan {
+        operation_id: operation.id,
+        tool,
+        runtime_target: opts.runtime_target.clone(),
+        deployment,
+        memory: scan.memory,
+        memories: scan.memories,
+        extras: scan.extras,
+        login_in_keychain: false,
+        agent_running: scan.agent_running,
+        config_drifted,
+        nothing_to_do,
+        blockers,
+    })
+}
+
 pub async fn plan_cleanup(
     store: &Store,
     tool: ToolKind,
@@ -1596,6 +1907,11 @@ pub async fn plan_cleanup(
 ) -> Result<CleanupPlan> {
     if let Some(reason) = tool.unavailable_reason() {
         return Err(Error::unavailable(reason.to_string()));
+    }
+    if !opts.runtime_target.is_native() {
+        let mut runtime_opts = opts.clone();
+        runtime_opts.home = Some(crate::runtime::home(&opts.runtime_target).await?);
+        return plan_cleanup_wsl(store, tool, &runtime_opts).await;
     }
     let envelope = ops::tool_status(store, tool, Scope::User, None, opts).await?;
     let (deployment, _body, memory) = current_state(store, tool, &envelope, opts)?;
@@ -1632,6 +1948,7 @@ pub async fn plan_cleanup(
         None,
         json!({
             "tool": tool,
+            "runtimeTarget": opts.runtime_target,
             "deployed": deployment.present,
             "memorySha": memory_meta.as_ref().map(|m| m.sha256.clone()),
             "memories": memories.as_ref().map(|m| json!({ "files": m.files, "bytes": m.bytes })),
@@ -1644,6 +1961,7 @@ pub async fn plan_cleanup(
     Ok(CleanupPlan {
         operation_id: operation.id,
         tool,
+        runtime_target: opts.runtime_target.clone(),
         deployment,
         memory: memory_meta,
         memories,
@@ -1685,6 +2003,187 @@ pub async fn confirm_cleanup(
     result
 }
 
+async fn run_cleanup_wsl(
+    store: &Store,
+    tool: ToolKind,
+    request: &serde_json::Value,
+    clear_memories: bool,
+    opts: &AdapterOptions,
+) -> Result<CleanupResult> {
+    let envelope = ops::tool_status(store, tool, Scope::User, None, opts).await?;
+    if envelope.recovery_required {
+        return Err(Error::command_failed(
+            "the agent's setup was changed after the last deploy; repair it first",
+        ));
+    }
+    let (deployment, body) = deployment_state(store, tool, &envelope);
+    let planned_extras: Vec<ExtraMeta> = request
+        .get("wslExtras")
+        .cloned()
+        .map(serde_json::from_value)
+        .transpose()?
+        .unwrap_or_default();
+    let mut scan = wsl_cleanup_scan(store, tool, &envelope, opts, Some(&planned_extras))?;
+    let planned_sha = request.get("memorySha").and_then(Value::as_str);
+    let current_sha = scan.memory.as_ref().map(|memory| memory.sha256.as_str());
+    let planned_memories = request.get("memories").filter(|value| !value.is_null());
+    let memories_same = match (&scan.memories, planned_memories) {
+        (None, None) => true,
+        (Some(memory), Some(value)) => {
+            value.get("files").and_then(Value::as_u64) == Some(memory.files)
+                && value.get("bytes").and_then(Value::as_u64) == Some(memory.bytes)
+        }
+        _ => false,
+    };
+    if planned_sha != current_sha
+        || !memories_same
+        || request.get("deployed").and_then(Value::as_bool) != Some(deployment.present)
+        || request.get("extras").cloned().unwrap_or_else(|| json!([])) != extras_json(&scan.extras)
+    {
+        return Err(Error::user_cancel(
+            "plan already used: things changed since the preview",
+        ));
+    }
+    // A linked WSL agent points at the Windows relay. Restore its own upstream before the
+    // snapshot is made, then refresh file metadata because that intentional write changed
+    // the config hash that cleanup binds to.
+    let rewrite_disconnected =
+        crate::rewrite::runtime_target::disconnect(store.paths(), tool, opts)?;
+    if rewrite_disconnected {
+        scan = wsl_cleanup_scan(store, tool, &envelope, opts, Some(&planned_extras))?;
+    }
+    let to_keep = kept(&scan.extras);
+    let to_erase: Vec<ExtraMeta> = scan
+        .extras
+        .iter()
+        .filter(|extra| extra.kind == "erased")
+        .cloned()
+        .collect();
+    let memories = clear_memories.then(|| scan.memories.clone()).flatten();
+    if (memories.is_some() || !to_erase.is_empty()) && scan.agent_running {
+        return Err(Error::command_failed(
+            "close the agent first: its sessions and login are in use",
+        ));
+    }
+    let snapshot = if deployment.present
+        || scan.memory.as_ref().is_some_and(|memory| memory.bytes > 0)
+        || memories.is_some()
+        || !to_keep.is_empty()
+    {
+        Some(
+            create_wsl_snapshot(
+                store,
+                tool,
+                "cleanup",
+                deployment.clone(),
+                body.as_deref(),
+                scan.memory.clone(),
+                memories.clone(),
+                to_keep.clone(),
+                opts,
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
+    let discard = |why: Error| -> Error {
+        if let Some(snapshot) = &snapshot {
+            let _ = delete_snapshot(store, &snapshot.id);
+        }
+        why
+    };
+    let mut deactivated = false;
+    if deployment.present {
+        let plan = ops::plan_deactivate(
+            store,
+            PlanDeactivateInput {
+                prompt_id: None,
+                tool,
+                scope: Scope::User,
+                project_dir: None,
+                salvage_config: false,
+            },
+            opts,
+        )
+        .await
+        .map_err(&discard)?;
+        if !plan.envelope.ok || !plan.envelope.blockers.is_empty() {
+            return Err(discard(Error::command_failed(
+                plan.envelope
+                    .error
+                    .clone()
+                    .or_else(|| plan.envelope.blockers.first().cloned())
+                    .unwrap_or_else(|| "the removal was refused".into()),
+            )));
+        }
+        let done = ops::confirm_deactivate(store, &plan.operation_id, opts).await?;
+        if !done.envelope.ok {
+            return Err(Error::command_failed(
+                done.envelope
+                    .error
+                    .unwrap_or_else(|| "the removal did not finish".into()),
+            ));
+        }
+        deactivated = true;
+    }
+    let snapshot_path = match &snapshot {
+        Some(snapshot) => Some(
+            crate::runtime::translate_path(
+                &opts.runtime_target,
+                &snapshot_path(store, &snapshot.id)?,
+            )
+            .await?
+            .to_string_lossy()
+            .into_owned(),
+        ),
+        None => None,
+    };
+    let response = crate::runtime::invoke_helper(
+        &opts.runtime_target,
+        &json!({
+            "command": "cleanupApply",
+            "snapshot": snapshot_path,
+            "memory": scan.memory,
+            "memories": memories,
+            "extras": scan.extras,
+        }),
+    )?;
+    if let Some(snapshot) = &snapshot {
+        let actual: Vec<ExtraMeta> = response
+            .get("extras")
+            .cloned()
+            .map(serde_json::from_value)
+            .transpose()?
+            .unwrap_or_default();
+        rewrite_meta(store, snapshot, |meta| meta.extras = actual);
+    }
+    if tool == ToolKind::Grok && !deactivated {
+        if let Err(error) = ops::forget_removed_deployment(store, tool, opts).await {
+            let _ = crate::logging::write_line("cleanup-record", &error.to_string());
+        }
+    }
+    Ok(CleanupResult {
+        snapshot_id: snapshot.map(|meta| meta.id),
+        deactivated,
+        memory_cleared: response
+            .get("memoryCleared")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        memories_cleared: response
+            .get("memoriesCleared")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        extras_cleared: response
+            .get("extrasCleared")
+            .and_then(Value::as_u64)
+            .unwrap_or(0),
+        erased: response.get("erased").and_then(Value::as_u64).unwrap_or(0),
+        keychain_cleared: false,
+        rewrite_disconnected,
+    })
+}
+
 async fn run_cleanup(
     store: &Store,
     tool: ToolKind,
@@ -1692,6 +2191,11 @@ async fn run_cleanup(
     clear_memories: bool,
     opts: &AdapterOptions,
 ) -> Result<CleanupResult> {
+    if !opts.runtime_target.is_native() {
+        let mut runtime_opts = opts.clone();
+        runtime_opts.home = Some(crate::runtime::home(&opts.runtime_target).await?);
+        return run_cleanup_wsl(store, tool, request, clear_memories, &runtime_opts).await;
+    }
     let envelope = ops::tool_status(store, tool, Scope::User, None, opts).await?;
     if envelope.recovery_required {
         return Err(Error::command_failed(
@@ -1786,6 +2290,7 @@ async fn run_cleanup(
         Some(create_snapshot(
             store,
             tool,
+            &opts.runtime_target,
             "cleanup",
             deployment.clone(),
             body.as_deref(),
@@ -1868,14 +2373,14 @@ async fn run_cleanup(
 
     let mut extras_cleared = 0;
     let mut erased = 0;
-    if let Some(home) = agent_home(tool, opts)? {
+    if agent_home(tool, opts)?.is_some() {
         let _lock = HomeLock::acquire(store.paths())?;
         stop_launch_agents(tool, opts);
         if let (false, Some(snapshot)) = (to_keep.is_empty(), &snapshot) {
-            extras_cleared = move_extras_into(store, snapshot, &home)?;
+            extras_cleared = move_extras_into(store, snapshot)?;
         }
         // Logins, session history and caches go last, after everything saved is safe.
-        erased = erase_extras(&home, &to_erase)?;
+        erased = erase_extras(&to_erase)?;
     }
     let keychain_cleared = erase_keychain(&keychain)?;
     // A drifted Grok deployment is not removed through its adapter, but the cleanup has just
@@ -1904,6 +2409,16 @@ pub async fn plan_rollback(
     opts: &AdapterOptions,
 ) -> Result<RollbackPlan> {
     let snapshot = read_snapshot(store, snapshot_id)?;
+    if snapshot.runtime_target != opts.runtime_target {
+        return Err(Error::invalid(
+            "snapshot belongs to a different runtime target",
+        ));
+    }
+    if !opts.runtime_target.is_native() {
+        let mut runtime_opts = opts.clone();
+        runtime_opts.home = Some(crate::runtime::home(&opts.runtime_target).await?);
+        return plan_rollback_wsl(store, snapshot, &runtime_opts).await;
+    }
     snapshot_memory(store, &snapshot)?;
     snapshot_memories(store, &snapshot)?;
     snapshot_extras(store, &snapshot)?;
@@ -1947,7 +2462,7 @@ pub async fn plan_rollback(
         None,
         Scope::User,
         None,
-        json!({ "tool": tool, "snapshotId": snapshot.id }),
+        json!({ "tool": tool, "snapshotId": snapshot.id, "runtimeTarget": snapshot.runtime_target }),
         &preview_envelope(&envelope, "plan-rollback"),
     )?;
     Ok(RollbackPlan {
@@ -1962,6 +2477,78 @@ pub async fn plan_rollback(
         memories: memories_plan,
         extras: snapshot.extras.len() as u64,
         agent_running: snapshot.memories.is_some() && agent_running(tool, opts),
+        snapshot,
+        blockers,
+    })
+}
+
+async fn plan_rollback_wsl(
+    store: &Store,
+    snapshot: SnapshotMeta,
+    opts: &AdapterOptions,
+) -> Result<RollbackPlan> {
+    snapshot_memory(store, &snapshot)?;
+    snapshot_memories(store, &snapshot)?;
+    snapshot_extras(store, &snapshot)?;
+    let tool = snapshot.tool;
+    let envelope = ops::tool_status(store, tool, Scope::User, None, opts).await?;
+    let (deployment, _) = deployment_state(store, tool, &envelope);
+    let current_entries: Vec<ExtraMeta> = snapshot
+        .extras
+        .iter()
+        .filter(|extra| extra.kind == "saved")
+        .cloned()
+        .collect();
+    let scan = wsl_cleanup_scan(store, tool, &envelope, opts, Some(&current_entries))?;
+    let mut blockers = Vec::new();
+    if envelope.status == ToolStatus::Drift || envelope.recovery_required {
+        blockers.push(
+            "the agent's setup was changed after the last deploy; repair it first".to_string(),
+        );
+    }
+    let memory_plan = snapshot.memory.as_ref().map(|saved| RollbackMemory {
+        restore_bytes: saved.bytes,
+        current_bytes: scan.memory.as_ref().map_or(0, |memory| memory.bytes),
+        current_differs: scan
+            .memory
+            .as_ref()
+            .map_or(saved.bytes > 0, |memory| memory.sha256 != saved.sha256),
+    });
+    let overwrites_memory = memory_plan
+        .as_ref()
+        .is_some_and(|memory| memory.current_differs && memory.current_bytes > 0);
+    let memories_plan = snapshot.memories.as_ref().map(|saved| RollbackMemories {
+        restore_files: saved.files,
+        restore_bytes: saved.bytes,
+        current_files: scan.memories.as_ref().map_or(0, |memory| memory.files),
+        current_bytes: scan.memories.as_ref().map_or(0, |memory| memory.bytes),
+    });
+    let operation = ops::store_preview(
+        store,
+        tool,
+        OperationKind::Rollback,
+        None,
+        Scope::User,
+        None,
+        json!({
+            "tool": tool,
+            "snapshotId": snapshot.id,
+            "runtimeTarget": snapshot.runtime_target,
+        }),
+        &preview_envelope(&envelope, "plan-rollback"),
+    )?;
+    Ok(RollbackPlan {
+        operation_id: operation.id,
+        current_title: deployment.title.clone(),
+        replaces_deployment: deployment.present && snapshot.deployment.restorable,
+        saves_current: deployment.present
+            || overwrites_memory
+            || scan.memories.is_some()
+            || !scan.extras.is_empty(),
+        memory: memory_plan,
+        memories: memories_plan,
+        extras: snapshot.extras.len() as u64,
+        agent_running: snapshot.memories.is_some() && scan.agent_running,
         snapshot,
         blockers,
     })
@@ -1991,6 +2578,16 @@ pub async fn confirm_rollback(
 
 async fn run_rollback(store: &Store, id: &str, opts: &AdapterOptions) -> Result<RollbackResult> {
     let snapshot = read_snapshot(store, id)?;
+    if snapshot.runtime_target != opts.runtime_target {
+        return Err(Error::invalid(
+            "snapshot belongs to a different runtime target",
+        ));
+    }
+    if !opts.runtime_target.is_native() {
+        let mut runtime_opts = opts.clone();
+        runtime_opts.home = Some(crate::runtime::home(&opts.runtime_target).await?);
+        return run_rollback_wsl(store, snapshot, &runtime_opts).await;
+    }
     let tool = snapshot.tool;
     let saved_prompt = snapshot_prompt(store, &snapshot)?;
     let saved_memory = snapshot_memory(store, &snapshot)?;
@@ -2037,6 +2634,7 @@ async fn run_rollback(store: &Store, id: &str, opts: &AdapterOptions) -> Result<
         Some(create_snapshot(
             store,
             tool,
+            &opts.runtime_target,
             "before-rollback",
             deployment.clone(),
             body.as_deref(),
@@ -2054,22 +2652,21 @@ async fn run_rollback(store: &Store, id: &str, opts: &AdapterOptions) -> Result<
     // The config files and instruction folders come back first: the adapter's deploy needs them.
     let mut extras_restored = 0;
     if !saved_extras.is_empty() {
-        let root = agent_home(tool, opts)?
+        agent_home(tool, opts)?
             .ok_or_else(|| Error::invalid("this agent has no setup folder; nothing was changed"))?;
         let _lock = HomeLock::acquire(store.paths())?;
         // Whatever is there now goes into the snapshot made above first.
         if let Some(snapshot) = &saved_snapshot {
-            move_extras_into(store, snapshot, &root)?;
+            move_extras_into(store, snapshot)?;
         }
         for (saved, source) in &saved_extras {
             // A config file saved without its login is put back only where there is none now:
             // one the agent wrote since (a new login) is never replaced by the stripped copy.
-            if saved.kind == "saved-without-login"
-                && std::fs::symlink_metadata(root.join(&saved.name)).is_ok()
+            if saved.kind == "saved-without-login" && std::fs::symlink_metadata(&saved.path).is_ok()
             {
                 continue;
             }
-            extras_restored += u64::from(restore_extra(&root, saved, source)?);
+            extras_restored += u64::from(restore_extra(saved, source)?);
         }
     }
     // The deploy is planned now that its config is back.
@@ -2214,10 +2811,171 @@ async fn run_rollback(store: &Store, id: &str, opts: &AdapterOptions) -> Result<
     })
 }
 
+async fn run_rollback_wsl(
+    store: &Store,
+    snapshot: SnapshotMeta,
+    opts: &AdapterOptions,
+) -> Result<RollbackResult> {
+    let tool = snapshot.tool;
+    let saved_prompt = snapshot_prompt(store, &snapshot)?;
+    snapshot_memory(store, &snapshot)?;
+    snapshot_memories(store, &snapshot)?;
+    snapshot_extras(store, &snapshot)?;
+    let envelope = ops::tool_status(store, tool, Scope::User, None, opts).await?;
+    if envelope.status == ToolStatus::Drift || envelope.recovery_required {
+        return Err(Error::command_failed(
+            "the agent's setup was changed after the last deploy; repair it first",
+        ));
+    }
+    let (deployment, body) = deployment_state(store, tool, &envelope);
+    let current_entries: Vec<ExtraMeta> = snapshot
+        .extras
+        .iter()
+        .filter(|extra| extra.kind == "saved")
+        .cloned()
+        .collect();
+    let scan = wsl_cleanup_scan(store, tool, &envelope, opts, Some(&current_entries))?;
+    if snapshot.memories.is_some() && scan.agent_running {
+        return Err(Error::command_failed(
+            "close the agent first: it is using its memories folder",
+        ));
+    }
+    let current_differs = match (&snapshot.memory, &scan.memory) {
+        (Some(saved), Some(current)) => current.sha256 != saved.sha256 && current.bytes > 0,
+        _ => false,
+    };
+    let current_memories = snapshot.memories.as_ref().and(scan.memories.clone());
+    let saved_current = if deployment.present
+        || current_differs
+        || current_memories.is_some()
+        || !scan.extras.is_empty()
+    {
+        Some(
+            create_wsl_snapshot(
+                store,
+                tool,
+                "before-rollback",
+                deployment.clone(),
+                body.as_deref(),
+                scan.memory.clone(),
+                current_memories.clone(),
+                scan.extras.clone(),
+                opts,
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
+    let saved_snapshot_id = saved_current.as_ref().map(|meta| meta.id.clone());
+    if let Some(current) = &saved_current {
+        let target = crate::runtime::translate_path(
+            &opts.runtime_target,
+            &snapshot_path(store, &current.id)?,
+        )
+        .await?;
+        let captured = crate::runtime::invoke_helper(
+            &opts.runtime_target,
+            &json!({
+                "command": "cleanupApply",
+                "snapshot": target.to_string_lossy(),
+                "memory": Value::Null,
+                "memories": current_memories,
+                "extras": scan.extras,
+            }),
+        )?;
+        let actual: Vec<ExtraMeta> = captured
+            .get("extras")
+            .cloned()
+            .map(serde_json::from_value)
+            .transpose()?
+            .unwrap_or_default();
+        rewrite_meta(store, current, |meta| meta.extras = actual);
+    }
+    let source =
+        crate::runtime::translate_path(&opts.runtime_target, &snapshot_path(store, &snapshot.id)?)
+            .await?;
+    let extra_result = crate::runtime::invoke_helper(
+        &opts.runtime_target,
+        &json!({
+            "command": "rollbackApply",
+            "snapshot": source.to_string_lossy(),
+            "extras": snapshot.extras,
+            "memory": Value::Null,
+            "memories": Value::Null,
+        }),
+    )?;
+    let mut redeployed = false;
+    if let Some(text) = saved_prompt {
+        let title = format!(
+            "{} · {}",
+            snapshot.deployment.title.as_deref().unwrap_or("Restored"),
+            &snapshot.created_at[..10.min(snapshot.created_at.len())]
+        );
+        let prompt_id = harness::store_restored_prompt(store, tool, &title, &text)?;
+        let plan = ops::plan_activate(
+            store,
+            PlanActivateInput {
+                prompt_id,
+                scope: Scope::User,
+                project_dir: None,
+                runtime: false,
+                append_file: None,
+                max_tokens: None,
+            },
+            opts,
+        )
+        .await?;
+        if !plan.envelope.ok || !plan.envelope.blockers.is_empty() {
+            return Err(Error::command_failed(
+                plan.envelope
+                    .error
+                    .or_else(|| plan.envelope.blockers.first().cloned())
+                    .unwrap_or_else(|| "the deploy was refused".into()),
+            ));
+        }
+        let done = ops::confirm_activate(store, &plan.operation_id, opts).await?;
+        if !done.envelope.ok {
+            return Err(Error::command_failed(
+                done.envelope
+                    .error
+                    .unwrap_or_else(|| "the deploy did not finish".into()),
+            ));
+        }
+        redeployed = true;
+    }
+    let state_result = crate::runtime::invoke_helper(
+        &opts.runtime_target,
+        &json!({
+            "command": "rollbackApply",
+            "snapshot": source.to_string_lossy(),
+            "extras": [],
+            "memory": snapshot.memory,
+            "memories": snapshot.memories,
+        }),
+    )?;
+    Ok(RollbackResult {
+        saved_snapshot_id,
+        redeployed,
+        memory_restored: state_result
+            .get("memoryRestored")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        memories_restored: state_result
+            .get("memoriesRestored")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        extras_restored: extra_result
+            .get("extrasRestored")
+            .and_then(Value::as_u64)
+            .unwrap_or(0),
+    })
+}
+
 /// Put one saved piece of setup back: copy and check it beside its place, then rename it in. Only
 /// an empty folder may be in the way; anything else there is left alone and the piece is refused.
-fn restore_extra(root: &Path, saved: &ExtraMeta, source: &Path) -> Result<bool> {
-    let target = root.join(&saved.name);
+fn restore_extra(saved: &ExtraMeta, source: &Path) -> Result<bool> {
+    let target = PathBuf::from(&saved.path);
     if let Ok(meta) = std::fs::symlink_metadata(&target) {
         let empty_dir = meta.is_dir() && std::fs::read_dir(&target)?.next().is_none();
         if !empty_dir {
@@ -2333,25 +3091,41 @@ mod tests {
     fn extras_skip_links_projects_and_logins() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
+        let opts = AdapterOptions {
+            home: Some(root.to_path_buf()),
+            ..Default::default()
+        };
         std::fs::create_dir_all(root.join("rules")).unwrap();
         std::fs::write(root.join("rules/a.md"), "rule\n").unwrap();
         std::fs::create_dir_all(root.join("agents/repo/.git")).unwrap();
         std::fs::create_dir_all(root.join("commands")).unwrap();
         std::fs::write(root.join("commands/auth.json"), "{}").unwrap();
 
-        let rules = extra_info(root, "rules", "saved").unwrap().unwrap();
+        let rules = extra_info(ToolKind::Codex, "rules", "saved", &opts)
+            .unwrap()
+            .unwrap();
         assert_eq!((rules.files, rules.bytes), (1, 5));
-        assert!(extra_info(root, "agents", "saved").unwrap().is_none());
-        assert!(extra_info(root, "commands", "saved").unwrap().is_none());
-        assert!(extra_info(root, "missing", "saved").unwrap().is_none());
+        assert!(extra_info(ToolKind::Codex, "agents", "saved", &opts)
+            .unwrap()
+            .is_none());
+        assert!(extra_info(ToolKind::Codex, "commands", "saved", &opts)
+            .unwrap()
+            .is_none());
+        assert!(extra_info(ToolKind::Codex, "missing", "saved", &opts)
+            .unwrap()
+            .is_none());
         for bad in ["", "../rules", "/etc"] {
             assert!(!valid_extra_name(bad), "{bad:?}");
         }
         #[cfg(unix)]
         {
             std::os::unix::fs::symlink(root.join("rules"), root.join("linked")).unwrap();
-            assert!(extra_info(root, "linked", "saved").unwrap().is_none());
-            assert!(extra_info(root, "linked", "erased").unwrap().is_none());
+            assert!(extra_info(ToolKind::Codex, "linked", "saved", &opts)
+                .unwrap()
+                .is_none());
+            assert!(extra_info(ToolKind::Codex, "linked", "erased", &opts)
+                .unwrap()
+                .is_none());
         }
     }
 

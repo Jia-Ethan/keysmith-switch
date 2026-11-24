@@ -9,8 +9,7 @@
     "unavailable": "不可用",
     "missing": "該執行環境已不存在",
     "saveFailed": "無法儲存執行環境",
-    "wslScope": "此 Agent 的部署、停用與復原操作會在所選 WSL2 發行版中執行；清理、元件、安裝與輸入替換仍僅支援 Windows 本機。",
-    "zcodeUnsupported": "ZCode 目前沒有受支援的 Linux/WSL 執行環境，請選擇 Windows 本機。"
+    "wslScope": "此 Agent 的部署、元件、清理、快照與復原都只作用於所選 WSL2 發行版與 Linux 使用者。"
   },
   "nav": {
     "claude": "Claude Code",

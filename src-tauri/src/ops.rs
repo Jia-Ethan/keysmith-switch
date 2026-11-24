@@ -172,14 +172,22 @@ async fn ensure_codex_config(tool: ToolKind, opts: &AdapterOptions) {
     if tool != ToolKind::Codex {
         return;
     }
-    if let RuntimeTarget::Wsl { distribution } = &opts.runtime_target {
-        let _ = crate::runtime::ensure_codex_config(distribution).await;
+    if matches!(opts.runtime_target, RuntimeTarget::Wsl { .. }) {
+        let _ = crate::runtime::ensure_codex_config(
+            &opts.runtime_target,
+            opts.config_dirs.get(&ToolKind::Codex).map(PathBuf::as_path),
+        )
+        .await;
         return;
     }
     let Some(home) = opts.home.clone().or_else(dirs::home_dir) else {
         return;
     };
-    let dir = home.join(".codex");
+    let dir = opts
+        .config_dirs
+        .get(&ToolKind::Codex)
+        .cloned()
+        .unwrap_or_else(|| home.join(".codex"));
     // No `.codex` folder means Codex is not installed; that is reported as it is.
     if !dir.is_dir() {
         return;

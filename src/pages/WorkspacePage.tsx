@@ -187,19 +187,21 @@ export function WorkspacePage({
       const native = runtimeTarget.kind === "native";
       choices.push({
         target: runtimeTarget,
-        label: native ? t("runtime.native") : `WSL2 · ${runtimeTarget.distribution}`,
+        label: native
+          ? t("runtime.native")
+          : `WSL2 · ${runtimeTarget.distribution}${runtimeTarget.user ? ` · ${runtimeTarget.user}` : ""}`,
         isDefault: false,
         state: native ? "running" : "unknown",
         wslVersion: runtimeTarget.kind === "wsl" ? 2 : null,
         available: native,
         unavailableReason: native ? null : t("runtime.missing"),
+        home: null,
       });
     }
     return choices;
   }, [runtimeKey, runtimeTarget, runtimes, t]);
   const selectedRuntime = runtimeChoices.find((item) => runtimeTargetKey(item.target) === runtimeKey);
-  const runtimeUnavailable =
-    selectedRuntime?.available === false || (tool === "zcode" && runtimeTarget.kind === "wsl");
+  const runtimeUnavailable = selectedRuntime?.available === false;
   const unavailable = toolUnavailable || runtimeUnavailable;
 
   const changeRuntime = async (nextKey: string) => {
@@ -863,7 +865,7 @@ export function WorkspacePage({
           removeDisabled={locked}
           onEdit={liveLocked ? undefined : () => void editLivePrompt()}
           editing={pending === "adopt"}
-          onCleanup={runtimeTarget.kind === "native" ? () => setCleanupOpen(true) : undefined}
+          onCleanup={() => setCleanupOpen(true)}
           runtimeControl={
             <Dropdown
               label={t("runtime.label")}
@@ -873,7 +875,7 @@ export function WorkspacePage({
                 label: (
                   <span className="flex min-w-0 items-center gap-2">
                     <span className="truncate">{item.target.kind === "native" ? t("runtime.native") : item.label}</span>
-                    {!item.available || (tool === "zcode" && item.target.kind === "wsl") ? (
+                    {!item.available ? (
                       <span className="shrink-0 text-[11px] text-warning">{t("runtime.unavailable")}</span>
                     ) : null}
                   </span>
@@ -891,9 +893,7 @@ export function WorkspacePage({
 
         {runtimeTarget.kind === "wsl" ? (
           <p className="-mt-3 text-[12px] text-muted-foreground" data-testid="runtime-limitations">
-            {tool === "zcode"
-              ? t("runtime.zcodeUnsupported")
-              : selectedRuntime?.available === false
+            {selectedRuntime?.available === false
                 ? selectedRuntime.unavailableReason ?? t("runtime.missing")
                 : t("runtime.wslScope")}
           </p>
@@ -1070,6 +1070,7 @@ export function WorkspacePage({
       <CleanupDialog
         tool={tool}
         toolName={toolName}
+        runtimeTarget={runtimeTarget}
         open={cleanupOpen}
         onClose={() => setCleanupOpen(false)}
         onDone={(result) => {

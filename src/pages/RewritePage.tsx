@@ -2,15 +2,18 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import * as api from "../api";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { Dropdown } from "../components/Dropdown";
 import { IconSwap } from "../components/icons";
 import { Switch } from "../components/ui";
 import type { ToastApi } from "../hooks/useToasts";
+import { NATIVE_RUNTIME, runtimeTargetKey } from "../lib/harnessState";
 import type { RewriteRule, RewriteView, RuleTable } from "../types";
+import type { RuntimeInfo, RuntimeTarget, Settings, SettingsPatch } from "../types";
 import { AgentList } from "./rewrite/AgentList";
 import { AGENT_NAMES, SWITCH_KEY, agentRows, type RewriteAgent } from "./rewrite/agents";
 import { RuleTables } from "./rewrite/RuleTables";
 
-function connectCall(tool: RewriteAgent): (() => Promise<RewriteView>) | undefined {
+function connectCall(tool: RewriteAgent): ((runtimeTarget?: RuntimeTarget) => Promise<RewriteView>) | undefined {
   switch (tool) {
     case "codex":
       return api.rewriteConnectCodex;
@@ -25,7 +28,7 @@ function connectCall(tool: RewriteAgent): (() => Promise<RewriteView>) | undefin
   }
 }
 
-function disconnectCall(tool: RewriteAgent): (() => Promise<RewriteView>) | undefined {
+function disconnectCall(tool: RewriteAgent): ((runtimeTarget?: RuntimeTarget) => Promise<RewriteView>) | undefined {
   switch (tool) {
     case "codex":
       return api.rewriteDisconnectCodex;
@@ -44,21 +47,66 @@ function disconnectCall(tool: RewriteAgent): (() => Promise<RewriteView>) | unde
  * Input rewrite: the rules and switches live here; the replacing happens in a local relay
  * that connected agents send through. This page never sees a conversation.
  */
-export function RewritePage({ toast }: { toast: ToastApi }) {
+export function RewritePage({
+  toast,
+  settings,
+  onSettingsSave,
+}: {
+  toast: ToastApi;
+  settings?: Settings;
+  onSettingsSave?: (patch: SettingsPatch) => Promise<Settings>;
+}) {
   const { t } = useTranslation();
   const [view, setView] = useState<RewriteView | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [connecting, setConnecting] = useState<RewriteAgent | null>(null);
   const [disconnecting, setDisconnecting] = useState<RewriteAgent | null>(null);
   const [reviewing, setReviewing] = useState<RuleTable | null>(null);
+  const configuredRuntime = settings?.rewriteRuntimeTarget ?? NATIVE_RUNTIME;
+  const [runtimeTarget, setRuntimeTarget] = useState<RuntimeTarget>(configuredRuntime);
+  const [runtimes, setRuntimes] = useState<RuntimeInfo[]>([]);
+  const [runtimeSaving, setRuntimeSaving] = useState(false);
+  const runtimeKey = runtimeTargetKey(runtimeTarget);
+  const commandTarget = runtimeTarget.kind === "native" ? undefined : runtimeTarget;
+
+  useEffect(() => setRuntimeTarget(configuredRuntime), [configuredRuntime]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api.listRuntimes().then(({ runtimes: found }) => {
+      if (!cancelled) setRuntimes(found);
+    }).catch(() => {
+      if (!cancelled) setRuntimes([]);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const runtimeChoices = useMemo(() => {
+    const choices = [...runtimes];
+    if (!choices.some((runtime) => runtimeTargetKey(runtime.target) === runtimeKey)) {
+      choices.push({
+        target: runtimeTarget,
+        label: runtimeTarget.kind === "native"
+          ? t("runtime.native")
+          : `WSL2 · ${runtimeTarget.distribution}${runtimeTarget.user ? ` · ${runtimeTarget.user}` : ""}`,
+        isDefault: runtimeTarget.kind === "native",
+        state: "unknown",
+        wslVersion: runtimeTarget.kind === "wsl" ? 2 : null,
+        available: runtimeTarget.kind === "native",
+        unavailableReason: runtimeTarget.kind === "native" ? null : t("runtime.missing"),
+        home: null,
+      });
+    }
+    return choices;
+  }, [runtimeKey, runtimeTarget, runtimes, t]);
 
   const load = useCallback(async () => {
     try {
-      setView(await api.rewriteState());
+      setView(commandTarget ? await api.rewriteState(commandTarget) : await api.rewriteState());
     } catch (error) {
       toast.err(error instanceof Error ? error.message : t("rewrite.loadError"));
     }
-  }, [toast, t]);
+  }, [commandTarget, toast, t]);
 
   useEffect(() => {
     void load();
@@ -87,15 +135,32 @@ export function RewritePage({ toast }: { toast: ToastApi }) {
     const target = index + delta;
     if (target < 0 || target >= ids.length) return;
     [ids[index], ids[target]] = [ids[target], ids[index]];
-    void run("reorder", () => api.rewriteReorderTables(ids));
+    void run("reorder", () => commandTarget ? api.rewriteReorderTables(ids, commandTarget) : api.rewriteReorderTables(ids));
   };
 
   const connect = (tool: RewriteAgent) => {
     const action = connectCall(tool);
     if (!action) return;
-    void run(`connect:${tool}`, action, t("rewrite.connect.connected", { agent: AGENT_NAMES[tool] })).then(() =>
+    void run(`connect:${tool}`, () => commandTarget ? action(commandTarget) : action(), t("rewrite.connect.connected", { agent: AGENT_NAMES[tool] })).then(() =>
       setConnecting(null),
     );
+  };
+
+  const changeRuntime = async (nextKey: string) => {
+    const next = runtimeChoices.find((runtime) => runtimeTargetKey(runtime.target) === nextKey)?.target;
+    if (!next || nextKey === runtimeKey || runtimeSaving) return;
+    const previous = runtimeTarget;
+    setRuntimeTarget(next);
+    setView(null);
+    setRuntimeSaving(true);
+    try {
+      await onSettingsSave?.({ rewriteRuntimeTarget: next });
+    } catch (error) {
+      setRuntimeTarget(previous);
+      toast.err(error);
+    } finally {
+      setRuntimeSaving(false);
+    }
   };
 
   const confirming = rowFor(connecting);
@@ -112,8 +177,23 @@ export function RewritePage({ toast }: { toast: ToastApi }) {
             </h1>
             <p className="mt-1 text-[13px] text-muted-foreground">{t("rewrite.lead")}</p>
           </div>
+          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2 pt-1">
+            <Dropdown
+              label={t("runtime.label")}
+              value={runtimeKey}
+              options={runtimeChoices.map((runtime) => ({
+                value: runtimeTargetKey(runtime.target),
+                label: runtime.target.kind === "native" ? t("runtime.native") : runtime.label,
+              }))}
+              disabled={runtimeSaving || busy !== null}
+              onChange={(value) => void changeRuntime(value)}
+              testId="rewrite-runtime-selector"
+              menuTestId="rewrite-runtime-menu"
+              optionTestId={(value) => `rewrite-runtime-option-${value.replace(/[^a-zA-Z0-9_-]/g, "-")}`}
+              className="w-[230px]"
+            />
           {view ? (
-            <div className="flex shrink-0 items-center gap-2 pt-1">
+            <>
               <span className="text-[13px] text-muted-foreground" aria-hidden="true">
                 {view.enabled ? t("rewrite.master.on") : t("rewrite.master.off")}
               </span>
@@ -124,10 +204,11 @@ export function RewritePage({ toast }: { toast: ToastApi }) {
                 checked={view.enabled}
                 disabled={busy !== null && busy !== "master"}
                 busy={busy === "master"}
-                onCheckedChange={(enabled) => void run("master", () => api.rewriteSetSwitches({ enabled }))}
+                onCheckedChange={(enabled) => void run("master", () => commandTarget ? api.rewriteSetSwitches({ enabled }, commandTarget) : api.rewriteSetSwitches({ enabled }))}
               />
-            </div>
+            </>
           ) : null}
+          </div>
         </header>
 
         {!view ? (
@@ -148,7 +229,9 @@ export function RewritePage({ toast }: { toast: ToastApi }) {
               masterOn={view.enabled}
               busy={busy}
               onToggle={(tool, enabled) =>
-                void run(`switch:${tool}`, () => api.rewriteSetSwitches({ [SWITCH_KEY[tool]]: enabled }))
+                void run(`switch:${tool}`, () => commandTarget
+                  ? api.rewriteSetSwitches({ [SWITCH_KEY[tool]]: enabled }, commandTarget)
+                  : api.rewriteSetSwitches({ [SWITCH_KEY[tool]]: enabled }))
               }
               onConnect={(tool) => {
                 // A first connection says what it writes; repairing an existing one does not ask again.
@@ -161,11 +244,11 @@ export function RewritePage({ toast }: { toast: ToastApi }) {
             <RuleTables
               tables={view.tables}
               busy={busy !== null}
-              onToggle={(id, enabled) => void run("toggle", () => api.rewriteSetTableEnabled(id, enabled))}
-              onSave={(rules: RewriteRule[]) => run("save", () => api.rewriteSaveUserRules(rules), t("rewrite.editor.saved"))}
-              onScope={(id, tools) => void run("scope", () => api.rewriteSetTableTools(id, tools))}
+              onToggle={(id, enabled) => void run("toggle", () => commandTarget ? api.rewriteSetTableEnabled(id, enabled, commandTarget) : api.rewriteSetTableEnabled(id, enabled))}
+              onSave={(rules: RewriteRule[]) => run("save", () => commandTarget ? api.rewriteSaveUserRules(rules, commandTarget) : api.rewriteSaveUserRules(rules), t("rewrite.editor.saved"))}
+              onScope={(id, tools) => void run("scope", () => commandTarget ? api.rewriteSetTableTools(id, tools, commandTarget) : api.rewriteSetTableTools(id, tools))}
               onMove={move}
-              onCopy={(id) => void run("copy", () => api.rewriteCopyToUser(id), t("rewrite.copied"))}
+              onCopy={(id) => void run("copy", () => commandTarget ? api.rewriteCopyToUser(id, commandTarget) : api.rewriteCopyToUser(id), t("rewrite.copied"))}
               onReview={setReviewing}
             />
           </>
@@ -214,7 +297,7 @@ export function RewritePage({ toast }: { toast: ToastApi }) {
           const tool = disconnecting;
           const action = tool ? disconnectCall(tool) : undefined;
           if (!tool || !action) return;
-          void run(`disconnect:${tool}`, action, t("rewrite.connect.disconnected", { agent: AGENT_NAMES[tool] })).then(() =>
+          void run(`disconnect:${tool}`, () => commandTarget ? action(commandTarget) : action(), t("rewrite.connect.disconnected", { agent: AGENT_NAMES[tool] })).then(() =>
             setDisconnecting(null),
           );
         }}
@@ -239,7 +322,7 @@ export function RewritePage({ toast }: { toast: ToastApi }) {
         onConfirm={() => {
           const table = reviewing;
           if (!table) return;
-          void run("accept", () => api.rewriteAcceptUpdate(table.id), t("rewrite.accepted")).then(() => setReviewing(null));
+          void run("accept", () => commandTarget ? api.rewriteAcceptUpdate(table.id, commandTarget) : api.rewriteAcceptUpdate(table.id), t("rewrite.accepted")).then(() => setReviewing(null));
         }}
       >
         {reviewing?.pending ? (

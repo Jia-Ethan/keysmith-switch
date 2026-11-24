@@ -766,7 +766,7 @@ fn backup_meta(path: &Path, kind: &str) -> Result<BackupEntry> {
 
 pub fn restore_backup_zip(store: &Store, zip_path: &Path) -> Result<ImportResult> {
     let result = import_zip(store, zip_path)?;
-    crate::rewrite::publish(store)?;
+    crate::rewrite::publish_all(store)?;
     Ok(result)
 }
 
@@ -802,7 +802,7 @@ pub fn clear_all_data(store: &Store, phrase: &str, confirmed: bool) -> Result<()
     let _lock = HomeLock::acquire(store.paths())?;
     store.clear_all()?;
     // The relay keeps rewriting with whatever it last read until it reads the cleared rules.
-    crate::rewrite::publish(store)
+    crate::rewrite::publish_all(store)
 }
 
 pub fn sidecar_report() -> SidecarReport {

@@ -780,15 +780,12 @@ fn save_state(store: &Store, state: &State) -> Result<()> {
 /// Forget links to prompts that no longer exist (data cleared, restored from an older
 /// backup), and packs left with nothing.
 fn prune(store: &Store, state: &mut State) {
-    let rule_tables: BTreeSet<String> = store
-        .list_rule_tables()
-        .map(|tables| {
-            tables
-                .into_iter()
-                .filter_map(|table| table.pack_id)
-                .collect()
-        })
-        .unwrap_or_default();
+    let mut rule_tables = BTreeSet::new();
+    for target in store.rewrite_runtime_targets().unwrap_or_default() {
+        if let Ok(tables) = store.list_rule_tables_for(&target) {
+            rule_tables.extend(tables.into_iter().filter_map(|table| table.pack_id));
+        }
+    }
     for pack in state.packs.values_mut() {
         pack.items
             .retain(|_, item| store.get_prompt(&item.prompt_id).is_ok());
@@ -886,17 +883,21 @@ fn pick(map: &Loc, language: &str) -> String {
         .unwrap_or_default()
 }
 
-fn build_view(
+fn build_view_for(
     store: &Store,
     source: &Source,
     index: Option<&VerifiedIndex>,
     language: &str,
     error: Option<String>,
     checked_at: Option<String>,
+    runtime_target: &crate::models::RuntimeTarget,
 ) -> ExtensionsView {
     let mut state = load_state(store);
     prune(store, &mut state);
-    let harness = crate::components::installed(store);
+    let harness = crate::components::installed_for(store, runtime_target);
+    let target_rule_tables = store
+        .list_rule_tables_for(runtime_target)
+        .unwrap_or_default();
     let mut packs = Vec::new();
     for pack in index.map(|index| index.packs.as_slice()).unwrap_or(&[]) {
         let on_disk = harness
@@ -904,7 +905,11 @@ fn build_view(
             .filter(|_| pack.kind == PackKind::Harness);
         let installed = match pack.kind {
             PackKind::Harness => on_disk.map(|state| state.version.clone()),
-            _ => state.packs.get(&pack.id).map(|item| item.version.clone()),
+            PackKind::Rules => target_rule_tables
+                .iter()
+                .find(|table| table.pack_id.as_deref() == Some(pack.id.as_str()))
+                .and_then(|table| table.pack_version.clone()),
+            PackKind::Prompts => state.packs.get(&pack.id).map(|item| item.version.clone()),
         };
         let newer = match (installed.as_deref().and_then(semver), semver(&pack.version)) {
             (Some(have), Some(offered)) => offered > have,
@@ -950,6 +955,25 @@ fn build_view(
     }
 }
 
+fn build_view(
+    store: &Store,
+    source: &Source,
+    index: Option<&VerifiedIndex>,
+    language: &str,
+    error: Option<String>,
+    checked_at: Option<String>,
+) -> ExtensionsView {
+    build_view_for(
+        store,
+        source,
+        index,
+        language,
+        error,
+        checked_at,
+        &crate::models::RuntimeTarget::Native,
+    )
+}
+
 fn load_cached(store: &Store, source: &Source) -> Option<(VerifiedIndex, String)> {
     let path = cache_path(store, source);
     let bytes = std::fs::read(&path).ok()?;
@@ -971,11 +995,31 @@ fn write_cache(store: &Store, source: &Source, bytes: &[u8]) {
 
 /// The last answer, without touching the network.
 pub fn state_view(store: &Store, source: &Source, language: &str) -> ExtensionsView {
+    state_view_for(
+        store,
+        source,
+        language,
+        &crate::models::RuntimeTarget::Native,
+    )
+}
+
+pub fn state_view_for(
+    store: &Store,
+    source: &Source,
+    language: &str,
+    runtime_target: &crate::models::RuntimeTarget,
+) -> ExtensionsView {
     match load_cached(store, source) {
-        Some((index, stamp)) => {
-            build_view(store, source, Some(&index), language, None, Some(stamp))
-        }
-        None => build_view(store, source, None, language, None, None),
+        Some((index, stamp)) => build_view_for(
+            store,
+            source,
+            Some(&index),
+            language,
+            None,
+            Some(stamp),
+            runtime_target,
+        ),
+        None => build_view_for(store, source, None, language, None, None, runtime_target),
     }
 }
 
@@ -1043,6 +1087,26 @@ pub fn install(
     language: &str,
     enable: bool,
 ) -> std::result::Result<(ExtensionsView, Report), ExtError> {
+    install_for(
+        store,
+        fetch,
+        source,
+        pack_id,
+        language,
+        enable,
+        &crate::models::RuntimeTarget::Native,
+    )
+}
+
+pub fn install_for(
+    store: &Store,
+    fetch: &dyn Fetch,
+    source: &Source,
+    pack_id: &str,
+    language: &str,
+    enable: bool,
+    runtime_target: &crate::models::RuntimeTarget,
+) -> std::result::Result<(ExtensionsView, Report), ExtError> {
     let (index, bytes) = fetch_index(fetch, source)?;
     let entry = index
         .packs
@@ -1063,18 +1127,27 @@ pub fn install(
     prune(store, &mut state);
     let report = match loaded.kind {
         PackKind::Prompts => apply(store, source, &loaded, &mut state, language)?,
-        PackKind::Rules => apply_rules(store, source, &loaded, &mut state, language, enable)?,
+        PackKind::Rules => apply_rules(
+            store,
+            source,
+            &loaded,
+            &mut state,
+            language,
+            enable,
+            runtime_target,
+        )?,
         // Components are written only from a plan the person has read.
         PackKind::Harness => return Err(ExtError::Invalid("a harness pack needs a plan".into())),
     };
     save_state(store, &state)?;
-    let view = build_view(
+    let view = build_view_for(
         store,
         source,
         Some(&index),
         language,
         None,
         Some(now_rfc3339()),
+        runtime_target,
     );
     Ok((view, report))
 }
@@ -1169,10 +1242,15 @@ fn apply_rules(
     state: &mut State,
     language: &str,
     enable: bool,
+    runtime_target: &crate::models::RuntimeTarget,
 ) -> std::result::Result<Report, ExtError> {
-    let previous = state.packs.get(&pack.id).cloned();
+    let previous_version = store
+        .list_rule_tables_for(runtime_target)?
+        .into_iter()
+        .find(|table| table.pack_id.as_deref() == Some(pack.id.as_str()))
+        .and_then(|table| table.pack_version);
     let title = pick(&pack.name, language);
-    let pending = store.upsert_pack_rules(
+    let pending = store.upsert_pack_rules_for(
         &pack.id,
         &pack.version,
         &title,
@@ -1180,10 +1258,11 @@ fn apply_rules(
         &pack.tools,
         enable,
         pack.opaque,
+        runtime_target,
     )?;
-    crate::rewrite::publish(store)?;
+    crate::rewrite::publish_for(store, runtime_target)?;
     let mut report = Report::default();
-    if previous.is_none() {
+    if previous_version.is_none() {
         report.added = pack.rules.len() as u32;
     } else if pending {
         report.kept = pack.rules.len() as u32;
@@ -1191,17 +1270,22 @@ fn apply_rules(
         report.updated = pack.rules.len() as u32;
     }
     // A pending update stays recorded at the version in use until it is accepted.
-    let version = match (&previous, pending) {
-        (Some(previous), true) => previous.version.clone(),
+    let version = match (&previous_version, pending) {
+        (Some(previous), true) => previous.clone(),
         _ => pack.version.clone(),
     };
+    let installed_at = state
+        .packs
+        .get(&pack.id)
+        .map(|pack| pack.installed_at.clone())
+        .unwrap_or_else(now_rfc3339);
     state.packs.insert(
         pack.id.clone(),
         InstalledPack {
             kind: PackKind::Rules,
             version,
             source: source.id.clone(),
-            installed_at: previous.map(|p| p.installed_at).unwrap_or_else(now_rfc3339),
+            installed_at,
             items: BTreeMap::new(),
         },
     );
@@ -1250,33 +1334,39 @@ pub fn follow_rule_packs(store: &Store, fetch: &dyn Fetch, source: &Source, lang
     let Some((index, _)) = load_cached(store, source) else {
         return;
     };
-    let state = load_state(store);
-    let tables = store.list_rule_tables().unwrap_or_default();
-    for entry in index
-        .packs
-        .iter()
-        .filter(|pack| pack.kind == PackKind::Rules)
-    {
-        let Some(installed) = state.packs.get(&entry.id) else {
-            continue;
-        };
-        let newer = matches!(
-            (semver(&installed.version), semver(&entry.version)),
-            (Some(have), Some(offered)) if offered > have
-        );
-        let already_pending = tables.iter().any(|table| {
-            table.pack_id.as_deref() == Some(entry.id.as_str())
-                && table.pending.as_ref().map(|p| p.version.as_str())
-                    == Some(entry.version.as_str())
-        });
-        if !newer || already_pending || !compatible(entry) {
-            continue;
-        }
-        if let Err(error) = install(store, fetch, source, &entry.id, language, false) {
-            let _ = crate::logging::write_line(
-                "rule-pack-follow",
-                &format!("{}: {}", entry.id, error.code()),
+    for target in store.rewrite_runtime_targets().unwrap_or_default() {
+        let tables = store.list_rule_tables_for(&target).unwrap_or_default();
+        for entry in index
+            .packs
+            .iter()
+            .filter(|pack| pack.kind == PackKind::Rules)
+        {
+            let Some(installed) = tables
+                .iter()
+                .find(|table| table.pack_id.as_deref() == Some(entry.id.as_str()))
+            else {
+                continue;
+            };
+            let newer = matches!(
+                (
+                    installed.pack_version.as_deref().and_then(semver),
+                    semver(&entry.version)
+                ),
+                (Some(have), Some(offered)) if offered > have
             );
+            let already_pending = installed.pending.as_ref().map(|p| p.version.as_str())
+                == Some(entry.version.as_str());
+            if !newer || already_pending || !compatible(entry) {
+                continue;
+            }
+            if let Err(error) =
+                install_for(store, fetch, source, &entry.id, language, false, &target)
+            {
+                let _ = crate::logging::write_line(
+                    "rule-pack-follow",
+                    &format!("{}: {}", entry.id, error.code()),
+                );
+            }
         }
     }
 }
@@ -1320,25 +1410,55 @@ pub fn uninstall(
     pack_id: &str,
     language: &str,
 ) -> std::result::Result<(ExtensionsView, Report), ExtError> {
-    if let Some(done) = crate::components::uninstall(store, pack_id)? {
+    uninstall_for(
+        store,
+        source,
+        pack_id,
+        language,
+        &crate::models::RuntimeTarget::Native,
+    )
+}
+
+pub fn uninstall_for(
+    store: &Store,
+    source: &Source,
+    pack_id: &str,
+    language: &str,
+    runtime_target: &crate::models::RuntimeTarget,
+) -> std::result::Result<(ExtensionsView, Report), ExtError> {
+    if let Some(done) = crate::components::uninstall_for(store, pack_id, runtime_target)? {
         let report = Report {
             removed: done.removed,
             kept: done.kept,
             ..Report::default()
         };
-        return Ok((state_view(store, source, language), report));
+        return Ok((
+            state_view_for(store, source, language, runtime_target),
+            report,
+        ));
     }
     let _lock = HomeLock::acquire(store.paths())?;
     let mut state = load_state(store);
-    let pack = state.packs.remove(pack_id).ok_or(ExtError::Unknown)?;
     let mut report = Report::default();
-    if pack.kind == PackKind::Rules {
-        store.remove_pack_rules(pack_id)?;
-        crate::rewrite::publish(store)?;
+    if store.has_pack_rules_for(pack_id, runtime_target)? {
+        let known_targets = store.rewrite_runtime_targets().unwrap_or_default();
+        store.remove_pack_rules_for(pack_id, runtime_target)?;
+        crate::rewrite::publish_for(store, runtime_target)?;
+        let remains = known_targets
+            .iter()
+            .any(|target| store.has_pack_rules_for(pack_id, target).unwrap_or(false));
+        if !remains {
+            state.packs.remove(pack_id);
+        }
         report.removed = 1;
         save_state(store, &state)?;
-        return Ok((state_view(store, source, language), report));
+        return Ok((
+            state_view_for(store, source, language, runtime_target),
+            report,
+        ));
     }
+    let pack = state.packs.get(pack_id).cloned().ok_or(ExtError::Unknown)?;
+    state.packs.remove(pack_id);
     for link in pack.items.values() {
         let Ok(current) = store.get_prompt(&link.prompt_id) else {
             continue;
@@ -1357,7 +1477,10 @@ pub fn uninstall(
         }
     }
     save_state(store, &state)?;
-    Ok((state_view(store, source, language), report))
+    Ok((
+        state_view_for(store, source, language, runtime_target),
+        report,
+    ))
 }
 
 // ----- harness packs --------------------------------------------------------------------------
@@ -1407,13 +1530,14 @@ pub fn confirm_harness(
         }
         other => other?,
     };
-    let view = build_view(
+    let view = build_view_for(
         store,
         source,
         Some(&index),
         language,
         None,
         Some(now_rfc3339()),
+        &opts.runtime_target,
     );
     Ok((view, report))
 }

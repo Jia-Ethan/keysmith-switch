@@ -81,6 +81,7 @@ fn activations_are_isolated_by_runtime_target() {
         "ubuntu",
         RuntimeTarget::Wsl {
             distribution: "Ubuntu-24.04".into(),
+            user: None,
         },
     );
     store.upsert_activation(&native).unwrap();
@@ -98,6 +99,7 @@ fn activations_are_isolated_by_runtime_target() {
                 ToolKind::Codex,
                 &RuntimeTarget::Wsl {
                     distribution: "Ubuntu-24.04".into(),
+                    user: None,
                 },
             )
             .unwrap(),
@@ -129,6 +131,7 @@ fn operations_and_settings_are_isolated_by_runtime_target() {
     let native = operation("native-op", RuntimeTarget::Native);
     let ubuntu_target = RuntimeTarget::Wsl {
         distribution: "Ubuntu-24.04".into(),
+        user: None,
     };
     let ubuntu = operation("ubuntu-op", ubuntu_target.clone());
     store.insert_operation(&native).unwrap();
@@ -203,13 +206,23 @@ fn schema_v4_rows_migrate_to_native_runtime() {
              last_checked_at TEXT,
              PRIMARY KEY (tool, scope, project_dir)
          );
-         DELETE FROM schema_migrations WHERE version = 5;",
+         DELETE FROM schema_migrations WHERE version >= 5;",
     )
     .unwrap();
     drop(conn);
 
     let migrated = Store::open(&paths).unwrap();
     assert_eq!(migrated.schema_version().unwrap(), SCHEMA_VERSION);
+    let inspect = rusqlite::Connection::open(&paths.db).unwrap();
+    let rows: Vec<(String, String)> = inspect
+        .prepare("SELECT id, runtime_target FROM activations")
+        .unwrap()
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(rows, vec![("legacy".into(), "native".into())]);
+    drop(inspect);
     assert_eq!(
         migrated
             .find_activation_for_runtime(

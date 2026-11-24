@@ -800,18 +800,60 @@ pub struct Roots {
 
 impl Roots {
     pub fn resolve(opts: &AdapterOptions) -> Result<Self> {
-        let home = opts
-            .home
-            .clone()
-            .or_else(dirs::home_dir)
-            .ok_or_else(|| Error::invalid("the home folder is unknown"))?;
+        let home = if opts.runtime_target.is_native() {
+            opts.home
+                .clone()
+                .or_else(dirs::home_dir)
+                .ok_or_else(|| Error::invalid("the home folder is unknown"))?
+        } else {
+            let response = crate::runtime::invoke_helper(
+                &opts.runtime_target,
+                &serde_json::json!({"command": "environment"}),
+            )?;
+            PathBuf::from(
+                response
+                    .get("home")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| Error::command_failed("WSL helper did not report its home"))?,
+            )
+        };
         let isolated = opts.home.as_deref();
+        let join = |base: &Path, child: &str| crate::runtime::join_path(base, child);
         Ok(Self {
-            claude: crate::rewrite::claude::claude_dir(isolated)
-                .unwrap_or_else(|| home.join(".claude")),
-            codex: crate::rewrite::link::codex_dir(isolated).unwrap_or_else(|| home.join(".codex")),
-            grok: crate::rewrite::grok::grok_dir(isolated).unwrap_or_else(|| home.join(".grok")),
-            agents: home.join(".agents"),
+            claude: opts
+                .config_dirs
+                .get(&ToolKind::Claude)
+                .cloned()
+                .or_else(|| {
+                    opts.runtime_target
+                        .is_native()
+                        .then(|| crate::rewrite::claude::claude_dir(isolated))
+                        .flatten()
+                })
+                .unwrap_or_else(|| join(&home, ".claude")),
+            codex: opts
+                .config_dirs
+                .get(&ToolKind::Codex)
+                .cloned()
+                .or_else(|| {
+                    opts.runtime_target
+                        .is_native()
+                        .then(|| crate::rewrite::link::codex_dir(isolated))
+                        .flatten()
+                })
+                .unwrap_or_else(|| join(&home, ".codex")),
+            grok: opts
+                .config_dirs
+                .get(&ToolKind::Grok)
+                .cloned()
+                .or_else(|| {
+                    opts.runtime_target
+                        .is_native()
+                        .then(|| crate::rewrite::grok::grok_dir(isolated))
+                        .flatten()
+                })
+                .unwrap_or_else(|| join(&home, ".grok")),
+            agents: join(&home, ".agents"),
             home,
         })
     }
@@ -833,21 +875,26 @@ impl Roots {
     /// The folder a skill goes into, or the single file any other component becomes.
     fn unit(&self, component: &Component, tool: ToolKind) -> PathBuf {
         let name = &component.name;
+        let join = |base: &Path, child: &str| crate::runtime::join_path(base, child);
         match (component.kind, tool) {
-            (ComponentType::Skill, ToolKind::Codex) => self.agents.join("skills").join(name),
-            (ComponentType::Skill, _) => self.agent(tool).join("skills").join(name),
+            (ComponentType::Skill, ToolKind::Codex) => join(&join(&self.agents, "skills"), name),
+            (ComponentType::Skill, _) => join(&join(self.agent(tool), "skills"), name),
             (ComponentType::Command, _) => {
-                self.agent(tool).join("commands").join(format!("{name}.md"))
+                join(&join(self.agent(tool), "commands"), &format!("{name}.md"))
             }
             (ComponentType::Agent, ToolKind::Codex) => {
-                self.codex.join("agents").join(format!("{name}.toml"))
+                join(&join(&self.codex, "agents"), &format!("{name}.toml"))
             }
-            (ComponentType::Agent, _) => self.agent(tool).join("agents").join(format!("{name}.md")),
-            (ComponentType::Rule, ToolKind::Grok) => self
-                .grok
-                .join("rules")
-                .join(format!("{GROK_RULE_PREFIX}{name}.md")),
-            (ComponentType::Rule, _) => self.agent(tool).join("rules").join(format!("{name}.md")),
+            (ComponentType::Agent, _) => {
+                join(&join(self.agent(tool), "agents"), &format!("{name}.md"))
+            }
+            (ComponentType::Rule, ToolKind::Grok) => join(
+                &join(&self.grok, "rules"),
+                &format!("{GROK_RULE_PREFIX}{name}.md"),
+            ),
+            (ComponentType::Rule, _) => {
+                join(&join(self.agent(tool), "rules"), &format!("{name}.md"))
+            }
         }
     }
 
@@ -868,7 +915,7 @@ impl Roots {
                         let relative = file.path.strip_prefix(&root).unwrap_or(&file.path);
                         let mut target = unit.clone();
                         for part in relative.split('/') {
-                            target.push(part);
+                            target = crate::runtime::join_path(&target, part);
                         }
                         (target, file.content.clone())
                     })
@@ -919,6 +966,10 @@ pub struct LedgerFile {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LedgerPack {
+    #[serde(default)]
+    pub pack_id: String,
+    #[serde(default)]
+    pub runtime_target: crate::models::RuntimeTarget,
     pub version: String,
     pub source: String,
     pub installed_at: String,
@@ -979,6 +1030,97 @@ enum OnDisk {
     Other,
 }
 
+#[derive(Debug, Clone)]
+struct RuntimeNode {
+    disk: OnDisk,
+    text: Option<String>,
+    blocked: bool,
+    missing_dirs: Vec<PathBuf>,
+}
+
+fn inspect_runtime(
+    opts: &AdapterOptions,
+    path: &Path,
+    root: Option<&Path>,
+    read_text: bool,
+) -> Result<RuntimeNode> {
+    if opts.runtime_target.is_native() {
+        return Ok(RuntimeNode {
+            disk: on_disk(path),
+            text: read_text
+                .then(|| std::fs::read_to_string(path).ok())
+                .flatten(),
+            blocked: root.is_some_and(|root| blocked_path(path, root)),
+            missing_dirs: missing_dirs(path),
+        });
+    }
+    let response = crate::runtime::invoke_helper(
+        &opts.runtime_target,
+        &serde_json::json!({
+            "command": "inspect",
+            "paths": [{
+                "path": path.to_string_lossy(),
+                "root": root.map(|item| item.to_string_lossy().into_owned()),
+                "readText": read_text,
+            }],
+        }),
+    )?;
+    let key = path.to_string_lossy();
+    let item = response
+        .get("paths")
+        .and_then(|value| value.get(key.as_ref()))
+        .ok_or_else(|| Error::command_failed("WSL helper omitted a requested path"))?;
+    let disk = match item.get("kind").and_then(Value::as_str) {
+        Some("absent") => OnDisk::Absent,
+        Some("file") => OnDisk::File(
+            item.get("sha256")
+                .and_then(Value::as_str)
+                .ok_or_else(|| Error::command_failed("WSL helper omitted a file hash"))?
+                .to_string(),
+        ),
+        _ => OnDisk::Other,
+    };
+    Ok(RuntimeNode {
+        disk,
+        text: item.get("text").and_then(Value::as_str).map(str::to_string),
+        blocked: item.get("blocked").and_then(Value::as_bool).unwrap_or(true),
+        missing_dirs: item
+            .get("missingDirs")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(PathBuf::from)
+            .collect(),
+    })
+}
+
+fn directory_present(opts: &AdapterOptions, path: &Path) -> Result<bool> {
+    if opts.runtime_target.is_native() {
+        return Ok(path.is_dir());
+    }
+    let response = crate::runtime::invoke_helper(
+        &opts.runtime_target,
+        &serde_json::json!({
+            "command": "inspect",
+            "directories": [path.to_string_lossy()],
+        }),
+    )?;
+    Ok(response
+        .get("directories")
+        .and_then(|value| value.get(path.to_string_lossy().as_ref()))
+        .and_then(Value::as_str)
+        == Some("directory"))
+}
+
+fn ledger_pack_key(pack_id: &str, target: &crate::models::RuntimeTarget) -> String {
+    if target.is_native() {
+        pack_id.to_string()
+    } else {
+        format!("{pack_id}\u{1f}{}", target.storage_key())
+    }
+}
+
 fn on_disk(path: &Path) -> OnDisk {
     match std::fs::symlink_metadata(path) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => OnDisk::Absent,
@@ -1008,19 +1150,43 @@ pub struct InstalledState {
 
 /// Every installed harness pack, as the extensions page shows it. Reads only.
 pub fn installed(store: &Store) -> BTreeMap<String, InstalledState> {
+    installed_for(store, &crate::models::RuntimeTarget::Native)
+}
+
+pub fn installed_for(
+    store: &Store,
+    runtime_target: &crate::models::RuntimeTarget,
+) -> BTreeMap<String, InstalledState> {
+    let opts = AdapterOptions {
+        runtime_target: runtime_target.clone(),
+        ..Default::default()
+    };
     load_ledger_readonly(store)
         .packs
         .into_iter()
-        .map(|(id, pack)| {
+        .filter(|(_, pack)| &pack.runtime_target == runtime_target)
+        .map(|(key, pack)| {
+            let id = if pack.pack_id.is_empty() {
+                key
+            } else {
+                pack.pack_id.clone()
+            };
             let mut state = InstalledState {
                 version: pack.version.clone(),
                 files: pack.files.len() as u32,
                 ..Default::default()
             };
             for file in &pack.files {
-                match on_disk(Path::new(&file.path)) {
-                    OnDisk::Absent => state.missing += 1,
-                    OnDisk::File(sha) if sha == file.sha256 => {}
+                match inspect_runtime(
+                    &opts,
+                    Path::new(&file.path),
+                    file.root.as_deref().map(Path::new),
+                    false,
+                )
+                .map(|item| item.disk)
+                {
+                    Ok(OnDisk::Absent) => state.missing += 1,
+                    Ok(OnDisk::File(sha)) if sha == file.sha256 => {}
                     _ => state.modified += 1,
                 }
             }
@@ -1057,9 +1223,13 @@ struct JournalOp {
 #[serde(rename_all = "camelCase")]
 struct Journal {
     pack_id: String,
+    #[serde(default)]
+    runtime_target: crate::models::RuntimeTarget,
     /// The pack's ledger entry once the change is done; `None` when the pack goes.
     entry: Option<LedgerPack>,
     ops: Vec<JournalOp>,
+    #[serde(default)]
+    remove_dirs: Vec<String>,
 }
 
 /// Make the folders a change needs. One that cannot be made (something else is there now) is
@@ -1078,6 +1248,44 @@ fn create_dirs(dirs: &[String]) {
 /// planned (or already holds the result), so running it twice is the same as once. A change
 /// that cannot happen is left out of the ledger entry: its file is not ours.
 fn run_journal(store: &Store, journal: &Journal) -> Result<BTreeSet<String>> {
+    if !journal.runtime_target.is_native() {
+        let directories = journal
+            .entry
+            .as_ref()
+            .map(|entry| entry.dirs.clone())
+            .unwrap_or_default();
+        let response = crate::runtime::invoke_helper(
+            &journal.runtime_target,
+            &serde_json::json!({
+                "command": "apply",
+                "directories": directories,
+                "operations": journal.ops,
+                "removeDirectories": journal.remove_dirs,
+            }),
+        )?;
+        let failed: BTreeSet<String> = response
+            .get("failed")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(str::to_string)
+            .collect();
+        let mut ledger = load_ledger(store);
+        match &journal.entry {
+            Some(entry) => {
+                let mut entry = entry.clone();
+                entry.files.retain(|file| !failed.contains(&file.path));
+                ledger.packs.insert(journal.pack_id.clone(), entry);
+            }
+            None => {
+                ledger.packs.remove(&journal.pack_id);
+            }
+        }
+        save_ledger(store, &ledger)?;
+        let _ = std::fs::remove_file(journal_path(store));
+        return Ok(failed);
+    }
     if let Some(entry) = &journal.entry {
         create_dirs(&entry.dirs);
     }
@@ -1131,13 +1339,36 @@ fn run_journal(store: &Store, journal: &Journal) -> Result<BTreeSet<String>> {
     if let Some(entry) = &journal.entry {
         remove_empty_dirs(&entry.dirs);
     }
+    remove_empty_dirs(&journal.remove_dirs);
     let _ = std::fs::remove_file(journal_path(store));
     Ok(failed)
 }
 
 /// Whether a change can still run exactly as planned: the disk holds what the plan saw, and
 /// nothing on the way down has become a link.
-fn still_as_planned(op: &JournalOp) -> bool {
+fn still_as_planned(op: &JournalOp, target: &crate::models::RuntimeTarget) -> bool {
+    if !target.is_native() {
+        let opts = AdapterOptions {
+            runtime_target: target.clone(),
+            ..Default::default()
+        };
+        let Ok(inspected) = inspect_runtime(
+            &opts,
+            Path::new(&op.path),
+            op.root.as_deref().map(Path::new),
+            false,
+        ) else {
+            return false;
+        };
+        if inspected.blocked && op.after.is_some() {
+            return false;
+        }
+        return match (inspected.disk, &op.before) {
+            (OnDisk::Absent, None) => true,
+            (OnDisk::File(now), Some(before)) => now == *before,
+            _ => false,
+        };
+    }
     let path = Path::new(&op.path);
     if op
         .root
@@ -1312,6 +1543,7 @@ pub struct HarnessPlan {
     pub plan_id: String,
     pub pack_id: String,
     pub version: String,
+    pub runtime_target: crate::models::RuntimeTarget,
     /// The version installed now, for an update.
     pub from_version: Option<String>,
     pub files: Vec<PlannedFile>,
@@ -1339,14 +1571,15 @@ pub fn plan(
     }
     let roots = Roots::resolve(opts)?;
     let ledger = load_ledger(store);
-    let previous = ledger.packs.get(pack_id);
+    let ledger_key = ledger_pack_key(pack_id, &opts.runtime_target);
+    let previous = ledger.packs.get(&ledger_key);
     let ours: BTreeMap<&str, &LedgerFile> = previous
         .map(|p| p.files.iter().map(|f| (f.path.as_str(), f)).collect())
         .unwrap_or_default();
     let others: BTreeMap<&str, &str> = ledger
         .packs
         .iter()
-        .filter(|(id, _)| id.as_str() != pack_id)
+        .filter(|(id, _)| id.as_str() != ledger_key)
         .flat_map(|(id, p)| p.files.iter().map(move |f| (f.path.as_str(), id.as_str())))
         .collect();
     // A skill folder already there is someone else's unless this pack wrote into it.
@@ -1361,7 +1594,7 @@ pub fn plan(
     let mut planned_paths = BTreeSet::new();
     for component in components {
         for tool in &component.tools {
-            if !roots.present(*tool) {
+            if !directory_present(opts, roots.agent(*tool))? {
                 if !skipped.contains(tool) {
                     skipped.push(*tool);
                 }
@@ -1371,8 +1604,9 @@ pub fn plan(
                 shared_skills = true;
             }
             let unit = roots.unit(component, *tool);
+            let unit_node = inspect_runtime(opts, &unit, None, false)?;
             let unit_taken = component.kind == ComponentType::Skill
-                && std::fs::symlink_metadata(&unit).is_ok()
+                && unit_node.disk != OnDisk::Absent
                 && !our_dirs.contains(unit.to_string_lossy().as_ref())
                 && !ours.keys().any(|path| Path::new(path).starts_with(&unit));
             let targets = roots.targets(component, *tool).map_err(Error::invalid)?;
@@ -1380,7 +1614,13 @@ pub fn plan(
                 let key = target.to_string_lossy().into_owned();
                 planned_paths.insert(key.clone());
                 let after = sha_of(&content);
-                let now = on_disk(&target);
+                let check_root = if target.starts_with(&roots.agents) {
+                    roots.agents.clone()
+                } else {
+                    roots.agent(*tool).to_path_buf()
+                };
+                let inspected = inspect_runtime(opts, &target, Some(&check_root), true)?;
+                let now = inspected.disk.clone();
                 let mut file = PlannedFile {
                     component: component.id.clone(),
                     kind: component.kind,
@@ -1396,16 +1636,11 @@ pub fn plan(
                     after: Some(after.clone()),
                     root: None,
                 };
-                let check_root = if target.starts_with(&roots.agents) {
-                    roots.agents.clone()
-                } else {
-                    roots.agent(*tool).to_path_buf()
-                };
                 file.root = Some(check_root.to_string_lossy().into_owned());
                 if let Some(other) = others.get(key.as_str()) {
                     file.action = FileAction::Conflict;
                     file.reason = Some(format!("other-pack:{other}"));
-                } else if blocked_path(&target, &check_root) || now == OnDisk::Other {
+                } else if inspected.blocked || now == OnDisk::Other {
                     file.action = FileAction::Conflict;
                     file.reason = Some("not-a-file".into());
                 } else if let Some(record) = ours.get(key.as_str()) {
@@ -1419,7 +1654,7 @@ pub fn plan(
                         OnDisk::File(sha) if *sha == record.sha256 => {
                             file.action = FileAction::Update;
                             file.before = Some(sha.clone());
-                            let old = std::fs::read_to_string(&target).unwrap_or_default();
+                            let old = inspected.text.clone().unwrap_or_default();
                             file.diff = Some(crate::diff::unified_diff(
                                 &old,
                                 &content,
@@ -1439,7 +1674,7 @@ pub fn plan(
                     file.reason = Some("exists".into());
                 }
                 if file.action == FileAction::Add {
-                    for dir in missing_dirs(&target) {
+                    for dir in inspected.missing_dirs {
                         let dir = dir.to_string_lossy().into_owned();
                         if !new_dirs.contains(&dir) {
                             new_dirs.push(dir);
@@ -1457,7 +1692,13 @@ pub fn plan(
             if planned_paths.contains(&record.path) || skipped.contains(&record.tool) {
                 continue;
             }
-            let now = on_disk(Path::new(&record.path));
+            let inspected = inspect_runtime(
+                opts,
+                Path::new(&record.path),
+                record.root.as_deref().map(Path::new),
+                false,
+            )?;
+            let now = inspected.disk;
             let (action, before) = match &now {
                 OnDisk::Absent => continue,
                 OnDisk::File(sha) if *sha == record.sha256 => {
@@ -1496,6 +1737,7 @@ pub fn plan(
         plan_id: String::new(),
         pack_id: pack_id.to_string(),
         version: version.to_string(),
+        runtime_target: opts.runtime_target.clone(),
         from_version: previous.map(|p| p.version.clone()),
         files,
         skipped_tools: skipped,
@@ -1517,6 +1759,7 @@ fn plan_id(plan: &HarnessPlan) -> String {
     let canonical = serde_json::json!([
         plan.pack_id,
         plan.version,
+        plan.runtime_target,
         plan.from_version,
         files,
         plan.new_dirs
@@ -1552,7 +1795,8 @@ pub fn apply(
     let _lock = HomeLock::acquire(store.paths())?;
     recover(store)?;
     let ledger = load_ledger(store);
-    let previous = ledger.packs.get(&plan.pack_id).cloned();
+    let ledger_key = ledger_pack_key(&plan.pack_id, &plan.runtime_target);
+    let previous = ledger.packs.get(&ledger_key).cloned();
     let mut report = ApplyReport::default();
     let mut ops = Vec::new();
     let mut entry_files = Vec::new();
@@ -1630,6 +1874,8 @@ pub fn apply(
         }
     }
     let entry = LedgerPack {
+        pack_id: plan.pack_id.clone(),
+        runtime_target: plan.runtime_target.clone(),
         version: plan.version.clone(),
         source: source.to_string(),
         installed_at: previous
@@ -1640,13 +1886,19 @@ pub fn apply(
         dirs,
     };
     let journal = Journal {
-        pack_id: plan.pack_id.clone(),
+        pack_id: ledger_pack_key(&plan.pack_id, &plan.runtime_target),
+        runtime_target: plan.runtime_target.clone(),
         entry: Some(entry),
         ops,
+        remove_dirs: Vec::new(),
     };
     // The preview was read without the lock. Under it, everything must still be as it was;
     // otherwise nothing is written and the person looks again.
-    if !journal.ops.iter().all(still_as_planned) {
+    if !journal
+        .ops
+        .iter()
+        .all(|op| still_as_planned(op, &journal.runtime_target))
+    {
         return Err(Error::user_cancel("components:changed:"));
     }
     atomic_write(&journal_path(store), &serde_json::to_string(&journal)?)?;
@@ -1669,50 +1921,100 @@ pub fn apply(
 
 /// Take a pack's components out. Only files that still hold what this app wrote are removed.
 pub fn uninstall(store: &Store, pack_id: &str) -> Result<Option<ApplyReport>> {
+    uninstall_for(store, pack_id, &crate::models::RuntimeTarget::Native)
+}
+
+pub fn uninstall_for(
+    store: &Store,
+    pack_id: &str,
+    runtime_target: &crate::models::RuntimeTarget,
+) -> Result<Option<ApplyReport>> {
     let _lock = HomeLock::acquire(store.paths())?;
     recover(store)?;
-    let mut ledger = load_ledger(store);
-    let Some(pack) = ledger.packs.remove(pack_id) else {
+    let ledger = load_ledger(store);
+    let key = ledger_pack_key(pack_id, runtime_target);
+    let Some(pack) = ledger.packs.get(&key).cloned() else {
         return Ok(None);
     };
+    let opts = AdapterOptions {
+        runtime_target: runtime_target.clone(),
+        ..Default::default()
+    };
     let mut report = ApplyReport::default();
+    let mut ops = Vec::new();
     for file in &pack.files {
         let path = Path::new(&file.path);
-        if file
-            .root
-            .as_deref()
-            .is_some_and(|root| blocked_path(path, Path::new(root)))
-        {
+        let inspected = inspect_runtime(&opts, path, file.root.as_deref().map(Path::new), false)?;
+        if inspected.blocked {
             // A link now leads somewhere else: what is there is not what this app wrote.
             report.kept += 1;
             continue;
         }
-        match on_disk(path) {
+        match inspected.disk {
             OnDisk::File(sha) if sha == file.sha256 => {
-                std::fs::remove_file(&file.path)?;
+                ops.push(JournalOp {
+                    path: file.path.clone(),
+                    root: file.root.clone(),
+                    before: Some(sha),
+                    after: None,
+                    content: None,
+                });
                 report.removed += 1;
             }
             OnDisk::Absent => {}
             _ => report.kept += 1,
         }
     }
-    remove_empty_dirs(&pack.dirs);
-    save_ledger(store, &ledger)?;
+    let journal = Journal {
+        pack_id: key,
+        runtime_target: runtime_target.clone(),
+        entry: None,
+        ops,
+        remove_dirs: pack.dirs,
+    };
+    if !journal
+        .ops
+        .iter()
+        .all(|op| still_as_planned(op, &journal.runtime_target))
+    {
+        return Err(Error::user_cancel("components:changed:"));
+    }
+    atomic_write(&journal_path(store), &serde_json::to_string(&journal)?)?;
+    let failed = run_journal(store, &journal)?;
+    if !failed.is_empty() {
+        report.removed = report.removed.saturating_sub(failed.len() as u32);
+        report.kept += failed.len() as u32;
+    }
     Ok(Some(report))
 }
 
 /// Whether a pack is in the ledger.
 pub fn is_installed(store: &Store, pack_id: &str) -> bool {
-    load_ledger_readonly(store).packs.contains_key(pack_id)
+    is_installed_for(store, pack_id, &crate::models::RuntimeTarget::Native)
+}
+
+pub fn is_installed_for(
+    store: &Store,
+    pack_id: &str,
+    runtime_target: &crate::models::RuntimeTarget,
+) -> bool {
+    load_ledger_readonly(store)
+        .packs
+        .contains_key(&ledger_pack_key(pack_id, runtime_target))
 }
 
 /// The Codex skill folders this app put in the shared `~/.agents/skills`, as places under the
 /// home folder (`.agents/skills/<name>`). Cleaning Codex takes them out with the rest of its
 /// setup; they are outside `~/.codex`, so cleanup would not otherwise reach them.
-pub fn codex_shared_skills(store: &Store, home: &Path) -> Vec<String> {
+pub fn codex_shared_skills(
+    store: &Store,
+    home: &Path,
+    runtime_target: &crate::models::RuntimeTarget,
+) -> Vec<String> {
     let mut found: Vec<String> = load_ledger_readonly(store)
         .packs
         .values()
+        .filter(|pack| &pack.runtime_target == runtime_target)
         .flat_map(|pack| pack.files.iter())
         .filter(|file| file.tool == ToolKind::Codex && file.kind == ComponentType::Skill)
         .filter_map(|file| {

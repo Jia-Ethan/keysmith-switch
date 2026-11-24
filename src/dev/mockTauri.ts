@@ -79,7 +79,7 @@ function envelope(tool: ToolId, command: string, over: Partial<Envelope> = {}): 
   };
 }
 
-const settings: Record<string, unknown> = { language: "zh-CN", updateChannel: "stable", advancedToolsEnabled: false, defaultClaudeScope: "user", recentProjectDirs: [], updaterEndpointOverride: null, autoCheckUpdates: true, theme: "system", firstRunCompleted: true, extensionsEnabled: new URLSearchParams(window.location.search).has("ext"), agentRuntimeTargets: {} };
+const settings: Record<string, unknown> = { language: "zh-CN", updateChannel: "stable", advancedToolsEnabled: false, defaultClaudeScope: "user", recentProjectDirs: [], updaterEndpointOverride: null, autoCheckUpdates: true, theme: "system", firstRunCompleted: true, extensionsEnabled: new URLSearchParams(window.location.search).has("ext"), agentRuntimeTargets: {}, agentDirectories: [], extensionRuntimeTarget: { kind: "native" } };
 
 // ?ext=1 starts with extensions on; ?ext=update also pretends one pack has a newer version.
 const extUpdate = new URLSearchParams(window.location.search).get("ext") === "update";
@@ -346,7 +346,7 @@ async function handle(cmd: string, args: Record<string, any> = {}): Promise<unkn
       return {
         runtimes: [
           { target: { kind: "native" }, label: "Windows local", isDefault: true, state: "running", wslVersion: null, available: true, unavailableReason: null },
-          { target: { kind: "wsl", distribution: "Ubuntu-24.04" }, label: "WSL2 · Ubuntu-24.04", isDefault: true, state: "stopped", wslVersion: 2, available: true, unavailableReason: null },
+          { target: { kind: "wsl", distribution: "Ubuntu-24.04", user: "dev" }, label: "WSL2 · Ubuntu-24.04 · dev", isDefault: true, state: "stopped", wslVersion: 2, available: true, unavailableReason: null, home: "/home/dev" },
         ],
       };
     case "harness_state": {

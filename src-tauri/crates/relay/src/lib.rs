@@ -37,6 +37,9 @@ pub struct RelayConfig {
     pub schema: u32,
     pub port: u16,
     pub token: String,
+    /// Extra Windows host-interface addresses used by selected WSL2 runtimes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub listen_addresses: Vec<String>,
     /// Codex provider id → the base URL Codex used before the relay, e.g. `https://host/v1`.
     pub upstreams: BTreeMap<String, String>,
     /// `<tool>/<upstream id>` → the base URL that agent used before the relay. Absent in
@@ -74,6 +77,12 @@ pub fn config_path(home: &Path) -> PathBuf {
 
 pub fn snapshot_path(home: &Path) -> PathBuf {
     rewrite_dir(home).join("rules.json")
+}
+
+pub fn runtime_snapshot_path(home: &Path, profile: &str) -> PathBuf {
+    rewrite_dir(home)
+        .join("runtime-rules")
+        .join(format!("{profile}.json"))
 }
 
 /// A file read again only when its modification time or size changes.
@@ -131,8 +140,9 @@ fn parse_config(bytes: &[u8]) -> Option<RelayConfig> {
 }
 
 pub struct Relay {
+    home: PathBuf,
     config: Mutex<Watched<Option<RelayConfig>>>,
-    rules: Mutex<Watched<Matchers>>,
+    rules: Mutex<BTreeMap<String, Watched<Matchers>>>,
     client: reqwest::Client,
 }
 
@@ -144,9 +154,15 @@ impl Relay {
             .tcp_keepalive(Duration::from_secs(60))
             .build()
             .expect("http client");
+        let mut rules = BTreeMap::new();
+        rules.insert(
+            String::new(),
+            Watched::new(snapshot_path(home), parse_matchers),
+        );
         Arc::new(Self {
+            home: home.to_path_buf(),
             config: Mutex::new(Watched::new(config_path(home), parse_config)),
-            rules: Mutex::new(Watched::new(snapshot_path(home), parse_matchers)),
+            rules: Mutex::new(rules),
             client,
         })
     }
@@ -155,10 +171,18 @@ impl Relay {
         self.config.lock().ok()?.get()
     }
 
-    fn matchers(&self) -> Matchers {
+    fn matchers(&self, profile: Option<&str>) -> Matchers {
+        let key = profile.unwrap_or_default();
         self.rules
             .lock()
-            .map(|mut rules| rules.get())
+            .map(|mut rules| {
+                rules
+                    .entry(key.to_string())
+                    .or_insert_with(|| {
+                        Watched::new(runtime_snapshot_path(&self.home, key), parse_matchers)
+                    })
+                    .get()
+            })
             .unwrap_or_default()
     }
 }
@@ -211,6 +235,15 @@ struct Route {
     tool: Tool,
     upstream: String,
     rest: String,
+    profile: Option<String>,
+}
+
+fn runtime_profile(id: &str) -> Option<String> {
+    let (prefix, _) = id.split_once('-')?;
+    (prefix.len() == 13
+        && prefix.starts_with('w')
+        && prefix[1..].chars().all(|ch| ch.is_ascii_hexdigit()))
+    .then(|| prefix.to_ascii_lowercase())
 }
 
 /// `/t/<token>/<tool>/<upstream>/<rest>` or `/r/<token>/<provider>/<rest>` → the upstream
@@ -244,6 +277,7 @@ fn route(config: &RelayConfig, path: &str, query: Option<&str>) -> Option<Route>
         tool,
         upstream,
         rest: rest.to_string(),
+        profile: runtime_profile(id),
     })
 }
 
@@ -294,7 +328,7 @@ pub async fn handle(relay: Arc<Relay>, request: Request<Incoming>) -> Response<B
 
     let mut rewritten = 0usize;
     let body = if let Some(protocol) = rewritable(&route, &parts.method, &parts.headers) {
-        let matchers = relay.matchers();
+        let matchers = relay.matchers(route.profile.as_deref());
         match matchers
             .get(&route.tool)
             .and_then(|matcher| rewrite_request_bytes(protocol, route.tool, matcher, &bytes))

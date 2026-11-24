@@ -1,7 +1,8 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ExtensionsProvider } from "../components/ExtensionsProvider";
-import type { ExtensionPack, ExtensionsView, HarnessPlan } from "../types";
+import { DEFAULT_SETTINGS } from "../types";
+import type { ExtensionPack, ExtensionsView, HarnessPlan, RuntimeTarget, Settings } from "../types";
 import { ExtensionsPage } from "./ExtensionsPage";
 
 const extensionsState = vi.fn();
@@ -11,6 +12,7 @@ const previewExtensionRules = vi.fn();
 const uninstallExtension = vi.fn();
 const planHarness = vi.fn();
 const confirmHarness = vi.fn();
+const listRuntimes = vi.fn();
 
 vi.mock("../api", () => ({
   extensionsState: (...args: unknown[]) => extensionsState(...args),
@@ -20,6 +22,7 @@ vi.mock("../api", () => ({
   uninstallExtension: (...args: unknown[]) => uninstallExtension(...args),
   planHarness: (...args: unknown[]) => planHarness(...args),
   confirmHarness: (...args: unknown[]) => confirmHarness(...args),
+  listRuntimes: (...args: unknown[]) => listRuntimes(...args),
 }));
 
 const base: ExtensionPack = {
@@ -47,10 +50,14 @@ const view = (packs: ExtensionPack[], over: Partial<ExtensionsView> = {}): Exten
 
 const toast = { ok: vi.fn(), err: vi.fn(), info: vi.fn(), toasts: [], dismiss: vi.fn() };
 
-function renderPage(enabled: boolean, onEnabledChange = vi.fn().mockResolvedValue(undefined)) {
+function renderPage(
+  enabled: boolean,
+  onEnabledChange = vi.fn().mockResolvedValue(undefined),
+  settings: Settings = DEFAULT_SETTINGS,
+) {
   const ui = (on: boolean) => (
-    <ExtensionsProvider enabled={on} onEnabledChange={onEnabledChange}>
-      <ExtensionsPage toast={toast as never} />
+    <ExtensionsProvider enabled={on} runtimeTarget={settings.extensionRuntimeTarget} onEnabledChange={onEnabledChange}>
+      <ExtensionsPage toast={toast as never} settings={settings} />
     </ExtensionsProvider>
   );
   const utils = render(ui(enabled));
@@ -62,6 +69,9 @@ describe("ExtensionsPage", () => {
     vi.clearAllMocks();
     extensionsState.mockResolvedValue(view([base]));
     extensionsRefresh.mockResolvedValue(view([base]));
+    listRuntimes.mockResolvedValue({
+      runtimes: [{ target: { kind: "native" }, label: "Windows 本机", isDefault: true, state: "running", wslVersion: null, available: true, unavailableReason: null, home: "C:\\Users\\Test" }],
+    });
   });
 
   it("explains itself and reads nothing while off", () => {
@@ -116,7 +126,7 @@ describe("ExtensionsPage", () => {
     });
     renderPage(true);
     fireEvent.click(await screen.findByTestId("extension-install-keysmith.example"));
-    await waitFor(() => expect(installExtension).toHaveBeenCalledWith("keysmith.example", false));
+    await waitFor(() => expect(installExtension).toHaveBeenCalledWith("keysmith.example", false, { kind: "native" }));
     await waitFor(() => expect(toast.ok).toHaveBeenCalledWith(expect.stringContaining("未部署")));
     expect(await screen.findByTestId("extension-status-keysmith.example")).toHaveTextContent("已安装 v0.1.0");
     expect(screen.queryByTestId("extension-install-keysmith.example")).not.toBeInTheDocument();
@@ -153,8 +163,47 @@ describe("ExtensionsPage", () => {
     expect(screen.getByRole("dialog")).toHaveTextContent("你改过的和正在使用的会保留");
     expect(uninstallExtension).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId("extensions-confirm-uninstall"));
-    await waitFor(() => expect(uninstallExtension).toHaveBeenCalledWith("keysmith.example"));
+    await waitFor(() => expect(uninstallExtension).toHaveBeenCalledWith("keysmith.example", { kind: "native" }));
     await waitFor(() => expect(toast.ok).toHaveBeenCalledWith(expect.stringContaining("移除 1 条")));
+  });
+
+  it("keeps extension reads and harness writes inside the selected WSL user", async () => {
+    const target: RuntimeTarget = { kind: "wsl", distribution: "Ubuntu-24.04", user: "root" };
+    const settings = { ...DEFAULT_SETTINGS, extensionRuntimeTarget: target };
+    const kit = { ...base, id: "wsl.kit", kind: "harness" as const, components: [] };
+    const harnessPlan: HarnessPlan = {
+      planId: "wsl-plan",
+      packId: kit.id,
+      version: kit.version,
+      runtimeTarget: target,
+      fromVersion: null,
+      files: [{
+        component: "review",
+        type: "skill",
+        name: "review",
+        tool: "codex",
+        path: "/root/.agents/skills/review/SKILL.md",
+        display: "~/.agents/skills/review/SKILL.md",
+        action: "add",
+        content: "Review the change.",
+        diff: null,
+        reason: null,
+      }],
+      skippedTools: [],
+      sharedSkills: false,
+      blocked: false,
+      nothingToDo: false,
+    };
+    extensionsState.mockResolvedValue(view([kit]));
+    planHarness.mockResolvedValue(harnessPlan);
+    confirmHarness.mockResolvedValue({ view: view([{ ...kit, installedVersion: kit.version }]), report: { added: 0, updated: 0, kept: 0, removed: 0 } });
+
+    renderPage(true, undefined, settings);
+    await waitFor(() => expect(extensionsState).toHaveBeenCalledWith(target));
+    fireEvent.click(await screen.findByTestId("extension-install-wsl.kit"));
+    await waitFor(() => expect(planHarness).toHaveBeenCalledWith("wsl.kit", target));
+    fireEvent.click(screen.getByTestId("extensions-harness-confirm"));
+    await waitFor(() => expect(confirmHarness).toHaveBeenCalledWith("wsl.kit", "wsl-plan", target));
   });
 
   it("shows why a look failed, and keeps the packs it already had", async () => {
@@ -277,7 +326,7 @@ describe("ExtensionsPage", () => {
     expect(await screen.findByTestId("extensions-rules-preview")).toHaveTextContent("foo");
     expect(installExtension).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId("extensions-rules-install-enable"));
-    await waitFor(() => expect(installExtension).toHaveBeenCalledWith("x.rules", true));
+    await waitFor(() => expect(installExtension).toHaveBeenCalledWith("x.rules", true, { kind: "native" }));
     await waitFor(() => expect(toast.ok).toHaveBeenCalledWith(expect.stringContaining("输入替换")));
   });
 
@@ -293,7 +342,7 @@ describe("ExtensionsPage", () => {
     fireEvent.click(await screen.findByTestId("extension-install-x.rules"));
     await screen.findByTestId("extensions-rules-preview");
     fireEvent.click(screen.getByTestId("extensions-rules-install-only"));
-    await waitFor(() => expect(installExtension).toHaveBeenCalledWith("x.rules", false));
+    await waitFor(() => expect(installExtension).toHaveBeenCalledWith("x.rules", false, { kind: "native" }));
   });
 
   it("installs a sealed rule pack from a count, without showing from or to", async () => {
@@ -312,7 +361,7 @@ describe("ExtensionsPage", () => {
     expect(screen.queryByTestId("extensions-rules-preview")).not.toBeInTheDocument();
     expect(screen.getByRole("dialog")).not.toHaveTextContent("foo");
     fireEvent.click(screen.getByTestId("extensions-rules-install-enable"));
-    await waitFor(() => expect(installExtension).toHaveBeenCalledWith("x.sealed", true));
+    await waitFor(() => expect(installExtension).toHaveBeenCalledWith("x.sealed", true, { kind: "native" }));
   });
 
   describe("harness packs", () => {
@@ -333,6 +382,7 @@ describe("ExtensionsPage", () => {
       planId: "plan-1",
       packId: kit.id,
       version: "0.1.0",
+      runtimeTarget: { kind: "native" },
       fromVersion: null,
       files: [
         {
@@ -378,7 +428,7 @@ describe("ExtensionsPage", () => {
       fireEvent.click(screen.getByTestId("harness-file-toggle"));
       expect(screen.getByTestId("harness-file-body")).toHaveTextContent("Read the diff.");
       fireEvent.click(screen.getByTestId("extensions-harness-confirm"));
-      await waitFor(() => expect(confirmHarness).toHaveBeenCalledWith("jia.review-kit", "plan-1"));
+      await waitFor(() => expect(confirmHarness).toHaveBeenCalledWith("jia.review-kit", "plan-1", { kind: "native" }));
       await waitFor(() => expect(toast.ok).toHaveBeenCalledWith("已装入：新建 1 个文件"));
     });
 

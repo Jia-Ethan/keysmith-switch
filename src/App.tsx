@@ -126,6 +126,7 @@ export function App() {
     >
       <ExtensionsProvider
         enabled={settingsState.settings.extensionsEnabled}
+        runtimeTarget={settingsState.settings.extensionRuntimeTarget}
         onEnabledChange={async (next) => {
           await settingsState.save({ extensionsEnabled: next });
         }}
@@ -232,12 +233,20 @@ export function App() {
           ) : null}
           {visiblePage.kind === "extensions" ? (
             <div className="animate-page-in min-h-0 flex-1">
-              <ExtensionsPage toast={toast} />
+              <ExtensionsPage
+                toast={toast}
+                settings={settingsState.settings}
+                onSettingsSave={settingsState.save}
+              />
             </div>
           ) : null}
           {visiblePage.kind === "rewrite" ? (
             <div className="animate-page-in min-h-0 flex-1">
-              <RewritePage toast={toast} />
+              <RewritePage
+                toast={toast}
+                settings={settingsState.settings}
+                onSettingsSave={settingsState.save}
+              />
             </div>
           ) : null}
           {visiblePage.kind === "announcements" ? (
@@ -247,7 +256,12 @@ export function App() {
           ) : null}
           {visiblePage.kind === "advanced" ? (
             <div className="animate-page-in min-h-0 flex-1 overflow-auto px-4 py-5 sm:px-6">
-              <AdvancedPage enabled={advancedEnabled} toast={toast} />
+              <AdvancedPage
+                enabled={advancedEnabled}
+                toast={toast}
+                settings={settingsState.settings}
+                onSettingsSave={settingsState.save}
+              />
             </div>
           ) : null}
         </AppShell>

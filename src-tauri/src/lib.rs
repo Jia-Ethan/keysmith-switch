@@ -54,7 +54,7 @@ pub fn run() {
             let state = commands::AppState::open().map_err(|error| error.to_string())?;
             let _ = logging::init(state.store.paths());
             // The relay may have started before this app ever ran; give it current rules.
-            let _ = rewrite::publish(&state.store);
+            let _ = rewrite::publish_all(&state.store);
             // Bring an installed relay up to this version, off the startup path.
             let paths = state.store.paths().clone();
             std::thread::spawn(move || {

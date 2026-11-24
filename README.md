@@ -82,6 +82,12 @@
 </tr>
 </table>
 
+## Windows 与 WSL2
+
+Windows 版 App 始终运行在 Windows，但可以把 Windows 本机和 WSL2 当作彼此独立的管理目标。设置页会列出每个 WSL2 发行版中的可登录 Linux 用户；每个 Agent 可分别选择 `Windows 本机` 或具体的「发行版 + 用户」，也可覆盖该 runtime 中的配置目录。
+
+提示词库可共用，但部署状态、操作记录、组件账本、清理快照，以及输入替换的连接、规则、规则包和开关都按 runtime 隔离。高级工具也会在相应 Agent 选择的 runtime 中执行。所有 WSL 文件操作由所选 Linux 用户执行，不会通过 `\\wsl$` 写入；WSL 内需有 `python3`。某个 Agent 或官方安装源本身不支持 Linux 时，界面会显示实际探测到的不可用原因。
+
 <table>
 <tr>
 <td width="50%" align="center">
@@ -239,7 +245,7 @@ flowchart LR
   <img src="docs/images/rewrite-light.png" width="880" alt="输入替换页：每个 Agent 一行，显示状态、开关和连接操作；下方是可按 Agent 筛选的规则表" />
 </picture>
 
-- **改写发生在本机。** Switch 在本机运行 `keysmith-relay`，它只监听 `127.0.0.1`。连接一个 Agent，就是只改它的一个配置项，让它把请求发给中转服务。中转服务按规则改写你输入的文字后，转发到原来的地址，响应原样流式返回。中转服务开机自启（macOS 用 LaunchAgent，Windows 用登录启动项），Switch 不打开也能工作。
+- **改写发生在本机。** Switch 在本机运行 `keysmith-relay`。本机 Agent 使用 `127.0.0.1`；连接 WSL2 Agent 时，relay 只额外监听该 WSL 能到达的 Windows 虚拟网卡地址，不监听 `0.0.0.0`，不向局域网开放。连接一个 Agent，就是只改它的一个配置项，让它把请求发给中转服务。中转服务按规则改写你输入的文字后，转发到原来的地址，响应原样流式返回。中转服务开机自启（macOS 用 LaunchAgent，Windows 用登录启动项），Switch 不打开也能工作。
 
   | Agent | 连接时改动的配置 |
   | --- | --- |
@@ -275,7 +281,7 @@ flowchart LR
 | `~/.keysmith-switch/snapshots/` | 清理前保存的版本 |
 | `~/.keysmith-switch/logs/` | 日志（中转服务日志为 `relay.log`） |
 | `~/.keysmith-switch/components/` | 组件包：写入过的每个文件和哈希 `ledger.json`；写入中途的日志 `journal.json`，下次启动时补完。清除全部数据不会删它，因为它记的是仍留在 Agent 目录里的文件 |
-| `~/.keysmith-switch/input-rewrite/` | 输入替换：中转服务读取的规则快照 `rules.json`、端口与转发地址 `relay.json`、各 Agent 的连接记录（`codex-link.json`、`claude-link.json`、`zcode-link.json`）、中转服务程序 |
+| `~/.keysmith-switch/input-rewrite/` | 输入替换：Windows 规则快照 `rules.json`、WSL runtime 规则快照 `runtime-rules/`、端口与转发地址 `relay.json`、本机连接记录、按 WSL runtime 隔离的 `targets/` 连接记录、中转服务程序 |
 
 测试时可以用 `KEYSMITH_SWITCH_HOME` 覆盖数据根目录。
 
@@ -286,7 +292,7 @@ App 会在这些时候联网，请求里都不包含提示词、规则或配置�
 | 启动后，之后每 6 小时；窗口回到前台、距上次超过 1 小时也会 | 检查更新、读取公告（GitHub 上的 `keysmith-switch-releases`） |
 | 打开“拓展”之后 | 读取官方拓展源，下载你选择的包 |
 | 你确认安装更新时 | 下载更新包 |
-| 打开设置时，且本机装了 npm | 通过本机的 `npm` 查询 Claude Code、Codex 的最新版本号 |
+| 查看官方 CLI 安装计划，且所选 runtime 装了 npm | 通过该 Windows/WSL runtime 的 `npm` 查询 Claude Code、Codex 的最新版本号 |
 | 你提交反馈时 | 打开 GitHub 上预填好的 issue 表单；本机已登录 GitHub CLI 时直接创建 issue |
 
 ## 🛠️ 开发

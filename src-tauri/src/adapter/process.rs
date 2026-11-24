@@ -30,6 +30,7 @@ pub struct ResolvedCli {
     pub prefix: Vec<String>,
     pub frozen: bool,
     pub display_path: Option<String>,
+    pub environment: Vec<(String, String)>,
 }
 
 impl ResolvedCli {
@@ -134,28 +135,42 @@ pub fn resolve_cli(tool: ToolKind, opts: &AdapterOptions) -> Result<ResolvedCli>
 
 pub async fn resolve_cli_for_runtime(tool: ToolKind, opts: &AdapterOptions) -> Result<ResolvedCli> {
     match &opts.runtime_target {
-        RuntimeTarget::Native => resolve_cli(tool, opts),
-        RuntimeTarget::Wsl { distribution } => {
-            crate::runtime::python_available(distribution).await?;
+        RuntimeTarget::Native => {
+            let mut cli = resolve_cli(tool, opts)?;
+            cli.environment = adapter_environment(tool, opts);
+            Ok(cli)
+        }
+        RuntimeTarget::Wsl { distribution, user } => {
+            crate::runtime::python_available(&opts.runtime_target).await?;
             let script = find_vendored_script(tool).ok_or_else(|| {
                 Error::cli_missing(format!(
                     "bundled {} adapter script is missing; reinstall Keysmith Switch",
                     tool.as_str()
                 ))
             })?;
-            let script = crate::runtime::translate_path(distribution, &script).await?;
+            let script = crate::runtime::translate_path(&opts.runtime_target, &script).await?;
             let display_path = script.to_string_lossy().into_owned();
+            let mut prefix = vec!["--distribution".into(), distribution.clone()];
+            if let Some(user) = user {
+                prefix.extend(["--user".into(), user.clone()]);
+            }
+            prefix.push("--exec".into());
+            let environment = adapter_environment(tool, opts);
+            if !environment.is_empty() {
+                prefix.push("env".into());
+                prefix.extend(
+                    environment
+                        .iter()
+                        .map(|(key, value)| format!("{key}={value}")),
+                );
+            }
+            prefix.extend(["python3".into(), display_path.clone()]);
             Ok(ResolvedCli {
                 program: crate::runtime::program(),
-                prefix: vec![
-                    "--distribution".into(),
-                    distribution.clone(),
-                    "--exec".into(),
-                    "python3".into(),
-                    display_path.clone(),
-                ],
+                prefix,
                 frozen: false,
                 display_path: Some(display_path),
+                environment: Vec::new(),
             })
         }
     }
@@ -215,6 +230,7 @@ fn python_script(script: PathBuf) -> Result<ResolvedCli> {
         prefix: vec![script.to_string_lossy().into_owned()],
         frozen: false,
         display_path: None,
+        environment: Vec::new(),
     })
 }
 
@@ -224,6 +240,7 @@ fn frozen(program: PathBuf) -> ResolvedCli {
         prefix: Vec::new(),
         frozen: true,
         display_path: None,
+        environment: Vec::new(),
     }
 }
 
@@ -362,6 +379,9 @@ pub async fn invoke(
             command.env("USERPROFILE", home);
             command.env("CLAUDE_KEYSMITH_HOME", home);
         }
+        for (key, value) in &cli.environment {
+            command.env(key, value);
+        }
     }
     for (key, value) in &opts.extra_env {
         command.env(key, value);
@@ -410,6 +430,21 @@ pub async fn invoke(
             finish_capture(argv, -1, true, stdout_cap, stderr_cap)
         }
     }
+}
+
+fn adapter_environment(tool: ToolKind, opts: &AdapterOptions) -> Vec<(String, String)> {
+    let Some(path) = opts.config_dirs.get(&tool) else {
+        return Vec::new();
+    };
+    let value = path.to_string_lossy().into_owned();
+    let key = match tool {
+        ToolKind::Claude => "CLAUDE_CONFIG_DIR",
+        ToolKind::Codex => "CODEX_HOME",
+        ToolKind::Grok => "GROK_HOME",
+        ToolKind::Dsh => "DSH_HOME",
+        ToolKind::Pi | ToolKind::Zcode => return Vec::new(),
+    };
+    vec![(key.to_string(), value)]
 }
 
 async fn join_output(

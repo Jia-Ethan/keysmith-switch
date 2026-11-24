@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ConfirmDialog } from "../components/ConfirmDialog";
+import { Dropdown } from "../components/Dropdown";
 import { extensionErrorCode, useExtensions } from "../components/ExtensionsProvider";
 import { HarnessPlanView } from "../components/HarnessPlanView";
 import { Callout } from "../components/PlanPreview";
@@ -10,14 +11,24 @@ import { ToolLogo } from "../components/ToolLogos";
 import { Button, cx, Switch } from "../components/ui";
 import type { ToastApi } from "../hooks/useToasts";
 import { formatBytes, relativeTime } from "../lib/format";
-import type { ExtensionPack, ExtensionReport, HarnessPlan, HarnessReport, RulePreview } from "../types";
+import { runtimeTargetKey } from "../lib/harnessState";
+import { DEFAULT_SETTINGS } from "../types";
+import type { ExtensionPack, ExtensionReport, HarnessPlan, HarnessReport, RulePreview, RuntimeInfo, Settings, SettingsPatch } from "../types";
 
 /**
  * Extension packs: prompt bundles that the official source publishes and that update on
  * their own, apart from the app. Off until the person turns it on, because turning it on
  * is what lets the app read the network.
  */
-export function ExtensionsPage({ toast }: { toast: ToastApi }) {
+export function ExtensionsPage({
+  toast,
+  settings = DEFAULT_SETTINGS,
+  onSettingsSave = async () => DEFAULT_SETTINGS,
+}: {
+  toast: ToastApi;
+  settings?: Settings;
+  onSettingsSave?: (patch: SettingsPatch) => Promise<Settings>;
+}) {
   const { t, i18n } = useTranslation();
   const ext = useExtensions();
   const [enabling, setEnabling] = useState(false);
@@ -29,12 +40,29 @@ export function ExtensionsPage({ toast }: { toast: ToastApi }) {
   const [planning, setPlanning] = useState<{ pack: ExtensionPack; plan: HarnessPlan | null } | null>(null);
   const [updatingAll, setUpdatingAll] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  const [runtimes, setRuntimes] = useState<RuntimeInfo[]>([]);
   const view = ext.view;
+  const runtimeTarget = settings.extensionRuntimeTarget;
+  const runtimeKey = runtimeTargetKey(runtimeTarget);
 
   // "3 minutes ago" has to move on by itself while the page stays open.
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 30_000);
     return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api.listRuntimes()
+      .then(({ runtimes: found }) => {
+        if (!cancelled) setRuntimes(found);
+      })
+      .catch(() => {
+        if (!cancelled) setRuntimes([]);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Packs with an update lead, so the rail's count points at the first cards.
@@ -124,7 +152,7 @@ export function ExtensionsPage({ toast }: { toast: ToastApi }) {
   const plan = async (pack: ExtensionPack) => {
     setPlanning({ pack, plan: null });
     try {
-      const next = await api.planHarness(pack.id);
+      const next = await api.planHarness(pack.id, runtimeTarget);
       setPlanning((current) => (current?.pack.id === pack.id ? { pack, plan: next } : current));
     } catch (error) {
       setPlanning(null);
@@ -180,6 +208,18 @@ export function ExtensionsPage({ toast }: { toast: ToastApi }) {
           </div>
           {ext.enabled ? (
             <div className="flex shrink-0 items-center gap-2">
+              <Dropdown
+                label={t("runtime.label")}
+                value={runtimeKey}
+                options={runtimes.map((runtime) => ({ value: runtimeTargetKey(runtime.target), label: runtime.label }))}
+                disabled={locked || runtimes.length === 0}
+                onChange={(key) => {
+                  const target = runtimes.find((runtime) => runtimeTargetKey(runtime.target) === key)?.target;
+                  if (target) void onSettingsSave({ extensionRuntimeTarget: target });
+                }}
+                testId="extensions-runtime"
+                className="w-[230px]"
+              />
               {checkedAt ? (
                 <span className="hidden text-[12px] text-muted-foreground sm:inline" title={checkedAtExact} data-testid="extensions-checked-at">
                   {checkedAt}

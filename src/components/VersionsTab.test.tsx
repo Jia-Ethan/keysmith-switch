@@ -26,6 +26,7 @@ const snapshot: SnapshotMeta = {
   id: "20261001-141600-ab12",
   createdAt: "2026-10-01T14:16:00Z",
   tool: "claude",
+  runtimeTarget: { kind: "native" },
   kind: "cleanup",
   deployment: { present: true, title: "Reviewer", restorable: true },
   memory: { path: "/home/u/.claude/CLAUDE.md", bytes: 1300, lines: 31, sha256: "abc", mode: 420 },
@@ -79,7 +80,7 @@ describe("VersionsTab", () => {
     fireEvent.click(screen.getByTestId("rollback-confirm"));
     await waitFor(() => expect(confirmRollback).toHaveBeenCalledWith("op-9"));
     await waitFor(() => expect(toast.ok).toHaveBeenCalled());
-    expect(loadHarnessStatus).toHaveBeenCalledWith("claude", true);
+    expect(loadHarnessStatus).toHaveBeenCalledWith("claude", { kind: "native" }, true);
     expect(onChanged).toHaveBeenCalled();
   });
 

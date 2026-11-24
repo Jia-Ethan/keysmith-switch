@@ -9,8 +9,7 @@
     "unavailable": "Unavailable",
     "missing": "This runtime no longer exists",
     "saveFailed": "Could not save the runtime environment",
-    "wslScope": "Deploy, remove, and recovery actions for this agent run in the selected WSL2 distribution. Cleanup, components, installation, and input rewrite remain Windows-local only.",
-    "zcodeUnsupported": "ZCode does not currently have a supported Linux/WSL runtime. Select Windows local."
+    "wslScope": "Deployments, components, cleanup, snapshots, and recovery affect only the selected WSL2 distribution and Linux user."
   },
   "nav": {
     "claude": "Claude Code",

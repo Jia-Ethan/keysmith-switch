@@ -15,6 +15,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use crate::models::RuntimeTarget;
 use crate::redact::redact_text;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -69,6 +70,8 @@ pub struct OfficialPlan {
     pub argv: Vec<String>,
     pub dest: String,
     pub blockers: Vec<String>,
+    #[serde(default)]
+    pub runtime_target: RuntimeTarget,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -178,11 +181,35 @@ pub fn plan_official_action_on(
         argv,
         dest,
         blockers,
+        runtime_target: RuntimeTarget::Native,
     };
     if let Ok(mut store) = plan_store().lock() {
         store.insert(plan.plan_id.clone(), plan.clone());
     }
     plan
+}
+
+pub fn plan_official_action_on_target(
+    product: OfficialProduct,
+    action: OfficialAction,
+    host: &OfficialHost,
+    runtime_target: RuntimeTarget,
+) -> OfficialPlan {
+    let mut plan = plan_official_action_on(product, action, host);
+    plan.runtime_target = runtime_target;
+    if let Ok(mut store) = plan_store().lock() {
+        store.insert(plan.plan_id.clone(), plan.clone());
+    }
+    plan
+}
+
+pub fn probe_spec(product: OfficialProduct) -> (&'static str, Option<&'static str>) {
+    match product {
+        OfficialProduct::Claude => ("claude", Some(CLAUDE_PACKAGE)),
+        OfficialProduct::Codex => ("codex", Some(CODEX_PACKAGE)),
+        OfficialProduct::Grok => ("grok", None),
+        OfficialProduct::Zcode => ("zcode", None),
+    }
 }
 
 pub fn confirm_official_action(plan_id: &str, confirmed: bool) -> OfficialResult {
@@ -198,8 +225,13 @@ pub fn confirm_official_action_cancellable<F>(
 where
     F: FnMut(u64),
 {
+    let runtime_target = plan_store()
+        .lock()
+        .ok()
+        .and_then(|store| store.get(plan_id).map(|plan| plan.runtime_target.clone()))
+        .unwrap_or_default();
     confirm_official_action_exec(plan_id, confirmed, |argv| {
-        default_exec_cancellable(argv, &cancelled, &mut on_progress)
+        default_exec_cancellable_on(argv, &runtime_target, &cancelled, &mut on_progress)
     })
 }
 
@@ -523,6 +555,18 @@ fn default_exec_cancellable<F>(
 where
     F: FnMut(u64),
 {
+    default_exec_cancellable_on(argv, &RuntimeTarget::Native, cancelled, on_progress)
+}
+
+fn default_exec_cancellable_on<F>(
+    argv: &[String],
+    runtime_target: &RuntimeTarget,
+    cancelled: &AtomicBool,
+    on_progress: &mut F,
+) -> Result<(), String>
+where
+    F: FnMut(u64),
+{
     if std::env::var("KEYSMITH_SWITCH_OFFICIAL_DRY_RUN")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false)
@@ -532,7 +576,21 @@ where
     if argv.is_empty() {
         return Err("empty argv".to_string());
     }
-    let mut command = Command::new(&argv[0]);
+    let mut command = match runtime_target {
+        RuntimeTarget::Native => Command::new(&argv[0]),
+        RuntimeTarget::Wsl { distribution, user } => {
+            if !cfg!(windows) {
+                return Err("WSL official actions are only available on Windows".to_string());
+            }
+            let mut command = Command::new("wsl.exe");
+            command.args(["--distribution", distribution]);
+            if let Some(user) = user {
+                command.args(["--user", user]);
+            }
+            command.args(["--exec", &argv[0]]);
+            command
+        }
+    };
     command.args(&argv[1..]);
     let output =
         run_command_timeout_cancellable(&mut command, INSTALL_TIMEOUT, cancelled, on_progress)?;

@@ -210,6 +210,7 @@ impl Store {
             tx.execute("DELETE FROM settings", [])?;
             tx.execute("DELETE FROM rules", [])?;
             tx.execute("DELETE FROM rule_tables", [])?;
+            tx.execute("DELETE FROM rewrite_profiles", [])?;
             write_settings(&tx, &Settings::default())?;
             tx.commit()?;
             self.paths.ensure()?;
@@ -779,6 +780,13 @@ impl Store {
     /// Read, patch and write under one hold of the connection: two changes at once (the Settings
     /// page and the Input rewrite page) both land, and neither writes back what the other replaced.
     pub fn update_settings(&self, patch: SettingsPatch) -> Result<Settings> {
+        let rewrite_patch = (
+            patch.rewrite_enabled,
+            patch.rewrite_codex_enabled,
+            patch.rewrite_claude_enabled,
+            patch.rewrite_grok_enabled,
+            patch.rewrite_zcode_enabled,
+        );
         let conn = self.conn()?;
         let mut settings = read_settings(&conn)?;
         if let Some(language) = patch.language {
@@ -829,7 +837,32 @@ impl Store {
         if let Some(value) = patch.agent_runtime_targets {
             settings.agent_runtime_targets = value;
         }
+        if let Some(value) = patch.agent_directories {
+            settings.agent_directories = value;
+        }
+        if let Some(value) = patch.extension_runtime_target {
+            settings.extension_runtime_target = value;
+        }
+        if let Some(value) = patch.rewrite_runtime_target {
+            settings.rewrite_runtime_target = value;
+        }
         write_settings(&conn, &settings)?;
+        drop(conn);
+        if rewrite_patch.0.is_some()
+            || rewrite_patch.1.is_some()
+            || rewrite_patch.2.is_some()
+            || rewrite_patch.3.is_some()
+            || rewrite_patch.4.is_some()
+        {
+            self.update_rewrite_switches(
+                &RuntimeTarget::Native,
+                rewrite_patch.0,
+                rewrite_patch.1,
+                rewrite_patch.2,
+                rewrite_patch.3,
+                rewrite_patch.4,
+            )?;
+        }
         Ok(settings)
     }
 
@@ -1195,6 +1228,18 @@ fn write_settings(conn: &Connection, settings: &Settings) -> Result<()> {
             "agentRuntimeTargets",
             serde_json::to_string(&settings.agent_runtime_targets)?,
         ),
+        (
+            "agentDirectories",
+            serde_json::to_string(&settings.agent_directories)?,
+        ),
+        (
+            "extensionRuntimeTarget",
+            serde_json::to_string(&settings.extension_runtime_target)?,
+        ),
+        (
+            "rewriteRuntimeTarget",
+            serde_json::to_string(&settings.rewrite_runtime_target)?,
+        ),
     ];
     for (key, value) in pairs {
         conn.execute(
@@ -1246,6 +1291,21 @@ fn apply_setting(settings: &mut Settings, key: &str, value: &str) {
         "agentRuntimeTargets" => {
             if let Ok(targets) = serde_json::from_str(value) {
                 settings.agent_runtime_targets = targets;
+            }
+        }
+        "agentDirectories" => {
+            if let Ok(directories) = serde_json::from_str(value) {
+                settings.agent_directories = directories;
+            }
+        }
+        "extensionRuntimeTarget" => {
+            if let Ok(target) = serde_json::from_str(value) {
+                settings.extension_runtime_target = target;
+            }
+        }
+        "rewriteRuntimeTarget" => {
+            if let Ok(target) = serde_json::from_str(value) {
+                settings.rewrite_runtime_target = target;
             }
         }
         _ => {}

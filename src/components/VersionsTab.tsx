@@ -76,6 +76,11 @@ export function VersionsTab({ toast, onChanged }: { toast: ToastApi; onChanged?:
               <div className="min-w-0 flex-1">
                 <p className="flex flex-wrap items-center gap-2 text-[14px] font-medium text-foreground">
                   {t(`nav.${snapshot.tool}`)}
+                  <span className="text-[11px] font-normal text-muted-foreground">
+                    {snapshot.runtimeTarget.kind === "native"
+                      ? t("runtime.native")
+                      : `${snapshot.runtimeTarget.distribution} · ${snapshot.runtimeTarget.user ?? "default"}`}
+                  </span>
                   <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
                     {snapshot.kind === "cleanup" ? t("versions.kindCleanup") : t("versions.kindBeforeRollback")}
                   </span>
@@ -109,7 +114,7 @@ export function VersionsTab({ toast, onChanged }: { toast: ToastApi; onChanged?:
         onClose={() => setRolling(null)}
         onDone={async (snapshot, saved) => {
           // The agent runs a different prompt now: the pages that show it must read it again.
-          void loadHarnessStatus(snapshot.tool, true);
+          void loadHarnessStatus(snapshot.tool, snapshot.runtimeTarget, true);
           toast.ok(saved ? t("versions.rolledBackSaved") : t("versions.rolledBack"));
           onChanged?.();
           await load();

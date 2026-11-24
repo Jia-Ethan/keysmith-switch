@@ -147,7 +147,7 @@ pub fn catalog(grok_dir: &Path) -> std::result::Result<Vec<Model>, Unsupported> 
 }
 
 fn is_relay(url: &str) -> bool {
-    url.starts_with("http://127.0.0.1:") && url.contains("/t/")
+    url::Url::parse(url).is_ok_and(|url| url.scheme() == "http" && url.path().starts_with("/t/"))
 }
 
 /// (text outside the region, the region's text), or `BadRegion` when the markers are damaged.

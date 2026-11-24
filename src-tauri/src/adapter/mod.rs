@@ -3,7 +3,7 @@ pub mod envelope;
 pub mod normalize;
 pub mod process;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -22,6 +22,7 @@ pub struct AdapterOptions {
     pub timeout: Option<Duration>,
     pub cli_override: Option<PathBuf>,
     pub runtime_target: RuntimeTarget,
+    pub config_dirs: HashMap<ToolKind, PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -200,30 +201,21 @@ pub async fn run_adapter_with(
         return Ok(envelope);
     }
 
-    if matches!(opts.runtime_target, RuntimeTarget::Wsl { .. }) && tool == ToolKind::Zcode {
-        envelope.available = false;
-        envelope.status = ToolStatus::Unavailable;
-        envelope.unavailable_reason =
-            Some("ZCode does not provide a supported Linux/WSL runtime".into());
-        envelope.error = envelope.unavailable_reason.clone();
-        envelope
-            .blockers
-            .push("Select Windows local for ZCode; its adapter does not support Linux/WSL".into());
-        envelope.ok = false;
-        return Ok(envelope);
-    }
-
     if let Some((scope, project_dir)) = command_scope(&command) {
         validate_scope(tool, scope, project_dir.as_deref())?;
     }
 
     let command = prepare_runtime_command(command, &opts.runtime_target).await?;
-    let isolated_home = opts
-        .runtime_target
-        .is_native()
-        .then_some(opts.home.as_deref())
-        .flatten();
-    let prepared = argv::prepare(tool, &command, isolated_home)?;
+    let runtime_home = match &opts.runtime_target {
+        RuntimeTarget::Native => opts.home.clone(),
+        RuntimeTarget::Wsl { .. } => Some(crate::runtime::home(&opts.runtime_target).await?),
+    };
+    let prepared = argv::prepare(
+        tool,
+        &command,
+        runtime_home.as_deref(),
+        opts.config_dirs.get(&tool).map(PathBuf::as_path),
+    )?;
     envelope.preview = prepared.preview;
 
     let cli = process::resolve_cli_for_runtime(tool, opts).await?;
@@ -254,14 +246,14 @@ pub async fn run_adapter_with(
 
 async fn prepare_runtime_command(
     mut command: AdapterCommand,
-    target: &RuntimeTarget,
+    runtime_target: &RuntimeTarget,
 ) -> Result<AdapterCommand> {
-    let RuntimeTarget::Wsl { distribution } = target else {
+    let RuntimeTarget::Wsl { .. } = runtime_target else {
         return Ok(command);
     };
 
-    async fn convert(distribution: &str, path: &mut PathBuf) -> Result<()> {
-        *path = crate::runtime::translate_path(distribution, path).await?;
+    async fn convert(target: &RuntimeTarget, path: &mut PathBuf) -> Result<()> {
+        *path = crate::runtime::translate_path(target, path).await?;
         Ok(())
     }
 
@@ -272,7 +264,7 @@ async fn prepare_runtime_command(
         | AdapterCommand::Deactivate { project_dir, .. }
         | AdapterCommand::Recover { project_dir, .. } => {
             if let Some(path) = project_dir {
-                convert(distribution, path).await?;
+                convert(runtime_target, path).await?;
             }
         }
         AdapterCommand::PlanActivate {
@@ -287,12 +279,12 @@ async fn prepare_runtime_command(
             append_file,
             ..
         } => {
-            convert(distribution, file).await?;
+            convert(runtime_target, file).await?;
             if let Some(path) = project_dir {
-                convert(distribution, path).await?;
+                convert(runtime_target, path).await?;
             }
             if let Some(path) = append_file {
-                convert(distribution, path).await?;
+                convert(runtime_target, path).await?;
             }
         }
         AdapterCommand::Restore {
@@ -300,9 +292,9 @@ async fn prepare_runtime_command(
             project_dir,
             ..
         } => {
-            convert(distribution, target).await?;
+            convert(runtime_target, target).await?;
             if let Some(path) = project_dir {
-                convert(distribution, path).await?;
+                convert(runtime_target, path).await?;
             }
         }
         AdapterCommand::Doctor | AdapterCommand::Version | AdapterCommand::Reconcile { .. } => {}

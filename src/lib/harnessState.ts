@@ -35,7 +35,9 @@ const inflight = new Map<string, Promise<HarnessEntry>>();
 export const NATIVE_RUNTIME: RuntimeTarget = { kind: "native" };
 
 export function runtimeTargetKey(target: RuntimeTarget = NATIVE_RUNTIME): string {
-  return target.kind === "native" ? "native" : `wsl:${target.distribution}`;
+  return target.kind === "native"
+    ? "native"
+    : `wsl:${target.distribution}:${target.user ?? ""}`;
 }
 
 function statusKey(tool: ToolId, target: RuntimeTarget = NATIVE_RUNTIME): string {

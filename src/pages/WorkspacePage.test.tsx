@@ -89,7 +89,7 @@ const envelope = {
   redactedStderr: "",
 } as const;
 
-const WSL_TARGET = { kind: "wsl", distribution: "Ubuntu-24.04" } as const;
+const WSL_TARGET = { kind: "wsl", distribution: "Ubuntu-24.04", user: "root" } as const;
 
 function prompt(overrides: Partial<PromptSummary>): PromptSummary {
   return {
@@ -148,7 +148,7 @@ function setupWslRuntime() {
   listRuntimes.mockResolvedValue({
     runtimes: [
       { target: { kind: "native" }, label: "Windows local", isDefault: true, state: "running", wslVersion: null, available: true, unavailableReason: null },
-      { target: WSL_TARGET, label: "WSL2 · Ubuntu-24.04", isDefault: false, state: "running", wslVersion: 2, available: true, unavailableReason: null },
+      { target: WSL_TARGET, label: "WSL2 · Ubuntu-24.04 · root", isDefault: false, state: "running", wslVersion: 2, available: true, unavailableReason: null, home: "/root" },
     ],
   });
 }
@@ -597,7 +597,7 @@ describe("Workspace: prompt library", () => {
     await renderPage({ onNavigate, toast: toast as never });
     fireEvent.click(await screen.findByTestId("hero-cleanup"));
     await screen.findByTestId("cleanup-plan");
-    expect(planCleanup).toHaveBeenCalledWith("codex");
+    expect(planCleanup).toHaveBeenCalledWith("codex", { kind: "native" });
     fireEvent.click(screen.getByTestId("cleanup-confirm"));
     await screen.findByTestId("cleanup-done");
     expect(confirmCleanup).toHaveBeenCalledWith("op-c", false);
@@ -821,7 +821,7 @@ describe("Workspace: runtime targets", () => {
     await renderPage({ settings: { agentRuntimeTargets: {} } as never, onSettingsSave });
 
     fireEvent.click(await screen.findByTestId("runtime-selector"));
-    fireEvent.click(await screen.findByTestId("runtime-option-wsl-Ubuntu-24-04"));
+    fireEvent.click(await screen.findByTestId("runtime-option-wsl-Ubuntu-24-04-root"));
 
     await waitFor(() =>
       expect(onSettingsSave).toHaveBeenCalledWith({
@@ -847,7 +847,7 @@ describe("Workspace: runtime targets", () => {
       tool: "codex",
       runtimeTarget: WSL_TARGET,
     }));
-    expect(screen.queryByTestId("hero-cleanup")).not.toBeInTheDocument();
+    expect(screen.getByTestId("hero-cleanup")).toBeInTheDocument();
   });
 
   it("keeps native and WSL machine-state reads in separate caches", async () => {
@@ -856,7 +856,7 @@ describe("Workspace: runtime targets", () => {
     await waitFor(() => expect(getHarnessState).toHaveBeenCalledTimes(1));
 
     fireEvent.click(screen.getByTestId("runtime-selector"));
-    fireEvent.click(await screen.findByTestId("runtime-option-wsl-Ubuntu-24-04"));
+    fireEvent.click(await screen.findByTestId("runtime-option-wsl-Ubuntu-24-04-root"));
     await waitFor(() => expect(getHarnessState).toHaveBeenCalledTimes(2));
 
     fireEvent.click(screen.getByTestId("runtime-selector"));
@@ -869,15 +869,15 @@ describe("Workspace: runtime targets", () => {
     ]);
   });
 
-  it("marks ZCode unavailable and hides cleanup in WSL", async () => {
+  it("uses ZCode's runtime probe and offers the same controls in WSL", async () => {
     await renderPage({
       tool: "zcode",
       settings: { agentRuntimeTargets: { zcode: WSL_TARGET } } as never,
     });
 
-    expect(await screen.findByTestId("runtime-limitations")).toHaveTextContent("ZCode");
-    expect(screen.getByTestId("quick-deploy-open")).toBeDisabled();
-    expect(screen.queryByTestId("hero-cleanup")).not.toBeInTheDocument();
+    expect(await screen.findByTestId("runtime-limitations")).toHaveTextContent("所选 WSL2 发行版与 Linux 用户");
+    expect(screen.getByTestId("quick-deploy-open")).toBeEnabled();
+    expect(screen.getByTestId("hero-cleanup")).toBeInTheDocument();
   });
 
   it("shows why an installed runtime cannot be used", async () => {
