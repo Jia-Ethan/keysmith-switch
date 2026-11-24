@@ -291,7 +291,7 @@ App 会在这些时候联网，请求里都不包含提示词、规则或配置�
 
 ## 🛠️ 开发
 
-需要 Node 20+、Rust 1.85+。打包 sidecar 需要 Python 3.9+ 与 PyInstaller；用户安装 App 不需要 Python。
+需要 Node 20+、Rust 1.90+。打包 sidecar 需要 Python 3.9+ 与 PyInstaller；用户安装 App 不需要 Python。
 
 ```bash
 npm install
