@@ -3,14 +3,14 @@ pub mod envelope;
 pub mod normalize;
 pub mod process;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
-use crate::models::{validate_scope, Scope, ToolInfo, ToolStatus};
+use crate::models::{validate_scope, RuntimeTarget, Scope, ToolInfo, ToolStatus};
 
 pub use crate::models::ToolKind;
 pub use envelope::Envelope;
@@ -21,6 +21,8 @@ pub struct AdapterOptions {
     pub extra_env: BTreeMap<String, String>,
     pub timeout: Option<Duration>,
     pub cli_override: Option<PathBuf>,
+    pub runtime_target: RuntimeTarget,
+    pub config_dirs: HashMap<ToolKind, PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -203,10 +205,20 @@ pub async fn run_adapter_with(
         validate_scope(tool, scope, project_dir.as_deref())?;
     }
 
-    let prepared = argv::prepare(tool, &command, opts.home.as_deref())?;
+    let command = prepare_runtime_command(command, &opts.runtime_target).await?;
+    let runtime_home = match &opts.runtime_target {
+        RuntimeTarget::Native => opts.home.clone(),
+        RuntimeTarget::Wsl { .. } => Some(crate::runtime::home(&opts.runtime_target).await?),
+    };
+    let prepared = argv::prepare(
+        tool,
+        &command,
+        runtime_home.as_deref(),
+        opts.config_dirs.get(&tool).map(PathBuf::as_path),
+    )?;
     envelope.preview = prepared.preview;
 
-    let cli = process::resolve_cli(tool, opts)?;
+    let cli = process::resolve_cli_for_runtime(tool, opts).await?;
     envelope.cli_path = Some(cli.cli_path());
 
     let limit = opts
@@ -230,6 +242,64 @@ pub async fn run_adapter_with(
     }
     envelope.redact_inplace();
     Ok(envelope)
+}
+
+async fn prepare_runtime_command(
+    mut command: AdapterCommand,
+    runtime_target: &RuntimeTarget,
+) -> Result<AdapterCommand> {
+    let RuntimeTarget::Wsl { .. } = runtime_target else {
+        return Ok(command);
+    };
+
+    async fn convert(target: &RuntimeTarget, path: &mut PathBuf) -> Result<()> {
+        *path = crate::runtime::translate_path(target, path).await?;
+        Ok(())
+    }
+
+    match &mut command {
+        AdapterCommand::Status { project_dir, .. }
+        | AdapterCommand::Backups { project_dir, .. }
+        | AdapterCommand::PlanDeactivate { project_dir, .. }
+        | AdapterCommand::Deactivate { project_dir, .. }
+        | AdapterCommand::Recover { project_dir, .. } => {
+            if let Some(path) = project_dir {
+                convert(runtime_target, path).await?;
+            }
+        }
+        AdapterCommand::PlanActivate {
+            file,
+            project_dir,
+            append_file,
+            ..
+        }
+        | AdapterCommand::Activate {
+            file,
+            project_dir,
+            append_file,
+            ..
+        } => {
+            convert(runtime_target, file).await?;
+            if let Some(path) = project_dir {
+                convert(runtime_target, path).await?;
+            }
+            if let Some(path) = append_file {
+                convert(runtime_target, path).await?;
+            }
+        }
+        AdapterCommand::Restore {
+            target,
+            project_dir,
+            ..
+        } => {
+            convert(runtime_target, target).await?;
+            if let Some(path) = project_dir {
+                convert(runtime_target, path).await?;
+            }
+        }
+        AdapterCommand::Doctor | AdapterCommand::Version | AdapterCommand::Reconcile { .. } => {}
+    }
+    Ok(command)
 }
 
 pub async fn check_adapter_version(tool: ToolKind, opts: &AdapterOptions) -> Result<String> {

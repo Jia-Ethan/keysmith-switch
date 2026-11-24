@@ -21,6 +21,7 @@ pub mod ops;
 pub mod paths;
 pub mod redact;
 pub mod rewrite;
+pub mod runtime;
 pub mod updater;
 
 use tauri::Manager;
@@ -53,7 +54,7 @@ pub fn run() {
             let state = commands::AppState::open().map_err(|error| error.to_string())?;
             let _ = logging::init(state.store.paths());
             // The relay may have started before this app ever ran; give it current rules.
-            let _ = rewrite::publish(&state.store);
+            let _ = rewrite::publish_all(&state.store);
             // Bring an installed relay up to this version, off the startup path.
             let paths = state.store.paths().clone();
             std::thread::spawn(move || {
@@ -67,6 +68,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::list_tools,
+            commands::list_runtimes,
             commands::list_prompts,
             commands::get_prompt,
             commands::create_prompt,

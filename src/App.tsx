@@ -126,6 +126,7 @@ export function App() {
     >
       <ExtensionsProvider
         enabled={settingsState.settings.extensionsEnabled}
+        runtimeTarget={settingsState.settings.extensionRuntimeTarget}
         onEnabledChange={async (next) => {
           await settingsState.save({ extensionsEnabled: next });
         }}
@@ -135,6 +136,7 @@ export function App() {
           page={visiblePage}
           onNavigate={navigate}
           advancedEnabled={advancedEnabled}
+          runtimeTargets={settingsState.settings.agentRuntimeTargets}
           onOpenPalette={() => setPaletteOpen(true)}
         >
           {settingsState.error ? (
@@ -152,6 +154,7 @@ export function App() {
                 key={visiblePage.tool}
                 tool={visiblePage.tool}
                 settings={settingsState.settings}
+                onSettingsSave={settingsState.save}
                 toast={toast}
                 onNavigate={navigate}
                 onDirtyChange={setDirty}
@@ -165,6 +168,7 @@ export function App() {
               tool={visiblePage.tool}
               scope={visiblePage.scope}
               projectDir={visiblePage.projectDir}
+              runtimeTarget={settingsState.settings.agentRuntimeTargets[visiblePage.tool]}
               toast={toast}
               onClose={() => navigate({ kind: "tool", tool: visiblePage.tool })}
               onEdit={(detail: PromptDetail) =>
@@ -197,7 +201,10 @@ export function App() {
                 setDirty(false);
                 setLibraryEpoch((value) => value + 1);
                 // Saving does not touch the machine: say so when the edited prompt is the live one.
-                if (getHarnessStatus(visiblePage.tool)?.promptId === id) {
+                if (getHarnessStatus(
+                  visiblePage.tool,
+                  settingsState.settings.agentRuntimeTargets[visiblePage.tool],
+                )?.promptId === id) {
                   toast.info(t("prompts.savedRedeploy", { tool: t(`nav.${visiblePage.tool}`) }));
                 }
                 setPage({
@@ -226,12 +233,20 @@ export function App() {
           ) : null}
           {visiblePage.kind === "extensions" ? (
             <div className="animate-page-in min-h-0 flex-1">
-              <ExtensionsPage toast={toast} />
+              <ExtensionsPage
+                toast={toast}
+                settings={settingsState.settings}
+                onSettingsSave={settingsState.save}
+              />
             </div>
           ) : null}
           {visiblePage.kind === "rewrite" ? (
             <div className="animate-page-in min-h-0 flex-1">
-              <RewritePage toast={toast} />
+              <RewritePage
+                toast={toast}
+                settings={settingsState.settings}
+                onSettingsSave={settingsState.save}
+              />
             </div>
           ) : null}
           {visiblePage.kind === "announcements" ? (
@@ -241,7 +256,12 @@ export function App() {
           ) : null}
           {visiblePage.kind === "advanced" ? (
             <div className="animate-page-in min-h-0 flex-1 overflow-auto px-4 py-5 sm:px-6">
-              <AdvancedPage enabled={advancedEnabled} toast={toast} />
+              <AdvancedPage
+                enabled={advancedEnabled}
+                toast={toast}
+                settings={settingsState.settings}
+                onSettingsSave={settingsState.save}
+              />
             </div>
           ) : null}
         </AppShell>

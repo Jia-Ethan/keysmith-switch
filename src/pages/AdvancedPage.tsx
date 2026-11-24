@@ -1,11 +1,23 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import * as api from "../api";
 import { ErrorBanner } from "../components/ErrorBanner";
+import { Dropdown } from "../components/Dropdown";
 import { Button, Field, Input, Panel, PanelHeader, Segmented } from "../components/ui";
 import type { ToastApi } from "../hooks/useToasts";
+import { NATIVE_RUNTIME, runtimeTargetKey } from "../lib/harnessState";
 import { toastSafeMessage } from "../lib/redact";
-import type { AdvancedKind, AdvancedResult, AdvancedToolInfo } from "../types";
+import { DEFAULT_SETTINGS } from "../types";
+import type {
+  AdvancedKind,
+  AdvancedResult,
+  AdvancedToolInfo,
+  RuntimeInfo,
+  RuntimeTarget,
+  Settings,
+  SettingsPatch,
+  ToolId,
+} from "../types";
 
 const FALLBACK_TOOLS: AdvancedToolInfo[] = [
   { kind: "scenario", name: "Scenario evaluation", description: "" },
@@ -13,7 +25,17 @@ const FALLBACK_TOOLS: AdvancedToolInfo[] = [
   { kind: "grokBreaktest", name: "Grok Breaktest", description: "" },
 ];
 
-export function AdvancedPage({ enabled, toast }: { enabled: boolean; toast: ToastApi }) {
+export function AdvancedPage({
+  enabled,
+  toast,
+  settings = DEFAULT_SETTINGS,
+  onSettingsSave = async () => DEFAULT_SETTINGS,
+}: {
+  enabled: boolean;
+  toast: ToastApi;
+  settings?: Settings;
+  onSettingsSave?: (patch: SettingsPatch) => Promise<Settings>;
+}) {
   const { t } = useTranslation();
   const [tools, setTools] = useState<AdvancedToolInfo[]>(FALLBACK_TOOLS);
   const [kind, setKind] = useState<AdvancedKind>("scenario");
@@ -21,6 +43,12 @@ export function AdvancedPage({ enabled, toast }: { enabled: boolean; toast: Toas
   const [result, setResult] = useState<AdvancedResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [runtimes, setRuntimes] = useState<RuntimeInfo[]>([]);
+  const runtimeTool: ToolId = kind === "scenario" ? "codex" : "grok";
+  const configuredRuntime = settings.agentRuntimeTargets[runtimeTool] ?? NATIVE_RUNTIME;
+  const [runtimeTarget, setRuntimeTarget] = useState<RuntimeTarget>(configuredRuntime);
+  const [runtimeSaving, setRuntimeSaving] = useState(false);
+  const runtimeKey = runtimeTargetKey(runtimeTarget);
 
   const label = (item: AdvancedKind) => {
     if (item === "scenario") return t("advanced.scenario");
@@ -42,6 +70,44 @@ export function AdvancedPage({ enabled, toast }: { enabled: boolean; toast: Toas
     void load();
   }, [load]);
 
+  useEffect(() => {
+    setRuntimeTarget(configuredRuntime);
+  }, [configuredRuntime, runtimeTool]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api.listRuntimes()
+      .then(({ runtimes: found }) => {
+        if (!cancelled) setRuntimes(found);
+      })
+      .catch(() => {
+        if (!cancelled) setRuntimes([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const runtimeChoices = useMemo(() => {
+    const choices = [...runtimes];
+    if (!choices.some((runtime) => runtimeTargetKey(runtime.target) === runtimeKey)) {
+      choices.push({
+        target: runtimeTarget,
+        label: runtimeTarget.kind === "native"
+          ? t("runtime.native")
+          : "WSL2 · " + runtimeTarget.distribution
+            + (runtimeTarget.user ? " · " + runtimeTarget.user : ""),
+        isDefault: runtimeTarget.kind === "native",
+        state: "unknown",
+        wslVersion: runtimeTarget.kind === "wsl" ? 2 : null,
+        available: runtimeTarget.kind === "native",
+        unavailableReason: null,
+        home: null,
+      });
+    }
+    return choices;
+  }, [runtimeKey, runtimeTarget, runtimes, t]);
+
   if (!enabled) {
     return <ErrorBanner message={t("advanced.disabled")} />;
   }
@@ -52,7 +118,7 @@ export function AdvancedPage({ enabled, toast }: { enabled: boolean; toast: Toas
       const parsed: Record<string, string> = {};
       const trimmed = args.trim();
       if (trimmed) parsed.input = trimmed;
-      const next = await api.runAdvanced(kind, parsed);
+      const next = await api.runAdvanced(kind, parsed, runtimeTarget);
       setResult({
         ...next,
         output: toastSafeMessage(next.output),
@@ -78,6 +144,38 @@ export function AdvancedPage({ enabled, toast }: { enabled: boolean; toast: Toas
             ariaLabel={t("advanced.title")}
             onChange={setKind}
             options={tools.map((item) => ({ value: item.kind, label: label(item.kind) }))}
+          />
+
+          <Dropdown
+            label={t("runtime.label")}
+            value={runtimeKey}
+            options={runtimeChoices.map((runtime) => ({
+              value: runtimeTargetKey(runtime.target),
+              label: runtime.target.kind === "native" ? t("runtime.native") : runtime.label,
+            }))}
+            disabled={busy || runtimeSaving}
+            onChange={(key) => {
+              const next = runtimeChoices.find(
+                (runtime) => runtimeTargetKey(runtime.target) === key,
+              )?.target;
+              if (!next || key === runtimeKey) return;
+              const previous = runtimeTarget;
+              setRuntimeTarget(next);
+              setRuntimeSaving(true);
+              void onSettingsSave({
+                agentRuntimeTargets: {
+                  ...settings.agentRuntimeTargets,
+                  [runtimeTool]: next,
+                },
+              })
+                .catch((reason) => {
+                  setRuntimeTarget(previous);
+                  toast.err(reason);
+                })
+                .finally(() => setRuntimeSaving(false));
+            }}
+            testId="advanced-runtime"
+            className="w-full"
           />
 
           <Field label={t("advanced.args")}>

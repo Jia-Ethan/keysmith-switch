@@ -154,6 +154,7 @@ fn backup_restore_preserves_history_settings_and_activation_without_duplicates()
             prompt_id: Some(id.clone()),
             tool: ToolKind::Grok,
             scope: Scope::User,
+            runtime_target: keysmith_switch_lib::models::RuntimeTarget::Native,
             project_dir: None,
             status: ToolStatus::Active,
             fingerprint: Some("fingerprint".into()),

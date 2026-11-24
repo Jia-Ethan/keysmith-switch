@@ -8,7 +8,9 @@ use http_body_util::{BodyExt, StreamBody};
 use hyper::body::Frame;
 use hyper::{Request, Response};
 use hyper_util::rt::TokioIo;
-use keysmith_relay::{config_path, serve, snapshot_path, Relay, RelayConfig, CONFIG_SCHEMA};
+use keysmith_relay::{
+    config_path, runtime_snapshot_path, serve, snapshot_path, Relay, RelayConfig, CONFIG_SCHEMA,
+};
 use keysmith_rewrite::{Rule, Snapshot, ToolSwitches, SNAPSHOT_SCHEMA};
 use tokio::net::TcpListener;
 
@@ -120,7 +122,11 @@ async fn start(enabled: bool) -> Fixture {
         schema: CONFIG_SCHEMA,
         port: 0,
         token: "tok".into(),
-        upstreams: BTreeMap::from([("custom".into(), format!("http://{up}/v1"))]),
+        listen_addresses: Vec::new(),
+        upstreams: BTreeMap::from([
+            ("custom".into(), format!("http://{up}/v1")),
+            ("w0123456789ab-custom".into(), format!("http://{up}/v1")),
+        ]),
         routes: BTreeMap::from([
             ("claude/anthropic".into(), format!("http://{up}")),
             ("zcode/lgw".into(), format!("http://{up}/v1")),
@@ -346,6 +352,33 @@ async fn new_route_for_codex_matches_the_old_one() {
     .await;
     let body: serde_json::Value = serde_json::from_slice(&f.seen.lock().unwrap().body).unwrap();
     assert_eq!(body["input"][0]["content"][0]["text"], "改指令");
+}
+
+#[tokio::test]
+async fn runtime_routes_use_their_own_rule_snapshot() {
+    let f = start(true).await;
+    let profile = "w0123456789ab";
+    let path = runtime_snapshot_path(&f.home, profile);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let snapshot = Snapshot {
+        schema: SNAPSHOT_SCHEMA,
+        enabled: true,
+        tools: ToolSwitches {
+            codex: true,
+            ..Default::default()
+        },
+        rules: vec![Rule::new("提示词", "WSL")],
+        by_tool: None,
+    };
+    std::fs::write(path, serde_json::to_vec(&snapshot).unwrap()).unwrap();
+
+    post(
+        &format!("{}/r/tok/{}-custom/responses", f.relay_url, profile),
+        BODY,
+    )
+    .await;
+    let body: serde_json::Value = serde_json::from_slice(&f.seen.lock().unwrap().body).unwrap();
+    assert_eq!(body["input"][0]["content"][0]["text"], "改WSL");
 }
 
 #[tokio::test]

@@ -3,6 +3,14 @@
     "name": "Keysmith Switch",
     "workflow": "本機提示詞工作流"
   },
+  "runtime": {
+    "label": "執行環境",
+    "native": "Windows 本機",
+    "unavailable": "不可用",
+    "missing": "該執行環境已不存在",
+    "saveFailed": "無法儲存執行環境",
+    "wslScope": "此 Agent 的部署、元件、清理、快照與復原都只作用於所選 WSL2 發行版與 Linux 使用者。"
+  },
   "nav": {
     "claude": "Claude Code",
     "codex": "Codex",

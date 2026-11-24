@@ -1,5 +1,20 @@
 export type ToolId = "claude" | "codex" | "grok" | "zcode" | "pi" | "dsh";
 
+export type RuntimeTarget =
+  | { kind: "native" }
+  | { kind: "wsl"; distribution: string; user?: string };
+
+export interface RuntimeInfo {
+  target: RuntimeTarget;
+  label: string;
+  isDefault: boolean;
+  state: string;
+  wslVersion: number | null;
+  available: boolean;
+  unavailableReason: string | null;
+  home: string | null;
+}
+
 export type ScopeId = "user" | "project" | "local";
 
 export type Language = "zh-CN" | "zh-TW" | "en";
@@ -141,6 +156,7 @@ export interface Activation {
   promptId: string;
   promptTitle: string | null;
   scope: ScopeId;
+  runtimeTarget: RuntimeTarget;
   projectDir: string | null;
   active: boolean;
   createdAt: string;
@@ -152,6 +168,7 @@ export interface Operation {
   tool: ToolId;
   kind: string;
   status: string;
+  runtimeTarget: RuntimeTarget;
   error: string | null;
   createdAt: string;
   recoverAvailable: boolean;
@@ -178,6 +195,16 @@ export interface Settings {
   rewriteClaudeEnabled: boolean;
   rewriteGrokEnabled: boolean;
   rewriteZcodeEnabled: boolean;
+  agentRuntimeTargets: Partial<Record<ToolId, RuntimeTarget>>;
+  agentDirectories: RuntimeDirectories[];
+  extensionRuntimeTarget: RuntimeTarget;
+  /** Runtime whose agent configs the input-rewrite page currently manages. */
+  rewriteRuntimeTarget: RuntimeTarget;
+}
+
+export interface RuntimeDirectories {
+  target: RuntimeTarget;
+  directories: Partial<Record<ToolId, string>>;
 }
 
 export type SettingsPatch = Partial<Settings>;
@@ -339,6 +366,7 @@ export interface OfficialPlan {
   argv: string[];
   dest: string;
   blockers: string[];
+  runtimeTarget: RuntimeTarget;
 }
 
 export interface OfficialResult {
@@ -391,6 +419,10 @@ export const DEFAULT_SETTINGS: Settings = {
   rewriteClaudeEnabled: true,
   rewriteGrokEnabled: true,
   rewriteZcodeEnabled: true,
+  agentRuntimeTargets: {},
+  agentDirectories: [],
+  extensionRuntimeTarget: { kind: "native" },
+  rewriteRuntimeTarget: { kind: "native" },
 };
 
 export const TOOL_IDS: ToolId[] = ["claude", "codex", "grok", "zcode", "pi", "dsh"];
@@ -453,6 +485,7 @@ export interface HarnessPlan {
   planId: string;
   packId: string;
   version: string;
+  runtimeTarget: RuntimeTarget;
   fromVersion: string | null;
   files: HarnessPlannedFile[];
   skippedTools: ToolId[];
@@ -524,6 +557,7 @@ export interface MemoriesMeta {
   path: string;
   files: number;
   bytes: number;
+  fingerprint?: string | null;
 }
 
 /** One leftover piece of user-level setup, such as `rules` or a wrapper, counted, never read. */
@@ -532,6 +566,7 @@ export interface ExtraMeta {
   path: string;
   files: number;
   bytes: number;
+  fingerprint?: string | null;
   /** `saved`, `saved-without-login` (a copy with every key removed) or `erased` (not saved). */
   kind?: "saved" | "saved-without-login" | "erased";
 }
@@ -540,6 +575,7 @@ export interface SnapshotMeta {
   id: string;
   createdAt: string;
   tool: ToolId;
+  runtimeTarget: RuntimeTarget;
   kind: "cleanup" | "before-rollback";
   deployment: DeploymentMeta;
   memory: MemoryMeta | null;
@@ -551,6 +587,7 @@ export interface SnapshotMeta {
 export interface CleanupPlan {
   operationId: string;
   tool: ToolId;
+  runtimeTarget: RuntimeTarget;
   deployment: DeploymentMeta;
   memory: MemoryMeta | null;
   /** The agent's memory folder, if it has files in it. Only cleared when asked for. */

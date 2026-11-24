@@ -293,6 +293,14 @@ def resolve_home() -> Path:
     return Path.home().resolve()
 
 
+def resolve_claude_dir() -> Path:
+    """Resolve the exact Claude configuration root when one is configured."""
+    configured = os.environ.get("CLAUDE_CONFIG_DIR")
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return (resolve_home() / ".claude").resolve()
+
+
 def runtime_shell_kind() -> str:
     """Return 'powershell' on Windows (os.name == 'nt'), else 'zsh'.
 
@@ -693,7 +701,7 @@ def find_claude_binary(home: Path, shell_kind: str) -> Path:
 
 def resolve_scope(scope: str, project_dir: Optional[str] = None) -> ScopePaths:
     if scope == "user":
-        claude_root = (resolve_home() / ".claude").resolve()
+        claude_root = resolve_claude_dir()
         return ScopePaths(
             scope="user",
             root=claude_root,
@@ -761,7 +769,8 @@ def user_runtime_paths() -> Dict[str, Any]:
     """Return runtime paths with platform-aware shell and binary locations."""
     home = resolve_home()
     shell_kind = runtime_shell_kind()
-    keysmith_dir = home / ".claude" / "keysmith"
+    claude_dir = resolve_claude_dir()
+    keysmith_dir = claude_dir / "keysmith"
     shell_rc = powershell_profile_path(home) if shell_kind == "powershell" else home / ".zshrc"
     upstream_candidates = resolve_upstream_candidates(home, shell_kind)
     selected = select_upstream_candidate(upstream_candidates)
@@ -774,11 +783,11 @@ def user_runtime_paths() -> Dict[str, Any]:
     }
     return {
         "home": home,
-        "claude_dir": home / ".claude",
+        "claude_dir": claude_dir,
         "keysmith_dir": keysmith_dir,
         "system_prompt": keysmith_dir / "system-prompt.md",
         "append_prompt": keysmith_dir / "append-prompt.md",
-        "settings": home / ".claude" / "settings.json",
+        "settings": claude_dir / "settings.json",
         "shell_kind": shell_kind,
         "shell_rc": shell_rc,
         "zshrc": shell_rc,  # backward-compat alias
@@ -1784,7 +1793,7 @@ def _atomic_temp_directories(paths: ScopePaths) -> List[Path]:
     if paths.scope == "user":
         home = resolve_home()
         directories.add(home)
-        directories.add(home / ".claude")
+        directories.add(resolve_claude_dir())
         shell_rc_override = os.environ.get("CLAUDE_KEYSMITH_SHELL_RC")
         if shell_rc_override:
             directories.add(Path(shell_rc_override).expanduser().parent)
@@ -1937,7 +1946,7 @@ def _runtime_recovery_marker_status(
     paths: ScopePaths,
 ) -> Tuple[bool, Path, Optional[Dict[str, Any]], Optional[str]]:
     """Return marker presence and the exact alignment verdict used by recover."""
-    settings_path = resolve_home() / ".claude" / "settings.json"
+    settings_path = resolve_claude_dir() / "settings.json"
     if paths.scope != "user":
         return False, settings_path, None, None
     try:
@@ -3003,9 +3012,10 @@ def _infer_scope_for_restore(args: Any, target: Path) -> Optional[ScopePaths]:
         except (FileNotFoundError, ValueError):
             return None
     home = resolve_home()
+    claude_dir = resolve_claude_dir()
     candidates = [
-        (home / ".claude").resolve(),
-        (home / ".claude" / "keysmith").resolve(),
+        claude_dir,
+        claude_dir / "keysmith",
     ]
     try:
         resolved = target.resolve()

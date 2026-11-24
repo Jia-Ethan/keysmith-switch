@@ -3,6 +3,7 @@ import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import * as api from "../api";
 import { ErrorBanner } from "../components/ErrorBanner";
+import { AgentDirectories } from "../components/AgentDirectories";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { Feedback } from "../components/Feedback";
 import { UpdateSection } from "../components/UpdateSection";
@@ -17,7 +18,7 @@ import { useTheme, type ThemeMode } from "../hooks/useTheme";
 import type { ToastApi } from "../hooks/useToasts";
 import { formatBytes } from "../lib/format";
 import { openExternal } from "../lib/runtime";
-import type { AboutInfo, Language, Settings, SettingsPatch, ToolId } from "../types";
+import type { AboutInfo, Language, RuntimeInfo, Settings, SettingsPatch, ToolId } from "../types";
 
 type TabId = "general" | "tools" | "versions" | "about";
 
@@ -56,6 +57,7 @@ export function SettingsPage({
   const [tab, setTab] = useState<TabId>("general");
   const [about, setAbout] = useState<AboutInfo | null>(null);
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
+  const [runtimes, setRuntimes] = useState<RuntimeInfo[]>([]);
   const updateInstallPending = useRef(false);
   const tabsRef = useRef<HTMLDivElement>(null);
   const tabIndicator = useSlidingIndicator(tabsRef, '[aria-selected="true"]', [tab]);
@@ -85,6 +87,20 @@ export function SettingsPage({
       })
       .catch(() => {
         if (!cancelled) setAbout(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api.listRuntimes()
+      .then(({ runtimes: found }) => {
+        if (!cancelled) setRuntimes(found);
+      })
+      .catch(() => {
+        if (!cancelled) setRuntimes([]);
       });
     return () => {
       cancelled = true;
@@ -263,6 +279,8 @@ export function SettingsPage({
         ) : null}
 
         {tab === "tools" ? (
+          <div className="space-y-4">
+          <AgentDirectories settings={settings} runtimes={runtimes} busy={busy} onSave={patch} />
           <div className="surface-card flex flex-col gap-2 p-4 sm:p-5" data-testid="settings-keysmiths">
             {KEYSMITHS.map((item) => (
               <article
@@ -286,6 +304,7 @@ export function SettingsPage({
                 </Button>
               </article>
             ))}
+          </div>
           </div>
         ) : null}
 

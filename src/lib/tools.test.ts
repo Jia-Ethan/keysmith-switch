@@ -9,6 +9,7 @@ function activation(overrides: Partial<Activation>): Activation {
     promptId: "p1",
     promptTitle: null,
     scope: "user",
+    runtimeTarget: { kind: "native" },
     projectDir: null,
     active: true,
     createdAt: "2026-01-01T00:00:00Z",

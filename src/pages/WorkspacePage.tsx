@@ -28,7 +28,14 @@ import {
 } from "../components/icons";
 import { Button, Disclosure, Input, Mono, cx } from "../components/ui";
 import type { ToastApi } from "../hooks/useToasts";
-import { applyHarnessOutcome, getHarnessStatus, loadHarnessStatus, useHarnessStatus } from "../lib/harnessState";
+import {
+  applyHarnessOutcome,
+  getHarnessStatus,
+  loadHarnessStatus,
+  NATIVE_RUNTIME,
+  runtimeTargetKey,
+  useHarnessStatus,
+} from "../lib/harnessState";
 import { DEPLOY_PROMPT_EVENT, QUICK_DEPLOY_EVENT } from "../lib/paletteEvents";
 import { canConfirmPlan } from "../lib/planGate";
 import { failureFromEnvelope, needsReconcile, readableError } from "../lib/planFailure";
@@ -42,7 +49,10 @@ import type {
   PlanResult,
   PromptSort,
   PromptSummary,
+  RuntimeInfo,
+  RuntimeTarget,
   Settings,
+  SettingsPatch,
   ToolId,
   ToolInfo,
 } from "../types";
@@ -77,6 +87,10 @@ function sortPrompts(prompts: PromptSummary[], sort: PromptSort): PromptSummary[
   });
 }
 
+function runtimeRequest(target: RuntimeTarget): { runtimeTarget?: RuntimeTarget } {
+  return target.kind === "wsl" ? { runtimeTarget: target } : {};
+}
+
 /**
  * One agent's workspace: the live deployment on top, the prompt library below,
  * and the Quick Deploy composer one click away. Every deployment is machine-wide
@@ -92,6 +106,7 @@ export function WorkspacePage({
   onNavigate,
   onDirtyChange,
   libraryEpoch = 0,
+  onSettingsSave,
 }: {
   tool: ToolId;
   settings?: Settings;
@@ -99,9 +114,13 @@ export function WorkspacePage({
   onNavigate?: (page: AppPage) => void;
   onDirtyChange?: (dirty: boolean) => void;
   libraryEpoch?: number;
+  onSettingsSave?: (patch: SettingsPatch) => Promise<Settings>;
 }) {
   const { t } = useTranslation();
-  const entry = useHarnessStatus(tool);
+  const configuredRuntime = settings?.agentRuntimeTargets?.[tool] ?? NATIVE_RUNTIME;
+  const [runtimeTarget, setRuntimeTarget] = useState<RuntimeTarget>(configuredRuntime);
+  const runtimeKey = runtimeTargetKey(runtimeTarget);
+  const entry = useHarnessStatus(tool, runtimeTarget);
   const defaultTitle = t("quickDeploy.defaultTitle");
   const [toolInfo, setToolInfo] = useState<ToolInfo>(() => mergeTools(null).find((item) => item.id === tool)!);
   const [reading, setReading] = useState(false);
@@ -131,16 +150,79 @@ export function WorkspacePage({
   const [pending, setPending] = useState<string | null>(null);
   const [celebration, setCelebration] = useState<{ kind: "deployed" | "removed"; subtitle: string } | null>(null);
   const [cleanupOpen, setCleanupOpen] = useState(false);
+  const [runtimes, setRuntimes] = useState<RuntimeInfo[]>([]);
+  const [runtimeSaving, setRuntimeSaving] = useState(false);
   /** The card whose right-click menu is open, and where. */
   const [cardMenu, setCardMenu] = useState<{ item: PromptSummary; x: number; y: number } | null>(null);
   /** The prompt waiting for its delete to be confirmed. */
   const [deleting, setDeleting] = useState<PromptSummary | null>(null);
   const promptSeq = useRef(0);
 
-  const unavailable = isZcodeUnavailable(toolInfo) || !toolInfo.available;
+  useEffect(() => {
+    setRuntimeTarget(configuredRuntime);
+  }, [configuredRuntime]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void api
+      .listRuntimes()
+      .then(({ runtimes: found }) => {
+        if (!cancelled) setRuntimes(found);
+      })
+      .catch(() => {
+        if (!cancelled) setRuntimes([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const toolUnavailable = isZcodeUnavailable(toolInfo) || !toolInfo.available;
 
   const machine = entry?.error ? "unknown" : entry?.machine ?? "unknown";
   const statusError = loadError ?? entry?.error;
+  const runtimeChoices = useMemo(() => {
+    const choices = [...runtimes];
+    if (!choices.some((item) => runtimeTargetKey(item.target) === runtimeKey)) {
+      const native = runtimeTarget.kind === "native";
+      choices.push({
+        target: runtimeTarget,
+        label: native
+          ? t("runtime.native")
+          : `WSL2 · ${runtimeTarget.distribution}${runtimeTarget.user ? ` · ${runtimeTarget.user}` : ""}`,
+        isDefault: false,
+        state: native ? "running" : "unknown",
+        wslVersion: runtimeTarget.kind === "wsl" ? 2 : null,
+        available: native,
+        unavailableReason: native ? null : t("runtime.missing"),
+        home: null,
+      });
+    }
+    return choices;
+  }, [runtimeKey, runtimeTarget, runtimes, t]);
+  const selectedRuntime = runtimeChoices.find((item) => runtimeTargetKey(item.target) === runtimeKey);
+  const runtimeUnavailable = selectedRuntime?.available === false;
+  const unavailable = toolUnavailable || runtimeUnavailable;
+
+  const changeRuntime = async (nextKey: string) => {
+    const next = runtimeChoices.find((item) => runtimeTargetKey(item.target) === nextKey)?.target;
+    if (!next || nextKey === runtimeKey || runtimeSaving) return;
+    const previous = runtimeTarget;
+    setRuntimeTarget(next);
+    setRuntimeSaving(true);
+    setPlan(null);
+    setPlanFailure(null);
+    try {
+      await onSettingsSave?.({
+        agentRuntimeTargets: { ...(settings?.agentRuntimeTargets ?? {}), [tool]: next },
+      });
+    } catch (reason) {
+      setRuntimeTarget(previous);
+      toast?.err(toastSafeMessage(reason) || t("runtime.saveFailed"));
+    } finally {
+      setRuntimeSaving(false);
+    }
+  };
 
   // The activation record names the live prompt; the machine read backs it up
   // when that record is missing (deployed by an older version, rebuilt index).
@@ -201,22 +283,28 @@ export function WorkspacePage({
 
   // Read the machine once per run.
   useEffect(() => {
-    if (getHarnessStatus(tool)) return;
+    if (getHarnessStatus(tool, runtimeTarget)) return;
     let cancelled = false;
     setReading(true);
-    void loadHarnessStatus(tool).finally(() => {
+    void loadHarnessStatus(tool, runtimeTarget).finally(() => {
       if (!cancelled) setReading(false);
     });
     return () => {
       cancelled = true;
     };
-  }, [tool]);
+  }, [runtimeKey, runtimeTarget, tool]);
 
   const loadPrompts = useCallback(async () => {
     const seq = ++promptSeq.current;
     setPromptsLoading(true);
     try {
-      const result = await api.listPrompts({ tool, query: query || undefined, tag: tag || undefined, sort });
+      const result = await api.listPrompts({
+        tool,
+        query: query || undefined,
+        tag: tag || undefined,
+        sort,
+        ...runtimeRequest(runtimeTarget),
+      });
       if (seq !== promptSeq.current) return;
       setPrompts(sortPrompts(result.prompts ?? [], sort));
       setPromptsError(null);
@@ -227,26 +315,32 @@ export function WorkspacePage({
     } finally {
       if (seq === promptSeq.current) setPromptsLoading(false);
     }
-  }, [query, sort, tag, tool]);
+  }, [query, runtimeKey, runtimeTarget, sort, tag, tool]);
 
   const loadActivations = useCallback(async () => {
     try {
-      const result = await api.listActivations(tool);
+      const result =
+        runtimeTarget.kind === "wsl"
+          ? await api.listActivations(tool, runtimeTarget)
+          : await api.listActivations(tool);
       setActivations(result.activations ?? []);
     } catch {
       setActivations(null);
     }
-  }, [tool]);
+  }, [runtimeKey, runtimeTarget, tool]);
 
   const loadOperations = useCallback(async () => {
     if (!settings?.advancedToolsEnabled) return;
     try {
-      const result = await api.listOperations(tool);
+      const result =
+        runtimeTarget.kind === "wsl"
+          ? await api.listOperations(tool, runtimeTarget)
+          : await api.listOperations(tool);
       setOperations(result.operations ?? []);
     } catch {
       setOperations([]);
     }
-  }, [settings?.advancedToolsEnabled, tool]);
+  }, [runtimeKey, runtimeTarget, settings?.advancedToolsEnabled, tool]);
 
   useEffect(() => {
     // Filter keystrokes debounce; everything else loads immediately.
@@ -266,7 +360,7 @@ export function WorkspacePage({
     setReading(true);
     setLoadError(null);
     try {
-      await loadHarnessStatus(tool, true);
+      await loadHarnessStatus(tool, runtimeTarget, true);
       setLocalEpoch((value) => value + 1);
     } finally {
       setReading(false);
@@ -309,7 +403,11 @@ export function WorkspacePage({
     try {
       const prompt = await api.createPastedPrompt({ tool, title: title.trim(), content });
       setSavedDraft(`${title}\0${content}`);
-      const result = await api.planActivate({ promptId: prompt.id, scope: "user" });
+      const result = await api.planActivate({
+        promptId: prompt.id,
+        scope: "user",
+        ...runtimeRequest(runtimeTarget),
+      });
       setPlanFailure(null);
       setPlan({ kind: "activate", result, promptId: prompt.id, title: prompt.title, source: "composer" });
     } catch (reason) {
@@ -341,7 +439,7 @@ export function WorkspacePage({
     setBusy(true);
     setPending(`deploy:${promptId}`);
     try {
-      const result = await api.planActivate({ promptId, scope: "user" });
+      const result = await api.planActivate({ promptId, scope: "user", ...runtimeRequest(runtimeTarget) });
       const summary = prompts.find((item) => item.id === promptId);
       setPlanFailure(null);
       setPlan({ kind: "activate", result, promptId, title: summary?.title ?? "", source: "library" });
@@ -370,9 +468,13 @@ export function WorkspacePage({
     setBusy(true);
     setPending("adopt");
     try {
-      const detail = await api.adoptLivePrompt({ tool, title: t("prompts.adoptTitle", { tool: toolName }) });
+      const detail = await api.adoptLivePrompt({
+        tool,
+        title: t("prompts.adoptTitle", { tool: toolName }),
+        ...runtimeRequest(runtimeTarget),
+      });
       // The library now names what the machine runs; the hero must not wait for a re-read.
-      applyHarnessOutcome(tool, "deploy", { id: detail.id, title: detail.title });
+      applyHarnessOutcome(tool, "deploy", { id: detail.id, title: detail.title }, runtimeTarget);
       openEditor(detail.id);
     } catch {
       toast?.err(t("prompts.adoptFailed"));
@@ -406,7 +508,7 @@ export function WorkspacePage({
     setBusy(true);
     setPending("remove");
     try {
-      const result = await api.planDeactivate({ tool, scope: "user" });
+      const result = await api.planDeactivate({ tool, scope: "user", ...runtimeRequest(runtimeTarget) });
       setPlanFailure(null);
       setPlan({ kind: "deactivate", result, promptId: null, title: deployedTitle ?? "", source: "machine" });
     } catch (reason) {
@@ -422,7 +524,12 @@ export function WorkspacePage({
     if (busy) return;
     setBusy(true);
     try {
-      const result = await api.planDeactivate({ tool, scope: "user", salvageConfig: true });
+      const result = await api.planDeactivate({
+        tool,
+        scope: "user",
+        salvageConfig: true,
+        ...runtimeRequest(runtimeTarget),
+      });
       setPlanFailure(null);
       setPlan({ kind: "salvage", result, promptId: null, title: deployedTitle ?? "", source: "machine" });
     } catch (reason) {
@@ -437,7 +544,7 @@ export function WorkspacePage({
     setBusy(true);
     setPending("recover");
     try {
-      const result = await api.recoverTool({ tool, scope: "user" });
+      const result = await api.recoverTool({ tool, scope: "user", ...runtimeRequest(runtimeTarget) });
       setPlanFailure(null);
       setPlan({ kind: "recover", result, promptId: null, title: "", source: "machine" });
     } catch (reason) {
@@ -460,16 +567,28 @@ export function WorkspacePage({
     setPlanFailure(null);
     try {
       if (from.kind === "activate" && from.promptId) {
-        const result = await api.planActivate({ promptId: from.promptId, scope: "user" });
+        const result = await api.planActivate({
+          promptId: from.promptId,
+          scope: "user",
+          ...runtimeRequest(runtimeTarget),
+        });
         setPlan({ ...from, result });
       } else if (from.kind === "deactivate" || from.kind === "salvage") {
-        const result = await api.planDeactivate({ tool, scope: "user", salvageConfig: from.kind === "salvage" });
+        const result = await api.planDeactivate({
+          tool,
+          scope: "user",
+          salvageConfig: from.kind === "salvage",
+          ...runtimeRequest(runtimeTarget),
+        });
         setPlan({ ...from, result });
       } else if (from.kind === "recover") {
-        const result = await api.recoverTool({ tool, scope: "user" });
+        const result = await api.recoverTool({ tool, scope: "user", ...runtimeRequest(runtimeTarget) });
         setPlan({ ...from, result });
       } else if (from.kind === "reconcile") {
-        const result = await api.planReconcile(tool);
+        const result =
+          runtimeTarget.kind === "wsl"
+            ? await api.planReconcile(tool, runtimeTarget)
+            : await api.planReconcile(tool);
         setPlan({ ...from, result });
       }
       return true;
@@ -486,7 +605,10 @@ export function WorkspacePage({
     if (busy || !plan) return;
     setBusy(true);
     try {
-      const result = await api.planReconcile(tool);
+      const result =
+        runtimeTarget.kind === "wsl"
+          ? await api.planReconcile(tool, runtimeTarget)
+          : await api.planReconcile(tool);
       setPlanFailure(null);
       setPlan({
         kind: "reconcile",
@@ -526,7 +648,11 @@ export function WorkspacePage({
         toast?.ok(t("plan.reconciled"));
         // Back to what the person was doing: the deploy is planned again from the repaired state.
         if (plan.then?.promptId) {
-          const next = await api.planActivate({ promptId: plan.then.promptId, scope: "user" });
+          const next = await api.planActivate({
+            promptId: plan.then.promptId,
+            scope: "user",
+            ...runtimeRequest(runtimeTarget),
+          });
           setPlan({ kind: "activate", result: next, promptId: plan.then.promptId, title: plan.then.title, source: plan.then.source });
         } else {
           setPlan(null);
@@ -534,9 +660,9 @@ export function WorkspacePage({
         setLocalEpoch((value) => value + 1);
         return;
       }
-      if (plan.kind === "recover") void loadHarnessStatus(tool, true);
-      else if (plan.kind === "activate") applyHarnessOutcome(tool, "deploy", { id: plan.promptId, title: plan.title });
-      else applyHarnessOutcome(tool, "remove");
+      if (plan.kind === "recover") void loadHarnessStatus(tool, runtimeTarget, true);
+      else if (plan.kind === "activate") applyHarnessOutcome(tool, "deploy", { id: plan.promptId, title: plan.title }, runtimeTarget);
+      else applyHarnessOutcome(tool, "remove", undefined, runtimeTarget);
       if (plan.source === "composer") {
         resetDraft();
         setComposerOpen(false);
@@ -635,7 +761,7 @@ export function WorkspacePage({
   const planReconcilable = plan?.kind === "activate" && needsReconcile(tool, plan.result.envelope);
   // A deploy that cannot be confirmed can still be cleared away with the Cleanup dialog.
   const planCleanable =
-    plan?.kind === "activate" && planBlocked(plan) && !unavailable;
+    plan?.kind === "activate" && planBlocked(plan) && !unavailable && runtimeTarget.kind === "native";
   const openCleanupFromPlan = () => {
     if (busy) return;
     setPlan(null);
@@ -740,7 +866,38 @@ export function WorkspacePage({
           onEdit={liveLocked ? undefined : () => void editLivePrompt()}
           editing={pending === "adopt"}
           onCleanup={() => setCleanupOpen(true)}
+          runtimeControl={
+            <Dropdown
+              label={t("runtime.label")}
+              value={runtimeKey}
+              options={runtimeChoices.map((item) => ({
+                value: runtimeTargetKey(item.target),
+                label: (
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="truncate">{item.target.kind === "native" ? t("runtime.native") : item.label}</span>
+                    {!item.available ? (
+                      <span className="shrink-0 text-[11px] text-warning">{t("runtime.unavailable")}</span>
+                    ) : null}
+                  </span>
+                ),
+              }))}
+              disabled={runtimeSaving || busy}
+              onChange={(value) => void changeRuntime(value)}
+              testId="runtime-selector"
+              menuTestId="runtime-menu"
+              optionTestId={(value) => `runtime-option-${value.replace(/[^a-zA-Z0-9_-]/g, "-")}`}
+              className="w-[230px]"
+            />
+          }
         />
+
+        {runtimeTarget.kind === "wsl" ? (
+          <p className="-mt-3 text-[12px] text-muted-foreground" data-testid="runtime-limitations">
+            {selectedRuntime?.available === false
+                ? selectedRuntime.unavailableReason ?? t("runtime.missing")
+                : t("runtime.wslScope")}
+          </p>
+        ) : null}
 
         <ZCodeBanner tool={toolInfo} />
 
@@ -893,7 +1050,7 @@ export function WorkspacePage({
         busy={busy}
         message={composerMessage}
         messageTone="error"
-        canDeploy={toolInfo.available}
+        canDeploy={!unavailable}
         defaultTitle={defaultTitle}
         onTitleChange={(value) => {
           setTitle(value);
@@ -913,12 +1070,13 @@ export function WorkspacePage({
       <CleanupDialog
         tool={tool}
         toolName={toolName}
+        runtimeTarget={runtimeTarget}
         open={cleanupOpen}
         onClose={() => setCleanupOpen(false)}
         onDone={(result) => {
           // The agent runs nothing of Keysmith's now: the hero, the rail and the list must say so.
-          if (result.deactivated) applyHarnessOutcome(tool, "remove");
-          void loadHarnessStatus(tool, true);
+          if (result.deactivated) applyHarnessOutcome(tool, "remove", undefined, runtimeTarget);
+          void loadHarnessStatus(tool, runtimeTarget, true);
           setLocalEpoch((value) => value + 1);
           toast?.ok(result.snapshotId ? t("cleanup.done") : t("cleanup.doneNothing"));
         }}
@@ -941,7 +1099,7 @@ export function WorkspacePage({
                 ? t("plan.titleReconcile", { tool: toolName })
                 : t("plan.titleDeploy", { tool: toolName })
         }
-        description={[toolName, plan?.title].filter(Boolean).join(" · ")}
+        description={[toolName, selectedRuntime?.label, plan?.title].filter(Boolean).join(" · ")}
         confirmLabel={
           plan?.kind === "deactivate"
             ? t("plan.confirmDeactivate")

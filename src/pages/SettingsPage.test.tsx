@@ -6,6 +6,7 @@ import { DEFAULT_SETTINGS, type UpdateCheck } from "../types";
 import { SettingsPage } from "./SettingsPage";
 
 const getAbout = vi.fn();
+const listRuntimes = vi.fn();
 const checkUpdate = vi.fn();
 const installUpdate = vi.fn();
 const openExternal = vi.fn();
@@ -23,6 +24,7 @@ let updaterState: {
 
 vi.mock("../api", () => ({
   getAbout: (...args: unknown[]) => getAbout(...args),
+  listRuntimes: (...args: unknown[]) => listRuntimes(...args),
 }));
 
 vi.mock("../lib/runtime", () => ({
@@ -61,6 +63,9 @@ describe("SettingsPage data safety", () => {
       },
       adapters: [],
       official: [],
+    });
+    listRuntimes.mockResolvedValue({
+      runtimes: [{ target: { kind: "native" }, label: "Windows 本机", isDefault: true, state: "running", wslVersion: null, available: true, unavailableReason: null, home: "C:\\Users\\Test" }],
     });
     updaterState = {
       update: null,
@@ -472,6 +477,24 @@ describe("SettingsPage data safety", () => {
     fireEvent.click(screen.getByTestId("settings-language-en"));
     await waitFor(() => expect(onSave).toHaveBeenCalledWith({ language: "en" }));
     expect(screen.queryByTestId("settings-language-menu")).not.toBeInTheDocument();
+  });
+
+  it("allows every agent, including ZCode, to target an explicit WSL user", async () => {
+    const target = { kind: "wsl", distribution: "Ubuntu-24.04", user: "root" } as const;
+    listRuntimes.mockResolvedValue({
+      runtimes: [
+        { target: { kind: "native" }, label: "Windows 本机", isDefault: true, state: "running", wslVersion: null, available: true, unavailableReason: null, home: "C:\\Users\\Test" },
+        { target, label: "WSL2 · Ubuntu-24.04 · root", isDefault: false, state: "running", wslVersion: 2, available: true, unavailableReason: null, home: "/root" },
+      ],
+    });
+    const onSave = vi.fn().mockResolvedValue({ ...DEFAULT_SETTINGS, agentRuntimeTargets: { zcode: target } });
+    render(<SettingsPage settings={DEFAULT_SETTINGS} onSave={onSave} toast={toast} initialTab="tools" />);
+
+    fireEvent.click(await screen.findByTestId("settings-runtime-zcode"));
+    fireEvent.click(await screen.findByRole("option", { name: "WSL2 · Ubuntu-24.04 · root" }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({
+      agentRuntimeTargets: { zcode: target },
+    }));
   });
 
   it("closes the language list on Escape without saving", () => {

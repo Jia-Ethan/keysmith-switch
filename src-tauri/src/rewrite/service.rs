@@ -28,6 +28,10 @@ pub struct RelayConfig {
     pub schema: u32,
     pub port: u16,
     pub token: String,
+    /// Additional host-interface addresses to listen on. These are explicit WSL virtual
+    /// adapter addresses, never wildcard addresses, so the relay is not exposed to the LAN.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub listen_addresses: Vec<String>,
     pub upstreams: std::collections::BTreeMap<String, String>,
     /// `<tool>/<upstream id>` → base URL, for agents other than Codex.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
@@ -81,6 +85,7 @@ pub fn ensure_config(paths: &AppPaths) -> Result<RelayConfig> {
         schema: RELAY_CONFIG_SCHEMA,
         port,
         token: uuid::Uuid::new_v4().simple().to_string(),
+        listen_addresses: Vec::new(),
         upstreams: Default::default(),
         routes: Default::default(),
     };
@@ -93,16 +98,24 @@ pub fn write_config(paths: &AppPaths, config: &RelayConfig) -> Result<()> {
 }
 
 pub fn base_url(config: &RelayConfig, provider: &str) -> String {
+    base_url_at(config, "127.0.0.1", provider)
+}
+
+pub fn base_url_at(config: &RelayConfig, host: &str, provider: &str) -> String {
     format!(
-        "http://127.0.0.1:{}/r/{}/{provider}",
+        "http://{host}:{}/r/{}/{provider}",
         config.port, config.token
     )
 }
 
 /// The relay address for one agent's upstream: `/t/<token>/<tool>/<upstream>`.
 pub fn route_url(config: &RelayConfig, tool: &str, upstream: &str) -> String {
+    route_url_at(config, "127.0.0.1", tool, upstream)
+}
+
+pub fn route_url_at(config: &RelayConfig, host: &str, tool: &str, upstream: &str) -> String {
     format!(
-        "http://127.0.0.1:{}/t/{}/{tool}/{upstream}",
+        "http://{host}:{}/t/{}/{tool}/{upstream}",
         config.port, config.token
     )
 }

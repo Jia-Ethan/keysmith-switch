@@ -1,7 +1,7 @@
 use keysmith_rewrite::{Rule, Snapshot, Tool};
 use keysmith_switch_lib::db::rules::{pack_table_id, TableKind, USER_TABLE_ID};
 use keysmith_switch_lib::db::Store;
-use keysmith_switch_lib::models::SettingsPatch;
+use keysmith_switch_lib::models::{RuntimeTarget, SettingsPatch};
 use keysmith_switch_lib::paths::AppPaths;
 use keysmith_switch_lib::rewrite;
 use pretty_assertions::assert_eq;
@@ -42,6 +42,73 @@ fn user_rules_keep_order_and_reject_duplicates() {
     assert_eq!(
         store.active_rules(Tool::Codex).unwrap(),
         rules(&[("b", "2"), ("a", "1")])
+    );
+}
+
+#[test]
+fn rules_switches_and_snapshots_are_isolated_by_runtime() {
+    let (_tmp, paths) = AppPaths::in_temp_dir().unwrap();
+    let store = Store::open(&paths).unwrap();
+    let alice = RuntimeTarget::Wsl {
+        distribution: "Ubuntu-24.04".into(),
+        user: Some("alice".into()),
+    };
+    let root = RuntimeTarget::Wsl {
+        distribution: "Ubuntu-24.04".into(),
+        user: Some("root".into()),
+    };
+
+    store
+        .save_user_rules(&rules(&[("same", "windows")]))
+        .unwrap();
+    store
+        .save_user_rules_for(&rules(&[("same", "alice")]), &alice)
+        .unwrap();
+    store
+        .save_user_rules_for(&rules(&[("same", "root")]), &root)
+        .unwrap();
+    store
+        .update_rewrite_switches(&alice, Some(true), None, None, None, None)
+        .unwrap();
+
+    assert_eq!(
+        store.active_rules(Tool::Codex).unwrap(),
+        rules(&[("same", "windows")])
+    );
+    assert_eq!(
+        store.active_rules_for(Tool::Codex, &alice).unwrap(),
+        rules(&[("same", "alice")])
+    );
+    assert_eq!(
+        store.active_rules_for(Tool::Codex, &root).unwrap(),
+        rules(&[("same", "root")])
+    );
+    assert!(
+        !store
+            .rewrite_switches(&RuntimeTarget::Native)
+            .unwrap()
+            .enabled
+    );
+    assert!(store.rewrite_switches(&alice).unwrap().enabled);
+    assert!(!store.rewrite_switches(&root).unwrap().enabled);
+
+    rewrite::publish_all(&store).unwrap();
+    let native = Snapshot::parse(&std::fs::read(rewrite::snapshot_path(&paths)).unwrap()).unwrap();
+    let alice_snapshot =
+        Snapshot::parse(&std::fs::read(rewrite::snapshot_path_for(&paths, &alice)).unwrap())
+            .unwrap();
+    let root_snapshot =
+        Snapshot::parse(&std::fs::read(rewrite::snapshot_path_for(&paths, &root)).unwrap())
+            .unwrap();
+    assert!(native.matcher(Tool::Codex).is_none());
+    assert_eq!(
+        alice_snapshot.matcher(Tool::Codex).unwrap().rewrite("same"),
+        "alice"
+    );
+    assert!(root_snapshot.matcher(Tool::Codex).is_none());
+    assert_ne!(
+        rewrite::snapshot_path_for(&paths, &alice),
+        rewrite::snapshot_path_for(&paths, &root)
     );
 }
 

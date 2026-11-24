@@ -1,12 +1,13 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import * as api from "../api";
-import type { ExtensionReport, ExtensionsView, HarnessReport } from "../types";
+import type { ExtensionReport, ExtensionsView, HarnessReport, RuntimeTarget } from "../types";
 
 export const EXT_FIRST_LOOK_DELAY_MS = 2500;
 /** A running app looks again this often, and when the window returns after this long. */
 export const EXT_RECHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
 export const EXT_RECHECK_ON_FOCUS_AFTER_MS = 60 * 60 * 1000;
+const NATIVE_RUNTIME: RuntimeTarget = { kind: "native" };
 
 /** The backend names a failure "extensions:<code>:<detail>"; only the code matters here. */
 export function extensionErrorCode(error: unknown): string {
@@ -50,10 +51,12 @@ export function useExtensionsOptional() {
  */
 export function ExtensionsProvider({
   enabled,
+  runtimeTarget = NATIVE_RUNTIME,
   onEnabledChange,
   children,
 }: {
   enabled: boolean;
+  runtimeTarget?: RuntimeTarget;
   onEnabledChange: (next: boolean) => Promise<void>;
   children: ReactNode;
 }) {
@@ -68,7 +71,7 @@ export function ExtensionsProvider({
     refreshingRef.current = true;
     if (!silent) setRefreshing(true);
     try {
-      const next = await api.extensionsRefresh();
+      const next = await api.extensionsRefresh(runtimeTarget);
       setView(next);
       lastLookRef.current = Date.now();
       return next;
@@ -80,7 +83,7 @@ export function ExtensionsProvider({
       refreshingRef.current = false;
       if (!silent) setRefreshing(false);
     }
-  }, []);
+  }, [runtimeTarget]);
 
   useEffect(() => {
     if (!enabled) {
@@ -89,7 +92,7 @@ export function ExtensionsProvider({
     }
     let cancelled = false;
     void api
-      .extensionsState()
+      .extensionsState(runtimeTarget)
       .then((cached) => {
         if (!cancelled) setView((current) => current ?? cached);
       })
@@ -107,7 +110,7 @@ export function ExtensionsProvider({
       window.clearInterval(timer);
       window.removeEventListener("focus", onFocus);
     };
-  }, [enabled, look]);
+  }, [enabled, look, runtimeTarget]);
 
   const setEnabled = useCallback(
     async (next: boolean) => {
@@ -130,13 +133,13 @@ export function ExtensionsProvider({
   }, []);
 
   const install = useCallback(
-    (id: string, enable = false) => change(id, () => api.installExtension(id, enable)),
-    [change],
+    (id: string, enable = false) => change(id, () => api.installExtension(id, enable, runtimeTarget)),
+    [change, runtimeTarget],
   );
-  const uninstall = useCallback((id: string) => change(id, () => api.uninstallExtension(id)), [change]);
+  const uninstall = useCallback((id: string) => change(id, () => api.uninstallExtension(id, runtimeTarget)), [change, runtimeTarget]);
   const confirmHarness = useCallback(
-    (id: string, planId: string) => change(id, () => api.confirmHarness(id, planId)),
-    [change],
+    (id: string, planId: string) => change(id, () => api.confirmHarness(id, planId, runtimeTarget)),
+    [change, runtimeTarget],
   );
 
   const value = useMemo<ExtensionsContextValue>(

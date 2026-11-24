@@ -12,12 +12,14 @@ use crate::db::Store;
 use crate::error::{Error, Result};
 use crate::harness::{self, HarnessOutcome, HarnessState};
 use crate::models::{
-    CreatePromptInput, PlanActivateInput, PlanDeactivateInput, PromptSort, Scope, Settings,
-    SettingsPatch, ToolKind, ToolStatus, UpdatePromptInput, APP_VERSION,
+    CreatePromptInput, PlanActivateInput, PlanDeactivateInput, PromptSort, RuntimeDirectories,
+    RuntimeTarget, Scope, Settings, SettingsPatch, ToolKind, ToolStatus, UpdatePromptInput,
+    APP_VERSION,
 };
 use crate::official::{
     confirm_official_action_cancellable as official_confirm, plan_official_action as official_plan,
-    OfficialAction, OfficialPlan, OfficialProduct, OfficialResult,
+    plan_official_action_on_target, probe_spec, DetectedOfficial, OfficialAction, OfficialHost,
+    OfficialPlan, OfficialProduct, OfficialResult,
 };
 use crate::ops;
 use crate::paths::AppPaths;
@@ -57,6 +59,67 @@ fn opts() -> AdapterOptions {
     opts
 }
 
+fn opts_for(store: &Store, runtime_target: Option<RuntimeTarget>) -> Result<AdapterOptions> {
+    let runtime_target = runtime_target.unwrap_or_default();
+    let mut resolved = opts();
+    resolved.runtime_target = runtime_target.clone();
+    if let Some(entry) = store
+        .get_settings()?
+        .agent_directories
+        .into_iter()
+        .find(|entry| entry.target == runtime_target)
+    {
+        for (tool, raw) in entry.directories {
+            let value = raw.trim();
+            if value.is_empty() || value.contains('\0') {
+                continue;
+            }
+            let path = PathBuf::from(value);
+            let absolute = match &runtime_target {
+                RuntimeTarget::Native => path.is_absolute(),
+                RuntimeTarget::Wsl { .. } => value.starts_with('/'),
+            };
+            if absolute {
+                resolved.config_dirs.insert(tool, path);
+            }
+        }
+    }
+    Ok(resolved)
+}
+
+fn opts_for_operation(store: &Store, operation_id: &str) -> Result<AdapterOptions> {
+    let operation = store
+        .get_operation(operation_id)?
+        .ok_or_else(|| Error::user_cancel("plan not found"))?;
+    let request: serde_json::Value = serde_json::from_str(&operation.request_json)?;
+    let runtime_target = request
+        .get("runtimeTarget")
+        .cloned()
+        .map(serde_json::from_value::<RuntimeTarget>)
+        .transpose()?;
+    opts_for(store, runtime_target)
+}
+
+fn rewrite_opts_for(
+    store: &Store,
+    runtime_target: Option<RuntimeTarget>,
+) -> Result<AdapterOptions> {
+    let mut resolved = opts_for(store, runtime_target)?;
+    if !resolved.runtime_target.is_native() {
+        resolved.home = Some(crate::runtime::helper_home(&resolved.runtime_target)?);
+    }
+    Ok(resolved)
+}
+
+fn rewrite_exact_dir(opts: &AdapterOptions, tool: ToolKind) -> Option<PathBuf> {
+    let dir = opts.config_dirs.get(&tool)?.clone();
+    Some(if tool == ToolKind::Zcode {
+        crate::runtime::join_path(&dir, "v2")
+    } else {
+        dir
+    })
+}
+
 fn parse_sort(raw: Option<&str>) -> PromptSort {
     match raw.unwrap_or("updated") {
         "created" => PromptSort::Created,
@@ -71,6 +134,42 @@ fn parse_scope(raw: Option<&str>) -> Result<Scope> {
 
 fn parse_tool(raw: &str) -> Result<ToolKind> {
     raw.parse()
+}
+
+fn normalized_agent_directories(
+    entries: Vec<RuntimeDirectories>,
+) -> Result<Vec<RuntimeDirectories>> {
+    let mut targets = std::collections::HashSet::new();
+    let mut normalized = Vec::new();
+    for mut entry in entries {
+        if !targets.insert(entry.target.storage_key()) {
+            return Err(Error::invalid(
+                "agent directories contain a duplicate runtime",
+            ));
+        }
+        entry
+            .directories
+            .retain(|_, value| !value.trim().is_empty());
+        for value in entry.directories.values_mut() {
+            *value = value.trim().to_string();
+            if value.len() > 4096 || value.contains(['\0', '\r', '\n']) {
+                return Err(Error::invalid("agent config directory is invalid"));
+            }
+            let absolute = match entry.target {
+                RuntimeTarget::Native => Path::new(value).is_absolute(),
+                RuntimeTarget::Wsl { .. } => value.starts_with('/'),
+            };
+            if !absolute {
+                return Err(Error::invalid(
+                    "agent config directory must be absolute in its runtime",
+                ));
+            }
+        }
+        if !entry.directories.is_empty() {
+            normalized.push(entry);
+        }
+    }
+    Ok(normalized)
 }
 
 fn excerpt(content: &str) -> Option<String> {
@@ -251,6 +350,7 @@ pub struct UiActivation {
     pub prompt_id: String,
     pub prompt_title: Option<String>,
     pub scope: Scope,
+    pub runtime_target: RuntimeTarget,
     pub project_dir: Option<String>,
     pub active: bool,
     pub created_at: String,
@@ -264,6 +364,7 @@ pub struct UiOperation {
     pub tool: ToolKind,
     pub kind: String,
     pub status: String,
+    pub runtime_target: RuntimeTarget,
     pub error: Option<String>,
     pub created_at: String,
     pub recover_available: bool,
@@ -333,8 +434,9 @@ fn summarize_prompt(
     prompt: &crate::models::PromptSummary,
     content: Option<&str>,
     locked: bool,
+    runtime_target: &RuntimeTarget,
 ) -> Result<UiPromptSummary> {
-    let activations = store.list_activations(prompt.tool)?;
+    let activations = store.list_activations_for_runtime(prompt.tool, runtime_target)?;
     let hit = activations.iter().find(|item| {
         item.prompt_id.as_deref() == Some(prompt.id.as_str()) && item.status == ToolStatus::Active
     });
@@ -370,7 +472,13 @@ fn detail_from_store(store: &Store, id: &str) -> Result<UiPromptDetail> {
     };
     let locked = crate::extensions::is_hidden_prompt(store, id);
     Ok(UiPromptDetail {
-        summary: summarize_prompt(store, &summary, Some(&prompt.content), locked)?,
+        summary: summarize_prompt(
+            store,
+            &summary,
+            Some(&prompt.content),
+            locked,
+            &RuntimeTarget::Native,
+        )?,
         // The text of a pack prompt stays in the backend; it is what gets deployed, not shown.
         content: if locked {
             String::new()
@@ -405,6 +513,11 @@ pub fn list_tools() -> Result<serde_json::Value> {
     Ok(serde_json::json!({ "tools": tools }))
 }
 
+#[tauri::command]
+pub async fn list_runtimes() -> Result<serde_json::Value> {
+    Ok(serde_json::json!({ "runtimes": crate::runtime::list().await? }))
+}
+
 #[tauri::command(rename_all = "camelCase")]
 pub fn list_prompts(
     state: State<'_, AppState>,
@@ -412,9 +525,11 @@ pub fn list_prompts(
     query: Option<String>,
     tag: Option<String>,
     sort: Option<String>,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<serde_json::Value> {
     let tool = parse_tool(&tool)?;
     let sort = parse_sort(sort.as_deref());
+    let runtime_target = runtime_target.unwrap_or_default();
     let items = state
         .store
         .list_prompts(tool, query.as_deref(), tag.as_deref(), sort)?;
@@ -437,6 +552,7 @@ pub fn list_prompts(
             &item,
             content.as_deref(),
             locked,
+            &runtime_target,
         )?);
     }
     Ok(serde_json::json!({ "prompts": prompts }))
@@ -564,13 +680,15 @@ pub async fn tool_status(
     tool: String,
     scope: Option<String>,
     project_dir: Option<String>,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<UiEnvelope> {
+    let runtime_opts = opts_for(&state.store, runtime_target)?;
     let envelope = ops::tool_status(
         &state.store,
         parse_tool(&tool)?,
         parse_scope(scope.as_deref())?,
         project_dir.map(PathBuf::from),
-        &opts(),
+        &runtime_opts,
     )
     .await?;
     Ok(envelope.into())
@@ -585,7 +703,9 @@ pub async fn plan_activate(
     runtime: Option<bool>,
     append_file: Option<String>,
     max_tokens: Option<u64>,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<UiPlanResult> {
+    let runtime_opts = opts_for(&state.store, runtime_target.clone())?;
     let result = ops::plan_activate(
         &state.store,
         PlanActivateInput {
@@ -596,7 +716,7 @@ pub async fn plan_activate(
             append_file: append_file.map(PathBuf::from),
             max_tokens,
         },
-        &opts(),
+        &runtime_opts,
     )
     .await?;
     Ok(map_plan(result))
@@ -604,7 +724,8 @@ pub async fn plan_activate(
 
 #[tauri::command(rename_all = "camelCase")]
 pub async fn activate(state: State<'_, AppState>, operation_id: String) -> Result<UiPlanResult> {
-    let result = ops::confirm_activate(&state.store, &operation_id, &opts()).await?;
+    let runtime_opts = opts_for_operation(&state.store, &operation_id)?;
+    let result = ops::confirm_activate(&state.store, &operation_id, &runtime_opts).await?;
     Ok(map_plan(result))
 }
 
@@ -616,7 +737,9 @@ pub async fn plan_deactivate(
     scope: String,
     project_dir: Option<String>,
     salvage_config: Option<bool>,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<UiPlanResult> {
+    let runtime_opts = opts_for(&state.store, runtime_target.clone())?;
     let result = ops::plan_deactivate(
         &state.store,
         PlanDeactivateInput {
@@ -626,7 +749,7 @@ pub async fn plan_deactivate(
             project_dir: project_dir.map(PathBuf::from),
             salvage_config: salvage_config.unwrap_or(false),
         },
-        &opts(),
+        &runtime_opts,
     )
     .await?;
     Ok(map_plan(result))
@@ -634,13 +757,19 @@ pub async fn plan_deactivate(
 
 #[tauri::command(rename_all = "camelCase")]
 pub async fn deactivate(state: State<'_, AppState>, operation_id: String) -> Result<UiPlanResult> {
-    let result = ops::confirm_deactivate(&state.store, &operation_id, &opts()).await?;
+    let runtime_opts = opts_for_operation(&state.store, &operation_id)?;
+    let result = ops::confirm_deactivate(&state.store, &operation_id, &runtime_opts).await?;
     Ok(map_plan(result))
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub async fn harness_state(state: State<'_, AppState>, tool: String) -> Result<HarnessState> {
-    harness::harness_state(&state.store, parse_tool(&tool)?, &opts()).await
+pub async fn harness_state(
+    state: State<'_, AppState>,
+    tool: String,
+    runtime_target: Option<RuntimeTarget>,
+) -> Result<HarnessState> {
+    let runtime_opts = opts_for(&state.store, runtime_target)?;
+    harness::harness_state(&state.store, parse_tool(&tool)?, &runtime_opts).await
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -648,20 +777,32 @@ pub async fn adopt_live_prompt(
     state: State<'_, AppState>,
     tool: String,
     title: String,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<UiPromptDetail> {
     let tool = parse_tool(&tool)?;
-    let id = harness::adopt_live_prompt(&state.store, tool, &title, &opts()).await?;
+    let runtime_opts = opts_for(&state.store, runtime_target)?;
+    let id = harness::adopt_live_prompt(&state.store, tool, &title, &runtime_opts).await?;
     detail_from_store(&state.store, &id)
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub async fn remove_harness(state: State<'_, AppState>, tool: String) -> Result<HarnessOutcome> {
-    harness::remove_harness(&state.store, parse_tool(&tool)?, &opts()).await
+pub async fn remove_harness(
+    state: State<'_, AppState>,
+    tool: String,
+    runtime_target: Option<RuntimeTarget>,
+) -> Result<HarnessOutcome> {
+    let runtime_opts = opts_for(&state.store, runtime_target)?;
+    harness::remove_harness(&state.store, parse_tool(&tool)?, &runtime_opts).await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub async fn plan_reconcile(state: State<'_, AppState>, tool: String) -> Result<UiPlanResult> {
-    let result = ops::plan_reconcile(&state.store, parse_tool(&tool)?, &opts()).await?;
+pub async fn plan_reconcile(
+    state: State<'_, AppState>,
+    tool: String,
+    runtime_target: Option<RuntimeTarget>,
+) -> Result<UiPlanResult> {
+    let runtime_opts = opts_for(&state.store, runtime_target)?;
+    let result = ops::plan_reconcile(&state.store, parse_tool(&tool)?, &runtime_opts).await?;
     Ok(map_plan(result))
 }
 
@@ -670,7 +811,8 @@ pub async fn confirm_reconcile(
     state: State<'_, AppState>,
     operation_id: String,
 ) -> Result<UiPlanResult> {
-    let result = ops::confirm_reconcile(&state.store, &operation_id, &opts()).await?;
+    let runtime_opts = opts_for_operation(&state.store, &operation_id)?;
+    let result = ops::confirm_reconcile(&state.store, &operation_id, &runtime_opts).await?;
     Ok(map_plan(result))
 }
 
@@ -678,8 +820,10 @@ pub async fn confirm_reconcile(
 pub async fn plan_cleanup(
     state: State<'_, AppState>,
     tool: String,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<crate::cleanup::CleanupPlan> {
-    crate::cleanup::plan_cleanup(&state.store, parse_tool(&tool)?, &opts()).await
+    let runtime_opts = opts_for(&state.store, runtime_target)?;
+    crate::cleanup::plan_cleanup(&state.store, parse_tool(&tool)?, &runtime_opts).await
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -688,11 +832,12 @@ pub async fn confirm_cleanup(
     operation_id: String,
     clear_memories: Option<bool>,
 ) -> Result<crate::cleanup::CleanupResult> {
+    let runtime_opts = opts_for_operation(&state.store, &operation_id)?;
     crate::cleanup::confirm_cleanup(
         &state.store,
         &operation_id,
         clear_memories.unwrap_or(false),
-        &opts(),
+        &runtime_opts,
     )
     .await
 }
@@ -707,7 +852,9 @@ pub async fn plan_rollback(
     state: State<'_, AppState>,
     snapshot_id: String,
 ) -> Result<crate::cleanup::RollbackPlan> {
-    crate::cleanup::plan_rollback(&state.store, &snapshot_id, &opts()).await
+    let snapshot = crate::cleanup::get_snapshot(&state.store, &snapshot_id)?;
+    let runtime_opts = opts_for(&state.store, Some(snapshot.runtime_target))?;
+    crate::cleanup::plan_rollback(&state.store, &snapshot_id, &runtime_opts).await
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -715,7 +862,8 @@ pub async fn confirm_rollback(
     state: State<'_, AppState>,
     operation_id: String,
 ) -> Result<crate::cleanup::RollbackResult> {
-    crate::cleanup::confirm_rollback(&state.store, &operation_id, &opts()).await
+    let runtime_opts = opts_for_operation(&state.store, &operation_id)?;
+    crate::cleanup::confirm_rollback(&state.store, &operation_id, &runtime_opts).await
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -733,13 +881,15 @@ pub async fn recover_tool(
     tool: String,
     scope: Option<String>,
     project_dir: Option<String>,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<UiPlanResult> {
+    let runtime_opts = opts_for(&state.store, runtime_target)?;
     let result = ops::plan_recover(
         &state.store,
         parse_tool(&tool)?,
         parse_scope(scope.as_deref())?,
         project_dir.map(PathBuf::from),
-        &opts(),
+        &runtime_opts,
     )
     .await?;
     Ok(map_plan(result))
@@ -750,21 +900,35 @@ pub async fn confirm_recover(
     state: State<'_, AppState>,
     operation_id: String,
 ) -> Result<UiPlanResult> {
-    let result = ops::confirm_recover(&state.store, &operation_id, &opts()).await?;
+    let runtime_opts = opts_for_operation(&state.store, &operation_id)?;
+    let result = ops::confirm_recover(&state.store, &operation_id, &runtime_opts).await?;
     Ok(map_plan(result))
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub async fn doctor(tool: String) -> Result<UiEnvelope> {
-    let envelope = ops::doctor_tool(parse_tool(&tool)?, &opts()).await?;
+pub async fn doctor(
+    state: State<'_, AppState>,
+    tool: String,
+    runtime_target: Option<RuntimeTarget>,
+) -> Result<UiEnvelope> {
+    let runtime_opts = opts_for(&state.store, runtime_target)?;
+    let envelope = ops::doctor_tool(parse_tool(&tool)?, &runtime_opts).await?;
     Ok(envelope.into())
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn list_activations(state: State<'_, AppState>, tool: String) -> Result<serde_json::Value> {
+pub fn list_activations(
+    state: State<'_, AppState>,
+    tool: String,
+    runtime_target: Option<RuntimeTarget>,
+) -> Result<serde_json::Value> {
     let tool = parse_tool(&tool)?;
+    let runtime_target = runtime_target.unwrap_or_default();
     let mut activations = Vec::new();
-    for item in state.store.list_activations(tool)? {
+    for item in state
+        .store
+        .list_activations_for_runtime(tool, &runtime_target)?
+    {
         let prompt_title = item
             .prompt_id
             .as_deref()
@@ -776,6 +940,7 @@ pub fn list_activations(state: State<'_, AppState>, tool: String) -> Result<serd
             prompt_id: item.prompt_id.unwrap_or_default(),
             prompt_title,
             scope: item.scope,
+            runtime_target: item.runtime_target,
             project_dir: item.project_dir,
             active: item.status == ToolStatus::Active,
             created_at: item.created_at,
@@ -789,11 +954,16 @@ pub fn list_activations(state: State<'_, AppState>, tool: String) -> Result<serd
 pub fn list_operations(
     state: State<'_, AppState>,
     tool: Option<String>,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<serde_json::Value> {
     let tool = tool.as_deref().map(parse_tool).transpose()?;
-    let operations = state
-        .store
-        .list_operations(tool)?
+    let items = match tool {
+        Some(tool) => state
+            .store
+            .list_operations_for_runtime(tool, &runtime_target.unwrap_or_default())?,
+        None => state.store.list_operations(None)?,
+    };
+    let operations = items
         .into_iter()
         .map(|item| UiOperation {
             recover_available: item.kind == crate::models::OperationKind::Recover
@@ -802,6 +972,7 @@ pub fn list_operations(
             tool: item.tool,
             kind: item.kind.as_str().to_string(),
             status: item.status.as_str().to_string(),
+            runtime_target: item.runtime_target,
             error: item.error,
             created_at: item.created_at,
         })
@@ -832,7 +1003,14 @@ pub fn update_settings(
     rewrite_claude_enabled: Option<bool>,
     rewrite_grok_enabled: Option<bool>,
     rewrite_zcode_enabled: Option<bool>,
+    agent_runtime_targets: Option<std::collections::HashMap<ToolKind, RuntimeTarget>>,
+    agent_directories: Option<Vec<RuntimeDirectories>>,
+    extension_runtime_target: Option<RuntimeTarget>,
+    rewrite_runtime_target: Option<RuntimeTarget>,
 ) -> Result<Settings> {
+    let agent_directories = agent_directories
+        .map(normalized_agent_directories)
+        .transpose()?;
     let settings = state.store.update_settings(SettingsPatch {
         language,
         update_channel,
@@ -849,6 +1027,10 @@ pub fn update_settings(
         rewrite_claude_enabled,
         rewrite_grok_enabled,
         rewrite_zcode_enabled,
+        agent_runtime_targets,
+        agent_directories,
+        extension_runtime_target,
+        rewrite_runtime_target,
     })?;
     if rewrite_enabled.is_some()
         || rewrite_codex_enabled.is_some()
@@ -1154,10 +1336,68 @@ async fn apply_with_plugin(
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn plan_official_action(product: String, action: String) -> Result<OfficialPlan> {
+pub async fn plan_official_action(
+    product: String,
+    action: String,
+    runtime_target: Option<RuntimeTarget>,
+) -> Result<OfficialPlan> {
     let product = parse_official(&product)?;
     let action = parse_official_action(&action)?;
-    Ok(official_plan(product, action))
+    let runtime_target = runtime_target.unwrap_or_default();
+    if runtime_target.is_native() {
+        return Ok(official_plan(product, action));
+    }
+    let target = runtime_target.clone();
+    let (executable, package) = probe_spec(product);
+    let response = tauri::async_runtime::spawn_blocking(move || {
+        crate::runtime::invoke_helper(
+            &target,
+            &serde_json::json!({
+                "command": "officialInspect",
+                "executable": executable,
+                "package": package,
+            }),
+        )
+    })
+    .await
+    .map_err(|error| Error::message(format!("official probe task failed: {error}")))??;
+    let npm_available = response
+        .get("npmAvailable")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    let detected = DetectedOfficial {
+        executable_path: response
+            .get("executablePath")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string),
+        current_version: response
+            .get("currentVersion")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string),
+        latest_version: response
+            .get("latestVersion")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string),
+    };
+    let mut host = OfficialHost {
+        os: Some("linux".to_string()),
+        npm_available: Some(npm_available),
+        ..Default::default()
+    };
+    host.detected.insert(product, detected);
+    if let (Some(root), Some(package)) = (
+        response.get("npmRoot").and_then(serde_json::Value::as_str),
+        package,
+    ) {
+        host.dest_override
+            .insert(product, format!("{}/{package}", root.trim_end_matches('/')));
+    }
+    Ok(plan_official_action_on_target(
+        product,
+        action,
+        &host,
+        runtime_target,
+    ))
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -1263,6 +1503,7 @@ pub async fn run_advanced(
     state: State<'_, AppState>,
     kind: String,
     args: Option<std::collections::BTreeMap<String, String>>,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<serde_json::Value> {
     if !state.store.get_settings()?.advanced_tools_enabled {
         return Ok(serde_json::json!({
@@ -1273,13 +1514,16 @@ pub async fn run_advanced(
         }));
     }
     let extra = args.unwrap_or_default();
+    let runtime_opts = opts_for(&state.store, runtime_target)?;
+    let target = &runtime_opts.runtime_target;
     let (tool, argv) = match kind.as_str() {
         "scenario" | "scenarioStatus" | "scenarioDeploy" | "scenarioUninstall"
-        | "scenarioRecover" | "scaffold" | "scaffoldList" | "scaffoldUninstall" => {
-            (ToolKind::Codex, codex_advanced_argv(kind.as_str(), &extra)?)
-        }
-        "grokRun" => (ToolKind::Grok, grok_run_argv(&extra)?),
-        "grokBreaktest" => (ToolKind::Grok, grok_breaktest_argv(&extra)?),
+        | "scenarioRecover" | "scaffold" | "scaffoldList" | "scaffoldUninstall" => (
+            ToolKind::Codex,
+            codex_advanced_argv(kind.as_str(), &extra, target)?,
+        ),
+        "grokRun" => (ToolKind::Grok, grok_run_argv(&extra, target)?),
+        "grokBreaktest" => (ToolKind::Grok, grok_breaktest_argv(&extra, target)?),
         other => {
             return Ok(serde_json::json!({
                 "ok": false,
@@ -1289,7 +1533,7 @@ pub async fn run_advanced(
             }));
         }
     };
-    let cli = resolve_cli(tool, &opts())?;
+    let cli = crate::adapter::process::resolve_cli_for_runtime(tool, &runtime_opts).await?;
     let cancel = Arc::new(AtomicBool::new(false));
     {
         let mut running = state
@@ -1301,7 +1545,8 @@ pub async fn run_advanced(
         }
         *running = Some(Arc::clone(&cancel));
     }
-    let output = run_resolved_streaming(&app, &cli, &argv, Arc::clone(&cancel)).await;
+    let output =
+        run_resolved_streaming(&app, &cli, &argv, &runtime_opts, Arc::clone(&cancel)).await;
     if let Ok(mut running) = state.advanced_cancel.lock() {
         *running = None;
     }
@@ -1330,7 +1575,10 @@ pub fn cancel_advanced(state: State<'_, AppState>) -> Result<serde_json::Value> 
     Ok(serde_json::json!({ "ok": true, "cancelled": cancelled }))
 }
 
-fn grok_run_argv(extra: &std::collections::BTreeMap<String, String>) -> Result<Vec<String>> {
+fn grok_run_argv(
+    extra: &std::collections::BTreeMap<String, String>,
+    runtime_target: &RuntimeTarget,
+) -> Result<Vec<String>> {
     let mut argv = vec!["run".to_string()];
     push_choice(
         &mut argv,
@@ -1355,8 +1603,13 @@ fn grok_run_argv(extra: &std::collections::BTreeMap<String, String>) -> Result<V
         "--prompt",
         extra.get("prompt").or_else(|| extra.get("input")),
     )?;
-    push_abs(&mut argv, "--prompt-file", extra.get("promptFile"))?;
-    push_abs(&mut argv, "--cwd", extra.get("cwd"))?;
+    push_abs(
+        &mut argv,
+        "--prompt-file",
+        extra.get("promptFile"),
+        runtime_target,
+    )?;
+    push_abs(&mut argv, "--cwd", extra.get("cwd"), runtime_target)?;
     push_number(&mut argv, "--timeout", extra.get("timeout"))?;
     if argv.len() == 1 {
         return Err(Error::invalid(
@@ -1366,7 +1619,10 @@ fn grok_run_argv(extra: &std::collections::BTreeMap<String, String>) -> Result<V
     Ok(argv)
 }
 
-fn grok_breaktest_argv(extra: &std::collections::BTreeMap<String, String>) -> Result<Vec<String>> {
+fn grok_breaktest_argv(
+    extra: &std::collections::BTreeMap<String, String>,
+    runtime_target: &RuntimeTarget,
+) -> Result<Vec<String>> {
     let mut argv = vec!["breaktest".to_string()];
     let bank = extra
         .get("bank")
@@ -1393,7 +1649,12 @@ fn grok_breaktest_argv(extra: &std::collections::BTreeMap<String, String>) -> Re
     push_number(&mut argv, "--timeout", extra.get("timeout"))?;
     push_number(&mut argv, "--concurrency", extra.get("concurrency"))?;
     push_text(&mut argv, "--model", extra.get("model"))?;
-    push_abs(&mut argv, "--output-dir", extra.get("outputDir"))?;
+    push_abs(
+        &mut argv,
+        "--output-dir",
+        extra.get("outputDir"),
+        runtime_target,
+    )?;
     if extra.get("resume").is_some_and(|value| value == "true") {
         argv.push("--resume".into());
     }
@@ -1439,18 +1700,26 @@ fn push_text(argv: &mut Vec<String>, flag: &str, value: Option<&String>) -> Resu
     Ok(())
 }
 
-fn push_abs(argv: &mut Vec<String>, flag: &str, value: Option<&String>) -> Result<()> {
+fn push_abs(
+    argv: &mut Vec<String>,
+    flag: &str,
+    value: Option<&String>,
+    runtime_target: &RuntimeTarget,
+) -> Result<()> {
     let Some(value) = value
         .map(|item| item.trim())
         .filter(|item| !item.is_empty())
     else {
         return Ok(());
     };
-    let path = PathBuf::from(value);
-    if !path.is_absolute() {
+    let absolute = match runtime_target {
+        RuntimeTarget::Native => PathBuf::from(value).is_absolute(),
+        RuntimeTarget::Wsl { .. } => value.starts_with('/'),
+    };
+    if !absolute {
         return Err(Error::invalid(format!("{flag} must be an absolute path")));
     }
-    argv.extend([flag.into(), path.to_string_lossy().into_owned()]);
+    argv.extend([flag.into(), value.to_string()]);
     Ok(())
 }
 
@@ -1478,6 +1747,7 @@ struct ProcOut {
 fn codex_advanced_argv(
     kind: &str,
     extra: &std::collections::BTreeMap<String, String>,
+    runtime_target: &RuntimeTarget,
 ) -> Result<Vec<String>> {
     let mut argv = Vec::new();
     let confirm = extra
@@ -1511,12 +1781,15 @@ fn codex_advanced_argv(
         }
     }
     if let Some(target) = nonempty(extra, "targetDir") {
+        validate_runtime_absolute("--target-dir", &target, runtime_target)?;
         argv.extend(["--target-dir".into(), target]);
     }
     if let Some(root) = nonempty(extra, "scenarioRoot") {
+        validate_runtime_absolute("--scenario-root", &root, runtime_target)?;
         argv.extend(["--scenario-root".into(), root]);
     }
     if let Some(pack_dir) = nonempty(extra, "packDir") {
+        validate_runtime_absolute("--pack-dir", &pack_dir, runtime_target)?;
         argv.extend(["--pack-dir".into(), pack_dir]);
     }
     // Preview is the default. --yes is added only after an explicit confirm.
@@ -1533,6 +1806,21 @@ fn codex_advanced_argv(
         ));
     }
     Ok(argv)
+}
+
+fn validate_runtime_absolute(
+    flag: &str,
+    value: &str,
+    runtime_target: &RuntimeTarget,
+) -> Result<()> {
+    let absolute = match runtime_target {
+        RuntimeTarget::Native => PathBuf::from(value).is_absolute(),
+        RuntimeTarget::Wsl { .. } => value.starts_with('/'),
+    };
+    if !absolute || value.contains('\0') {
+        return Err(Error::invalid(format!("{flag} must be an absolute path")));
+    }
+    Ok(())
 }
 
 fn required_token(
@@ -1563,6 +1851,7 @@ async fn run_resolved_streaming(
     app: &tauri::AppHandle,
     cli: &crate::adapter::process::ResolvedCli,
     argv: &[String],
+    opts: &AdapterOptions,
     cancel: Arc<AtomicBool>,
 ) -> Result<ProcOut> {
     use crate::nowindow::NoWindow;
@@ -1575,6 +1864,19 @@ async fn run_resolved_streaming(
     cmd.no_window();
     cmd.env("PYTHONUTF8", "1");
     cmd.env("PYTHONNOUSERSITE", "1");
+    if opts.runtime_target.is_native() {
+        if let Some(home) = &opts.home {
+            cmd.env("HOME", home);
+            cmd.env("USERPROFILE", home);
+            cmd.env("CLAUDE_KEYSMITH_HOME", home);
+        }
+        for (key, value) in &cli.environment {
+            cmd.env(key, value);
+        }
+    }
+    for (key, value) in &opts.extra_env {
+        cmd.env(key, value);
+    }
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
     cmd.kill_on_drop(true);
@@ -1667,6 +1969,7 @@ fn truncate_utf8(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod codex_advanced_tests {
     use super::codex_advanced_argv;
+    use crate::models::RuntimeTarget;
     use std::collections::BTreeMap;
 
     fn args(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -1678,15 +1981,17 @@ mod codex_advanced_tests {
 
     #[test]
     fn scenario_and_scaffold_preview_before_yes_and_stay_text() {
-        let list = codex_advanced_argv("scenario", &BTreeMap::new()).unwrap();
+        let list =
+            codex_advanced_argv("scenario", &BTreeMap::new(), &RuntimeTarget::Native).unwrap();
         assert_eq!(list, vec!["--scenario-list", "--lang", "en"]);
 
         let status = codex_advanced_argv(
             "scenarioStatus",
             &args(&[
-                ("targetDir", "/tmp/project"),
-                ("scenarioRoot", "/tmp/scenarios"),
+                ("targetDir", r"C:\tmp\project"),
+                ("scenarioRoot", r"C:\tmp\scenarios"),
             ]),
+            &RuntimeTarget::Native,
         )
         .unwrap();
         assert_eq!(
@@ -1694,9 +1999,9 @@ mod codex_advanced_tests {
             vec![
                 "--scenario-status",
                 "--target-dir",
-                "/tmp/project",
+                r"C:\tmp\project",
                 "--scenario-root",
-                "/tmp/scenarios",
+                r"C:\tmp\scenarios",
                 "--lang",
                 "en"
             ]
@@ -1708,6 +2013,7 @@ mod codex_advanced_tests {
         let deploy = codex_advanced_argv(
             "scenarioDeploy",
             &args(&[("scenario", "example_fixture"), ("confirm", "yes")]),
+            &RuntimeTarget::Native,
         )
         .unwrap();
         let yes = deploy.iter().position(|item| item == "--yes").unwrap();
@@ -1719,22 +2025,36 @@ mod codex_advanced_tests {
         assert_eq!(deploy[flag + 1], "example_fixture");
         assert!(deploy.windows(2).any(|pair| pair == ["--lang", "en"]));
 
-        let uninstall =
-            codex_advanced_argv("scenarioUninstall", &args(&[("deployment", "abc123")])).unwrap();
+        let uninstall = codex_advanced_argv(
+            "scenarioUninstall",
+            &args(&[("deployment", "abc123")]),
+            &RuntimeTarget::Native,
+        )
+        .unwrap();
         assert!(uninstall
             .windows(2)
             .any(|pair| pair == ["--scenario-uninstall", "abc123"]));
         assert!(!uninstall.iter().any(|item| item == "--yes"));
 
-        let recover =
-            codex_advanced_argv("scenarioRecover", &args(&[("confirm", "true")])).unwrap();
+        let recover = codex_advanced_argv(
+            "scenarioRecover",
+            &args(&[("confirm", "true")]),
+            &RuntimeTarget::Native,
+        )
+        .unwrap();
         assert!(recover
             .windows(2)
             .any(|pair| pair == ["--scenario-recover", "--yes"]));
 
-        let packs = codex_advanced_argv("scaffoldList", &BTreeMap::new()).unwrap();
+        let packs =
+            codex_advanced_argv("scaffoldList", &BTreeMap::new(), &RuntimeTarget::Native).unwrap();
         assert_eq!(packs, vec!["--scaffold-list", "--lang", "en"]);
-        let scaffold = codex_advanced_argv("scaffold", &args(&[("pack", "basic")])).unwrap();
+        let scaffold = codex_advanced_argv(
+            "scaffold",
+            &args(&[("pack", "basic")]),
+            &RuntimeTarget::Native,
+        )
+        .unwrap();
         assert!(scaffold
             .windows(2)
             .any(|pair| pair == ["--scaffold", "basic"]));
@@ -1742,6 +2062,7 @@ mod codex_advanced_tests {
         let remove = codex_advanced_argv(
             "scaffoldUninstall",
             &args(&[("pack", "basic"), ("confirm", "yes")]),
+            &RuntimeTarget::Native,
         )
         .unwrap();
         assert!(remove
@@ -1752,16 +2073,36 @@ mod codex_advanced_tests {
 
     #[test]
     fn scenario_ids_reject_paths_and_preset_is_not_a_flag() {
-        assert!(
-            codex_advanced_argv("scenarioDeploy", &args(&[("scenario", "../overlay")])).is_err()
-        );
-        assert!(codex_advanced_argv("scaffold", &BTreeMap::new()).is_err());
+        assert!(codex_advanced_argv(
+            "scenarioDeploy",
+            &args(&[("scenario", "../overlay")]),
+            &RuntimeTarget::Native,
+        )
+        .is_err());
+        assert!(codex_advanced_argv("scaffold", &BTreeMap::new(), &RuntimeTarget::Native).is_err());
+        let wsl = RuntimeTarget::Wsl {
+            distribution: "Ubuntu".into(),
+            user: Some("dev".into()),
+        };
+        assert!(codex_advanced_argv(
+            "scenarioStatus",
+            &args(&[("targetDir", "/tmp/project")]),
+            &wsl,
+        )
+        .is_ok());
+        assert!(codex_advanced_argv(
+            "scenarioStatus",
+            &args(&[("targetDir", r"C:\tmp\project")]),
+            &wsl,
+        )
+        .is_err());
     }
 }
 
 #[cfg(test)]
 mod grok_advanced_tests {
     use super::{grok_breaktest_argv, grok_run_argv};
+    use crate::models::RuntimeTarget;
     use std::collections::BTreeMap;
 
     fn args(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -1773,11 +2114,10 @@ mod grok_advanced_tests {
 
     #[test]
     fn grok_run_and_breaktest_pass_real_args_not_help() {
-        let run = grok_run_argv(&args(&[
-            ("prompt", "hello"),
-            ("mode", "override"),
-            ("timeout", "30"),
-        ]))
+        let run = grok_run_argv(
+            &args(&[("prompt", "hello"), ("mode", "override"), ("timeout", "30")]),
+            &RuntimeTarget::Native,
+        )
         .unwrap();
         assert_eq!(run[0], "run");
         assert!(run.windows(2).any(|pair| pair == ["--prompt", "hello"]));
@@ -1785,12 +2125,15 @@ mod grok_advanced_tests {
         assert!(run.windows(2).any(|pair| pair == ["--timeout", "30"]));
         assert!(!run.iter().any(|item| item == "--help"));
 
-        let bank = grok_breaktest_argv(&args(&[
-            ("bank", "/tmp/prompts.txt"),
-            ("mode", "ab"),
-            ("repetitions", "2"),
-            ("resume", "true"),
-        ]))
+        let bank = grok_breaktest_argv(
+            &args(&[
+                ("bank", "/tmp/prompts.txt"),
+                ("mode", "ab"),
+                ("repetitions", "2"),
+                ("resume", "true"),
+            ]),
+            &RuntimeTarget::Native,
+        )
         .unwrap();
         assert_eq!(bank[0], "breaktest");
         assert!(bank
@@ -1799,8 +2142,8 @@ mod grok_advanced_tests {
         assert!(bank.windows(2).any(|pair| pair == ["--mode", "ab"]));
         assert!(bank.iter().any(|item| item == "--resume"));
         assert!(!bank.iter().any(|item| item == "--help"));
-        assert!(grok_breaktest_argv(&BTreeMap::new()).is_err());
-        assert!(grok_run_argv(&args(&[("mode", "remote")])).is_err());
+        assert!(grok_breaktest_argv(&BTreeMap::new(), &RuntimeTarget::Native).is_err());
+        assert!(grok_run_argv(&args(&[("mode", "remote")]), &RuntimeTarget::Native).is_err());
     }
 }
 
@@ -2044,20 +2387,26 @@ pub fn announcements_mark(
 
 /// The last verified answer; never touches the network.
 #[tauri::command(rename_all = "camelCase")]
-pub fn extensions_state(state: State<'_, AppState>) -> Result<crate::extensions::ExtensionsView> {
+pub fn extensions_state(
+    state: State<'_, AppState>,
+    runtime_target: Option<RuntimeTarget>,
+) -> Result<crate::extensions::ExtensionsView> {
     let language = state.store.get_settings()?.language;
-    Ok(crate::extensions::state_view(
+    Ok(crate::extensions::state_view_for(
         &state.store,
         &crate::extensions::Source::official(),
         &language,
+        &runtime_target.unwrap_or_default(),
     ))
 }
 
 #[tauri::command(rename_all = "camelCase")]
 pub async fn extensions_refresh(
     app: tauri::AppHandle,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<crate::extensions::ExtensionsView> {
-    blocking(app, |state| {
+    blocking(app, move |state| {
+        let runtime_target = runtime_target.unwrap_or_default();
         let language = require_extensions(state)?;
         let source = crate::extensions::Source::official();
         let view = crate::extensions::refresh(
@@ -2073,13 +2422,17 @@ pub async fn extensions_refresh(
                 &source,
                 &language,
             );
-            return Ok(crate::extensions::state_view(
+            return Ok(crate::extensions::state_view_for(
                 &state.store,
                 &source,
                 &language,
+                &runtime_target,
             ));
         }
-        Ok(view)
+        let mut target_view =
+            crate::extensions::state_view_for(&state.store, &source, &language, &runtime_target);
+        target_view.error = view.error;
+        Ok(target_view)
     })
     .await
 }
@@ -2089,17 +2442,26 @@ pub async fn extension_install(
     app: tauri::AppHandle,
     pack_id: String,
     enable: Option<bool>,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<ExtensionChange> {
     blocking(app, move |state| {
+        let runtime_target = runtime_target.unwrap_or_default();
         let language = require_extensions(state)?;
-        let (view, report) = crate::extensions::install(
+        let (_, report) = crate::extensions::install_for(
             &state.store,
             &crate::extensions::CurlFetch,
             &crate::extensions::Source::official(),
             &pack_id,
             &language,
             enable.unwrap_or(false),
+            &runtime_target,
         )?;
+        let view = crate::extensions::state_view_for(
+            &state.store,
+            &crate::extensions::Source::official(),
+            &language,
+            &runtime_target,
+        );
         Ok(ExtensionChange { view, report })
     })
     .await
@@ -2109,14 +2471,16 @@ pub async fn extension_install(
 pub async fn extension_uninstall(
     app: tauri::AppHandle,
     pack_id: String,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<ExtensionChange> {
     blocking(app, move |state| {
         let language = require_extensions(state)?;
-        let (view, report) = crate::extensions::uninstall(
+        let (view, report) = crate::extensions::uninstall_for(
             &state.store,
             &crate::extensions::Source::official(),
             &pack_id,
             &language,
+            &runtime_target.unwrap_or_default(),
         )?;
         Ok(ExtensionChange { view, report })
     })
@@ -2135,15 +2499,17 @@ pub struct HarnessChange {
 pub async fn extension_plan_harness(
     app: tauri::AppHandle,
     pack_id: String,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<crate::components::HarnessPlan> {
     blocking(app, move |state| {
         require_extensions(state)?;
+        let runtime_opts = opts_for(&state.store, runtime_target)?;
         Ok(crate::extensions::plan_harness(
             &state.store,
             &crate::extensions::CurlFetch,
             &crate::extensions::Source::official(),
             &pack_id,
-            &opts(),
+            &runtime_opts,
         )?)
     })
     .await
@@ -2156,9 +2522,11 @@ pub async fn extension_confirm_harness(
     app: tauri::AppHandle,
     pack_id: String,
     plan_id: String,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<HarnessChange> {
     blocking(app, move |state| {
         let language = require_extensions(state)?;
+        let runtime_opts = opts_for(&state.store, runtime_target)?;
         let (view, report) = crate::extensions::confirm_harness(
             &state.store,
             &crate::extensions::CurlFetch,
@@ -2166,7 +2534,7 @@ pub async fn extension_confirm_harness(
             &pack_id,
             &plan_id,
             &language,
-            &opts(),
+            &runtime_opts,
         )?;
         Ok(HarnessChange { view, report })
     })
@@ -2196,9 +2564,13 @@ pub async fn extension_preview_rules(
 /// The view asks the system whether the relay is registered and answering (on Windows, `reg`
 /// for each agent), so it and the changes that return it stay off the interface's thread.
 #[tauri::command(rename_all = "camelCase")]
-pub async fn rewrite_state(app: tauri::AppHandle) -> Result<crate::rewrite::RewriteView> {
-    blocking(app, |state| {
-        crate::rewrite::view_with(&state.store, opts().home.as_deref())
+pub async fn rewrite_state(
+    app: tauri::AppHandle,
+    runtime_target: Option<RuntimeTarget>,
+) -> Result<crate::rewrite::RewriteView> {
+    blocking(app, move |state| {
+        let runtime_opts = rewrite_opts_for(&state.store, runtime_target)?;
+        crate::rewrite::view_for_options(&state.store, &runtime_opts)
     })
     .await
 }
@@ -2211,17 +2583,20 @@ pub async fn rewrite_set_switches(
     claude_enabled: Option<bool>,
     grok_enabled: Option<bool>,
     zcode_enabled: Option<bool>,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<crate::rewrite::RewriteView> {
     blocking(app, move |state| {
-        crate::rewrite::change(&state.store, |store| {
-            store.update_settings(SettingsPatch {
-                rewrite_enabled: enabled,
-                rewrite_codex_enabled: codex_enabled,
-                rewrite_claude_enabled: claude_enabled,
-                rewrite_grok_enabled: grok_enabled,
-                rewrite_zcode_enabled: zcode_enabled,
-                ..Default::default()
-            })?;
+        let runtime_opts = rewrite_opts_for(&state.store, runtime_target)?;
+        let target = runtime_opts.runtime_target.clone();
+        crate::rewrite::change_for_options(&state.store, &runtime_opts, |store| {
+            store.update_rewrite_switches(
+                &target,
+                enabled,
+                codex_enabled,
+                claude_enabled,
+                grok_enabled,
+                zcode_enabled,
+            )?;
             Ok(())
         })
     })
@@ -2233,10 +2608,13 @@ pub async fn rewrite_set_table_tools(
     app: tauri::AppHandle,
     id: String,
     tools: Option<Vec<keysmith_rewrite::Tool>>,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<crate::rewrite::RewriteView> {
     blocking(app, move |state| {
-        crate::rewrite::change(&state.store, |store| {
-            store.set_rule_table_tools(&id, tools.as_deref())?;
+        let runtime_opts = rewrite_opts_for(&state.store, runtime_target)?;
+        let target = runtime_opts.runtime_target.clone();
+        crate::rewrite::change_for_options(&state.store, &runtime_opts, |store| {
+            store.set_rule_table_tools_for(&id, tools.as_deref(), &target)?;
             Ok(())
         })
     })
@@ -2247,10 +2625,13 @@ pub async fn rewrite_set_table_tools(
 pub async fn rewrite_save_user_rules(
     app: tauri::AppHandle,
     rules: Vec<keysmith_rewrite::Rule>,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<crate::rewrite::RewriteView> {
     blocking(app, move |state| {
-        crate::rewrite::change(&state.store, |store| {
-            store.save_user_rules(&rules)?;
+        let runtime_opts = rewrite_opts_for(&state.store, runtime_target)?;
+        let target = runtime_opts.runtime_target.clone();
+        crate::rewrite::change_for_options(&state.store, &runtime_opts, |store| {
+            store.save_user_rules_for(&rules, &target)?;
             Ok(())
         })
     })
@@ -2262,10 +2643,13 @@ pub async fn rewrite_set_table_enabled(
     app: tauri::AppHandle,
     id: String,
     enabled: bool,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<crate::rewrite::RewriteView> {
     blocking(app, move |state| {
-        crate::rewrite::change(&state.store, |store| {
-            store.set_rule_table_enabled(&id, enabled)?;
+        let runtime_opts = rewrite_opts_for(&state.store, runtime_target)?;
+        let target = runtime_opts.runtime_target.clone();
+        crate::rewrite::change_for_options(&state.store, &runtime_opts, |store| {
+            store.set_rule_table_enabled_for(&id, enabled, &target)?;
             Ok(())
         })
     })
@@ -2276,10 +2660,13 @@ pub async fn rewrite_set_table_enabled(
 pub async fn rewrite_reorder_tables(
     app: tauri::AppHandle,
     ids: Vec<String>,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<crate::rewrite::RewriteView> {
     blocking(app, move |state| {
-        crate::rewrite::change(&state.store, |store| {
-            store.reorder_rule_tables(&ids)?;
+        let runtime_opts = rewrite_opts_for(&state.store, runtime_target)?;
+        let target = runtime_opts.runtime_target.clone();
+        crate::rewrite::change_for_options(&state.store, &runtime_opts, |store| {
+            store.reorder_rule_tables_for(&ids, &target)?;
             Ok(())
         })
     })
@@ -2290,10 +2677,13 @@ pub async fn rewrite_reorder_tables(
 pub async fn rewrite_copy_to_user(
     app: tauri::AppHandle,
     id: String,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<crate::rewrite::RewriteView> {
     blocking(app, move |state| {
-        crate::rewrite::change(&state.store, |store| {
-            store.copy_rules_to_user(&id)?;
+        let runtime_opts = rewrite_opts_for(&state.store, runtime_target)?;
+        let target = runtime_opts.runtime_target.clone();
+        crate::rewrite::change_for_options(&state.store, &runtime_opts, |store| {
+            store.copy_rules_to_user_for(&id, &target)?;
             Ok(())
         })
     })
@@ -2304,10 +2694,13 @@ pub async fn rewrite_copy_to_user(
 pub async fn rewrite_accept_update(
     app: tauri::AppHandle,
     id: String,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<crate::rewrite::RewriteView> {
     blocking(app, move |state| {
-        crate::rewrite::change(&state.store, |store| {
-            store.accept_pack_update(&id)?;
+        let runtime_opts = rewrite_opts_for(&state.store, runtime_target)?;
+        let target = runtime_opts.runtime_target.clone();
+        crate::rewrite::change_for_options(&state.store, &runtime_opts, |store| {
+            store.accept_pack_update_for(&id, &target)?;
             Ok(())
         })
     })
@@ -2317,101 +2710,177 @@ pub async fn rewrite_accept_update(
 #[tauri::command(rename_all = "camelCase")]
 pub async fn rewrite_connect_codex(
     state: State<'_, AppState>,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<crate::rewrite::RewriteView> {
+    let runtime_opts = rewrite_opts_for(&state.store, runtime_target)?;
     let paths = state.store.paths().clone();
-    let home = opts().home;
+    let task_opts = runtime_opts.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        crate::rewrite::connect_codex(&paths, home.as_deref())
+        if task_opts.runtime_target.is_native() {
+            match rewrite_exact_dir(&task_opts, ToolKind::Codex) {
+                Some(dir) => crate::rewrite::connect_codex_in(&paths, &dir),
+                None => crate::rewrite::connect_codex(&paths, task_opts.home.as_deref()),
+            }
+        } else {
+            crate::rewrite::runtime_target::connect(&paths, ToolKind::Codex, &task_opts)
+        }
     })
     .await
     .map_err(|error| Error::message(error.to_string()))??;
-    crate::rewrite::view_with(&state.store, opts().home.as_deref())
+    crate::rewrite::view_for_options(&state.store, &runtime_opts)
 }
 
 #[tauri::command(rename_all = "camelCase")]
 pub async fn rewrite_disconnect_codex(
     state: State<'_, AppState>,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<crate::rewrite::RewriteView> {
+    let runtime_opts = rewrite_opts_for(&state.store, runtime_target)?;
     let paths = state.store.paths().clone();
-    tauri::async_runtime::spawn_blocking(move || crate::rewrite::disconnect_codex(&paths))
-        .await
-        .map_err(|error| Error::message(error.to_string()))??;
-    crate::rewrite::view_with(&state.store, opts().home.as_deref())
+    let task_opts = runtime_opts.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        if task_opts.runtime_target.is_native() {
+            crate::rewrite::disconnect_codex(&paths).map(|_| ())
+        } else {
+            crate::rewrite::runtime_target::disconnect(&paths, ToolKind::Codex, &task_opts)
+                .map(|_| ())
+        }
+    })
+    .await
+    .map_err(|error| Error::message(error.to_string()))??;
+    crate::rewrite::view_for_options(&state.store, &runtime_opts)
 }
 
 #[tauri::command(rename_all = "camelCase")]
 pub async fn rewrite_connect_claude(
     state: State<'_, AppState>,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<crate::rewrite::RewriteView> {
+    let runtime_opts = rewrite_opts_for(&state.store, runtime_target)?;
     let paths = state.store.paths().clone();
-    let home = opts().home;
+    let task_opts = runtime_opts.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        crate::rewrite::connect_claude(&paths, home.as_deref())
+        if task_opts.runtime_target.is_native() {
+            match rewrite_exact_dir(&task_opts, ToolKind::Claude) {
+                Some(dir) => crate::rewrite::connect_claude_in(&paths, &dir),
+                None => crate::rewrite::connect_claude(&paths, task_opts.home.as_deref()),
+            }
+        } else {
+            crate::rewrite::runtime_target::connect(&paths, ToolKind::Claude, &task_opts)
+        }
     })
     .await
     .map_err(|error| Error::message(error.to_string()))??;
-    crate::rewrite::view_with(&state.store, opts().home.as_deref())
+    crate::rewrite::view_for_options(&state.store, &runtime_opts)
 }
 
 #[tauri::command(rename_all = "camelCase")]
 pub async fn rewrite_disconnect_claude(
     state: State<'_, AppState>,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<crate::rewrite::RewriteView> {
+    let runtime_opts = rewrite_opts_for(&state.store, runtime_target)?;
     let paths = state.store.paths().clone();
-    tauri::async_runtime::spawn_blocking(move || crate::rewrite::disconnect_claude(&paths))
-        .await
-        .map_err(|error| Error::message(error.to_string()))??;
-    crate::rewrite::view_with(&state.store, opts().home.as_deref())
+    let task_opts = runtime_opts.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        if task_opts.runtime_target.is_native() {
+            crate::rewrite::disconnect_claude(&paths).map(|_| ())
+        } else {
+            crate::rewrite::runtime_target::disconnect(&paths, ToolKind::Claude, &task_opts)
+                .map(|_| ())
+        }
+    })
+    .await
+    .map_err(|error| Error::message(error.to_string()))??;
+    crate::rewrite::view_for_options(&state.store, &runtime_opts)
 }
 
 #[tauri::command(rename_all = "camelCase")]
 pub async fn rewrite_connect_zcode(
     state: State<'_, AppState>,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<crate::rewrite::RewriteView> {
+    let runtime_opts = rewrite_opts_for(&state.store, runtime_target)?;
     let paths = state.store.paths().clone();
-    let home = opts().home;
+    let task_opts = runtime_opts.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        crate::rewrite::connect_zcode(&paths, home.as_deref())
+        if task_opts.runtime_target.is_native() {
+            match rewrite_exact_dir(&task_opts, ToolKind::Zcode) {
+                Some(dir) => crate::rewrite::connect_zcode_in(&paths, &dir),
+                None => crate::rewrite::connect_zcode(&paths, task_opts.home.as_deref()),
+            }
+        } else {
+            crate::rewrite::runtime_target::connect(&paths, ToolKind::Zcode, &task_opts)
+        }
     })
     .await
     .map_err(|error| Error::message(error.to_string()))??;
-    crate::rewrite::view_with(&state.store, opts().home.as_deref())
+    crate::rewrite::view_for_options(&state.store, &runtime_opts)
 }
 
 #[tauri::command(rename_all = "camelCase")]
 pub async fn rewrite_disconnect_zcode(
     state: State<'_, AppState>,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<crate::rewrite::RewriteView> {
+    let runtime_opts = rewrite_opts_for(&state.store, runtime_target)?;
     let paths = state.store.paths().clone();
-    tauri::async_runtime::spawn_blocking(move || crate::rewrite::disconnect_zcode(&paths))
-        .await
-        .map_err(|error| Error::message(error.to_string()))??;
-    crate::rewrite::view_with(&state.store, opts().home.as_deref())
+    let task_opts = runtime_opts.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        if task_opts.runtime_target.is_native() {
+            crate::rewrite::disconnect_zcode(&paths).map(|_| ())
+        } else {
+            crate::rewrite::runtime_target::disconnect(&paths, ToolKind::Zcode, &task_opts)
+                .map(|_| ())
+        }
+    })
+    .await
+    .map_err(|error| Error::message(error.to_string()))??;
+    crate::rewrite::view_for_options(&state.store, &runtime_opts)
 }
 
 #[tauri::command(rename_all = "camelCase")]
 pub async fn rewrite_connect_grok(
     state: State<'_, AppState>,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<crate::rewrite::RewriteView> {
+    let runtime_opts = rewrite_opts_for(&state.store, runtime_target)?;
     let paths = state.store.paths().clone();
-    let home = opts().home;
+    let task_opts = runtime_opts.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        crate::rewrite::connect_grok(&paths, home.as_deref())
+        if task_opts.runtime_target.is_native() {
+            match rewrite_exact_dir(&task_opts, ToolKind::Grok) {
+                Some(dir) => crate::rewrite::connect_grok_in(&paths, &dir),
+                None => crate::rewrite::connect_grok(&paths, task_opts.home.as_deref()),
+            }
+        } else {
+            crate::rewrite::runtime_target::connect(&paths, ToolKind::Grok, &task_opts)
+        }
     })
     .await
     .map_err(|error| Error::message(error.to_string()))??;
-    crate::rewrite::view_with(&state.store, opts().home.as_deref())
+    crate::rewrite::view_for_options(&state.store, &runtime_opts)
 }
 
 #[tauri::command(rename_all = "camelCase")]
 pub async fn rewrite_disconnect_grok(
     state: State<'_, AppState>,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<crate::rewrite::RewriteView> {
+    let runtime_opts = rewrite_opts_for(&state.store, runtime_target)?;
     let paths = state.store.paths().clone();
-    tauri::async_runtime::spawn_blocking(move || crate::rewrite::disconnect_grok(&paths))
-        .await
-        .map_err(|error| Error::message(error.to_string()))??;
-    crate::rewrite::view_with(&state.store, opts().home.as_deref())
+    let task_opts = runtime_opts.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        if task_opts.runtime_target.is_native() {
+            crate::rewrite::disconnect_grok(&paths).map(|_| ())
+        } else {
+            crate::rewrite::runtime_target::disconnect(&paths, ToolKind::Grok, &task_opts)
+                .map(|_| ())
+        }
+    })
+    .await
+    .map_err(|error| Error::message(error.to_string()))??;
+    crate::rewrite::view_for_options(&state.store, &runtime_opts)
 }
 
 #[cfg(test)]

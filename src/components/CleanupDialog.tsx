@@ -4,7 +4,7 @@ import * as api from "../api";
 import { readableError } from "../lib/planFailure";
 import type { PlanFailure } from "../lib/planFailure";
 import { baseName, formatBytes } from "../lib/format";
-import type { CleanupPlan, CleanupResult, ToolId } from "../types";
+import type { CleanupPlan, CleanupResult, RuntimeTarget, ToolId } from "../types";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { Callout, PlanFailureNotice } from "./PlanPreview";
 import { IconAlert, IconCheck, IconShield } from "./icons";
@@ -24,6 +24,7 @@ export function CleanupDialog({
   onClose,
   onDone,
   onOpenVersions,
+  runtimeTarget,
 }: {
   tool: ToolId;
   toolName: string;
@@ -31,6 +32,7 @@ export function CleanupDialog({
   onClose: () => void;
   onDone: (result: CleanupResult) => void;
   onOpenVersions: () => void;
+  runtimeTarget?: RuntimeTarget;
 }) {
   const { t } = useTranslation();
   const [plan, setPlan] = useState<CleanupPlan | null>(null);
@@ -46,13 +48,13 @@ export function CleanupDialog({
     setPlan(null);
     setAck(false);
     try {
-      setPlan(await api.planCleanup(tool));
+      setPlan(await api.planCleanup(tool, runtimeTarget));
     } catch (reason) {
       setFailure({ message: readableError(reason, t), detail: null });
     } finally {
       setLoading(false);
     }
-  }, [tool, t]);
+  }, [tool, runtimeTarget, t]);
 
   useEffect(() => {
     if (!open) return;

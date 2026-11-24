@@ -505,6 +505,7 @@ fn claude_status_does_not_ask_for_runtime_alignment() {
             name: Some("claude-project-rules".into()),
         },
         None,
+        None,
     )
     .unwrap();
     assert!(

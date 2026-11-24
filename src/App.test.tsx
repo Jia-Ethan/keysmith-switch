@@ -5,6 +5,7 @@ vi.mock("./api", () => ({
   getSettings: vi.fn().mockRejectedValue(new Error("no backend")),
   updateSettings: vi.fn(),
   listTools: vi.fn().mockResolvedValue({ tools: [] }),
+  listRuntimes: vi.fn().mockResolvedValue({ runtimes: [] }),
   listPrompts: vi.fn().mockResolvedValue({ prompts: [] }),
   doctor: vi.fn().mockRejectedValue(new Error("no backend")),
   listOperations: vi.fn().mockRejectedValue(new Error("no backend")),

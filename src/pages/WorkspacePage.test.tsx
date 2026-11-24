@@ -10,6 +10,7 @@ const planDeactivate = vi.fn();
 const deactivate = vi.fn();
 const getHarnessState = vi.fn();
 const listTools = vi.fn();
+const listRuntimes = vi.fn();
 const toolStatus = vi.fn();
 const listPrompts = vi.fn();
 const listActivations = vi.fn();
@@ -40,6 +41,7 @@ vi.mock("../api", () => ({
   deactivate: (...args: unknown[]) => deactivate(...args),
   getHarnessState: (...args: unknown[]) => getHarnessState(...args),
   listTools: (...args: unknown[]) => listTools(...args),
+  listRuntimes: (...args: unknown[]) => listRuntimes(...args),
   toolStatus: (...args: unknown[]) => toolStatus(...args),
   listPrompts: (...args: unknown[]) => listPrompts(...args),
   listActivations: (...args: unknown[]) => listActivations(...args),
@@ -87,6 +89,8 @@ const envelope = {
   redactedStderr: "",
 } as const;
 
+const WSL_TARGET = { kind: "wsl", distribution: "Ubuntu-24.04", user: "root" } as const;
+
 function prompt(overrides: Partial<PromptSummary>): PromptSummary {
   return {
     id: "p1",
@@ -103,6 +107,9 @@ function prompt(overrides: Partial<PromptSummary>): PromptSummary {
 }
 
 function setup() {
+  listRuntimes.mockResolvedValue({
+    runtimes: [{ target: { kind: "native" }, label: "Windows local", isDefault: true, state: "running", wslVersion: null, available: true, unavailableReason: null }],
+  });
   listTools.mockResolvedValue({
     tools: [
       {
@@ -135,6 +142,15 @@ function setup() {
   listPrompts.mockResolvedValue({ prompts: [] });
   listActivations.mockResolvedValue({ activations: [] });
   listOperations.mockResolvedValue({ operations: [] });
+}
+
+function setupWslRuntime() {
+  listRuntimes.mockResolvedValue({
+    runtimes: [
+      { target: { kind: "native" }, label: "Windows local", isDefault: true, state: "running", wslVersion: null, available: true, unavailableReason: null },
+      { target: WSL_TARGET, label: "WSL2 · Ubuntu-24.04 · root", isDefault: false, state: "running", wslVersion: 2, available: true, unavailableReason: null, home: "/root" },
+    ],
+  });
 }
 
 async function renderPage(props: Partial<Parameters<typeof import("./WorkspacePage").WorkspacePage>[0]> = {}) {
@@ -171,6 +187,15 @@ describe("Workspace: Quick Deploy composer", () => {
     unmount();
     await renderPage();
     expect(getHarnessState).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps Windows local usable when runtime discovery fails", async () => {
+    listRuntimes.mockRejectedValue(new Error("runtime discovery unavailable"));
+    await renderPage();
+
+    await waitFor(() => expect(listRuntimes).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByTestId("quick-deploy-open")).toBeEnabled());
+    expect(screen.getByTestId("runtime-selector")).toHaveTextContent("Windows 本机");
   });
 
   it("requires pasted content before creating a prompt", async () => {
@@ -421,8 +446,14 @@ describe("Workspace: prompt library", () => {
   });
 
   it("leaves the loading state after listPrompts resolves", async () => {
+    let release: (value: { prompts: PromptSummary[] }) => void = () => undefined;
+    listPrompts.mockReturnValue(new Promise((resolve) => {
+      release = resolve;
+    }));
     await renderPage();
+    await waitFor(() => expect(listPrompts).toHaveBeenCalled());
     expect(screen.getByTestId("prompt-list-loading")).toBeInTheDocument();
+    release({ prompts: [] });
     await waitFor(() => expect(screen.getByTestId("prompt-list-empty")).toBeInTheDocument());
     expect(screen.queryByTestId("prompt-list-loading")).not.toBeInTheDocument();
   });
@@ -566,7 +597,7 @@ describe("Workspace: prompt library", () => {
     await renderPage({ onNavigate, toast: toast as never });
     fireEvent.click(await screen.findByTestId("hero-cleanup"));
     await screen.findByTestId("cleanup-plan");
-    expect(planCleanup).toHaveBeenCalledWith("codex");
+    expect(planCleanup).toHaveBeenCalledWith("codex", { kind: "native" });
     fireEvent.click(screen.getByTestId("cleanup-confirm"));
     await screen.findByTestId("cleanup-done");
     expect(confirmCleanup).toHaveBeenCalledWith("op-c", false);
@@ -774,6 +805,94 @@ describe("Workspace: prompt library", () => {
     await waitFor(() => expect(planActivate).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.getByTestId("quick-deploy-confirm")).toBeEnabled());
     expect(screen.queryByTestId("plan-failure")).not.toBeInTheDocument();
+  });
+});
+
+describe("Workspace: runtime targets", () => {
+  beforeEach(() => {
+    resetHarnessStatuses();
+    vi.clearAllMocks();
+    setup();
+    setupWslRuntime();
+  });
+
+  it("saves a concrete WSL distribution for the current agent", async () => {
+    const onSettingsSave = vi.fn().mockResolvedValue({});
+    await renderPage({ settings: { agentRuntimeTargets: {} } as never, onSettingsSave });
+
+    fireEvent.click(await screen.findByTestId("runtime-selector"));
+    fireEvent.click(await screen.findByTestId("runtime-option-wsl-Ubuntu-24-04-root"));
+
+    await waitFor(() =>
+      expect(onSettingsSave).toHaveBeenCalledWith({
+        agentRuntimeTargets: { codex: WSL_TARGET },
+      }),
+    );
+  });
+
+  it("routes deployment and library reads to the selected WSL distribution", async () => {
+    listPrompts.mockResolvedValue({ prompts: [prompt({ id: "b", title: "Spare" })] });
+    await renderPage({ settings: { agentRuntimeTargets: { codex: WSL_TARGET } } as never });
+
+    fireEvent.click(await screen.findByTestId("prompt-deploy-b"));
+
+    await waitFor(() =>
+      expect(planActivate).toHaveBeenCalledWith({
+        promptId: "b",
+        scope: "user",
+        runtimeTarget: WSL_TARGET,
+      }),
+    );
+    expect(listPrompts).toHaveBeenCalledWith(expect.objectContaining({
+      tool: "codex",
+      runtimeTarget: WSL_TARGET,
+    }));
+    expect(screen.getByTestId("hero-cleanup")).toBeInTheDocument();
+  });
+
+  it("keeps native and WSL machine-state reads in separate caches", async () => {
+    const onSettingsSave = vi.fn().mockResolvedValue({});
+    await renderPage({ settings: { agentRuntimeTargets: {} } as never, onSettingsSave });
+    await waitFor(() => expect(getHarnessState).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByTestId("runtime-selector"));
+    fireEvent.click(await screen.findByTestId("runtime-option-wsl-Ubuntu-24-04-root"));
+    await waitFor(() => expect(getHarnessState).toHaveBeenCalledTimes(2));
+
+    fireEvent.click(screen.getByTestId("runtime-selector"));
+    fireEvent.click(await screen.findByTestId("runtime-option-native"));
+    await waitFor(() => expect(screen.getByTestId("runtime-selector")).toHaveTextContent("Windows 本机"));
+
+    expect(getHarnessState.mock.calls).toEqual([
+      ["codex"],
+      ["codex", WSL_TARGET],
+    ]);
+  });
+
+  it("uses ZCode's runtime probe and offers the same controls in WSL", async () => {
+    await renderPage({
+      tool: "zcode",
+      settings: { agentRuntimeTargets: { zcode: WSL_TARGET } } as never,
+    });
+
+    expect(await screen.findByTestId("runtime-limitations")).toHaveTextContent("所选 WSL2 发行版与 Linux 用户");
+    expect(screen.getByTestId("quick-deploy-open")).toBeEnabled();
+    expect(screen.getByTestId("hero-cleanup")).toBeInTheDocument();
+  });
+
+  it("shows why an installed runtime cannot be used", async () => {
+    const legacy = { kind: "wsl", distribution: "Legacy" } as const;
+    listRuntimes.mockResolvedValue({
+      runtimes: [
+        { target: { kind: "native" }, label: "Windows local", isDefault: true, state: "running", wslVersion: null, available: true, unavailableReason: null },
+        { target: legacy, label: "WSL1 · Legacy", isDefault: false, state: "stopped", wslVersion: 1, available: false, unavailableReason: "Only WSL2 distributions are supported" },
+      ],
+    });
+
+    await renderPage({ settings: { agentRuntimeTargets: { codex: legacy } } as never });
+
+    expect(await screen.findByTestId("runtime-limitations")).toHaveTextContent("Only WSL2 distributions are supported");
+    expect(screen.getByTestId("quick-deploy-open")).toBeDisabled();
   });
 });
 

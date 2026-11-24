@@ -1,9 +1,10 @@
 use std::cell::Cell;
 use std::collections::HashMap;
 
+use keysmith_switch_lib::models::RuntimeTarget;
 use keysmith_switch_lib::official::{
-    confirm_official_action_exec, plan_official_action_on, DetectedOfficial, OfficialAction,
-    OfficialHost, OfficialProduct,
+    confirm_official_action_exec, plan_official_action_on, plan_official_action_on_target,
+    DetectedOfficial, OfficialAction, OfficialHost, OfficialProduct,
 };
 
 fn host_with(os: &str, product: OfficialProduct, detected: DetectedOfficial) -> OfficialHost {
@@ -179,6 +180,22 @@ fn plan_official_codex_update_uses_npm_argv() {
         ]
     );
     assert_eq!(plan.source, "https://www.npmjs.com/package/@openai/codex");
+}
+
+#[test]
+fn official_plan_freezes_the_exact_wsl_distribution_and_user() {
+    let host = host_with("linux", OfficialProduct::Codex, DetectedOfficial::default());
+    let target = RuntimeTarget::Wsl {
+        distribution: "Ubuntu-24.04".into(),
+        user: Some("developer".into()),
+    };
+    let plan = plan_official_action_on_target(
+        OfficialProduct::Codex,
+        OfficialAction::Install,
+        &host,
+        target.clone(),
+    );
+    assert_eq!(plan.runtime_target, target);
 }
 
 #[test]

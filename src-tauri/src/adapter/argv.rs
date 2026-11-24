@@ -14,15 +14,16 @@ pub struct PreparedCommand {
 pub fn prepare(
     tool: ToolKind,
     command: &AdapterCommand,
-    isolated_home: Option<&Path>,
+    home: Option<&Path>,
+    config_dir: Option<&Path>,
 ) -> Result<PreparedCommand> {
     match tool {
         ToolKind::Claude => claude_args(command),
-        ToolKind::Codex => codex_args(command, isolated_home),
-        ToolKind::Grok => grok_args(command, isolated_home),
-        ToolKind::Zcode => zcode_args(command, isolated_home),
-        ToolKind::Pi => pi_args(command, isolated_home),
-        ToolKind::Dsh => dsh_args(command, isolated_home),
+        ToolKind::Codex => codex_args(command, home, config_dir),
+        ToolKind::Grok => grok_args(command, home, config_dir),
+        ToolKind::Zcode => zcode_args(command, home),
+        ToolKind::Pi => pi_args(command, home, config_dir),
+        ToolKind::Dsh => dsh_args(command, home, config_dir),
     }
 }
 
@@ -197,7 +198,11 @@ fn claude_args(command: &AdapterCommand) -> Result<PreparedCommand> {
     }
 }
 
-fn codex_args(command: &AdapterCommand, home: Option<&Path>) -> Result<PreparedCommand> {
+fn codex_args(
+    command: &AdapterCommand,
+    home: Option<&Path>,
+    config_dir: Option<&Path>,
+) -> Result<PreparedCommand> {
     let mut args = Vec::new();
     let mut preview = true;
     match command {
@@ -241,7 +246,7 @@ fn codex_args(command: &AdapterCommand, home: Option<&Path>) -> Result<PreparedC
     if !matches!(command, AdapterCommand::Version) {
         args.push("--lang".into());
         args.push("en".into());
-        if let Some(dir) = tool_dir(home, ".codex") {
+        if let Some(dir) = exact_or_default(config_dir, home, ".codex")? {
             args.push("--codex-dir".into());
             args.push(dir);
         }
@@ -249,7 +254,11 @@ fn codex_args(command: &AdapterCommand, home: Option<&Path>) -> Result<PreparedC
     Ok(PreparedCommand { args, preview })
 }
 
-fn grok_args(command: &AdapterCommand, home: Option<&Path>) -> Result<PreparedCommand> {
+fn grok_args(
+    command: &AdapterCommand,
+    home: Option<&Path>,
+    config_dir: Option<&Path>,
+) -> Result<PreparedCommand> {
     let mut args = vec!["--json".into()];
     let mut preview = true;
     match command {
@@ -322,7 +331,7 @@ fn grok_args(command: &AdapterCommand, home: Option<&Path>) -> Result<PreparedCo
             ));
         }
     }
-    if let Some(dir) = tool_dir(home, ".grok") {
+    if let Some(dir) = exact_or_default(config_dir, home, ".grok")? {
         args.push("--grok-dir".into());
         args.push(dir);
     }
@@ -433,7 +442,11 @@ fn push_preview_token(args: &mut Vec<String>, token: Option<&str>, tool: &str) -
 
 /// pi-keysmith with `--json` needs `--pi-dir` on every call, as an absolute path: unlike Grok
 /// it never falls back to a directory of its own choosing.
-fn pi_args(command: &AdapterCommand, home: Option<&Path>) -> Result<PreparedCommand> {
+fn pi_args(
+    command: &AdapterCommand,
+    home: Option<&Path>,
+    config_dir: Option<&Path>,
+) -> Result<PreparedCommand> {
     let mut args: Vec<String> = Vec::new();
     let mut preview = true;
     let mut token = None;
@@ -492,7 +505,10 @@ fn pi_args(command: &AdapterCommand, home: Option<&Path>) -> Result<PreparedComm
         }
     }
     args.push("--pi-dir".into());
-    args.push(pi_dir(home)?);
+    args.push(match config_dir {
+        Some(dir) => absolute(dir, "pi --pi-dir")?,
+        None => pi_dir(home)?,
+    });
     if matches!(command, AdapterCommand::PlanActivate { .. }) {
         args.push("--dry-run".into());
     }
@@ -528,7 +544,11 @@ fn pi_dir(home: Option<&Path>) -> Result<String> {
 /// One difference from pi that the shape of this function records: dsh-keysmith 0.4.0 has no
 /// preview token, so a confirmation cannot be bound to the preview the user saw. `--yes` is
 /// the only confirmation there is. `--file` overlays `plugin/lib/contract.md`.
-fn dsh_args(command: &AdapterCommand, home: Option<&Path>) -> Result<PreparedCommand> {
+fn dsh_args(
+    command: &AdapterCommand,
+    home: Option<&Path>,
+    config_dir: Option<&Path>,
+) -> Result<PreparedCommand> {
     let mut args: Vec<String> = Vec::new();
     let mut preview = true;
     match command {
@@ -574,7 +594,10 @@ fn dsh_args(command: &AdapterCommand, home: Option<&Path>) -> Result<PreparedCom
         }
     }
     args.push("--dsh-dir".into());
-    args.push(dsh_dir(home)?);
+    args.push(match config_dir {
+        Some(dir) => absolute(dir, "dsh --dsh-dir")?,
+        None => dsh_dir(home)?,
+    });
     if matches!(command, AdapterCommand::PlanActivate { .. }) {
         args.push("--dry-run".into());
     }
@@ -633,6 +656,23 @@ fn dsh_home_from(env: Option<&str>, real_home: &Path, mirasim: Option<&Path>) ->
         return default;
     }
     path
+}
+
+fn absolute(path: &Path, label: &str) -> Result<String> {
+    if !path.is_absolute() && !path.to_string_lossy().starts_with('/') {
+        return Err(Error::invalid(format!("{label} must be an absolute path")));
+    }
+    Ok(path.to_string_lossy().into_owned())
+}
+
+fn exact_or_default(
+    exact: Option<&Path>,
+    home: Option<&Path>,
+    child: &str,
+) -> Result<Option<String>> {
+    exact
+        .map(|path| absolute(path, "agent config directory").map(Some))
+        .unwrap_or_else(|| Ok(tool_dir(home, child)))
 }
 
 /// Mirasim's home: `$MIRASIM_HOME` when it is set, else `~/.mirasim` when that directory
@@ -695,7 +735,7 @@ fn push_flag_name(args: &mut Vec<String>, name: Option<&str>) {
 }
 
 fn abs(path: &Path) -> Result<String> {
-    if path.is_absolute() {
+    if path.is_absolute() || path.to_string_lossy().starts_with('/') {
         return Ok(path.to_string_lossy().into_owned());
     }
     let cwd = std::env::current_dir()?;
@@ -704,8 +744,8 @@ fn abs(path: &Path) -> Result<String> {
 
 fn tool_dir(home: Option<&Path>, name: &str) -> Option<String> {
     home.map(|home| {
-        let path = if home.is_absolute() {
-            home.join(name)
+        let path = if home.is_absolute() || home.to_string_lossy().starts_with('/') {
+            crate::runtime::join_path(home, name)
         } else {
             std::env::current_dir()
                 .unwrap_or_else(|_| PathBuf::from("."))

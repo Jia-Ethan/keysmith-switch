@@ -17,6 +17,7 @@ function plan(overrides: Partial<CleanupPlan> = {}): CleanupPlan {
   return {
     operationId: "op-1",
     tool: "claude",
+    runtimeTarget: { kind: "native" },
     deployment: { present: true, title: "Reviewer", restorable: true },
     memory,
     memories: null,
@@ -119,7 +120,7 @@ describe("CleanupDialog", () => {
     renderDialog();
     await waitFor(() => expect(screen.getByTestId("cleanup-confirm")).toBeDisabled());
     expect(screen.queryByTestId("cleanup-plan")).toBeNull();
-    expect(planCleanup).toHaveBeenCalledWith("claude");
+    expect(planCleanup).toHaveBeenCalledWith("claude", undefined);
   });
 
   describe("an agent's memory folder", () => {

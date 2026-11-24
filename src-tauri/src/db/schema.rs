@@ -6,7 +6,7 @@ use crate::error::{Error, Result};
 use crate::models::now_rfc3339;
 use crate::paths::AppPaths;
 
-pub const SCHEMA_VERSION: i64 = 4;
+pub const SCHEMA_VERSION: i64 = 6;
 /// The oldest schema a backup may carry. Restoring one migrates it forward.
 pub const MIN_RESTORABLE_SCHEMA: i64 = 1;
 
@@ -127,6 +127,127 @@ const MIGRATION_4: &str = r#"
 ALTER TABLE rule_tables ADD COLUMN opaque INTEGER NOT NULL DEFAULT 0;
 "#;
 
+const MIGRATION_5_TOOL_STATE: &str = r#"
+CREATE TABLE tool_state_v5 (
+    tool TEXT NOT NULL,
+    runtime_target TEXT NOT NULL DEFAULT 'native',
+    scope TEXT NOT NULL,
+    project_dir TEXT NOT NULL DEFAULT '',
+    status TEXT,
+    fingerprint TEXT,
+    last_operation_id TEXT,
+    last_checked_at TEXT,
+    PRIMARY KEY (tool, runtime_target, scope, project_dir)
+);
+INSERT INTO tool_state_v5 (
+    tool, runtime_target, scope, project_dir, status, fingerprint, last_operation_id, last_checked_at
+)
+SELECT tool, 'native', scope, project_dir, status, fingerprint, last_operation_id, last_checked_at
+FROM tool_state;
+DROP TABLE tool_state;
+ALTER TABLE tool_state_v5 RENAME TO tool_state;
+"#;
+
+const MIGRATION_6_REWRITE_RUNTIME: &str = r#"
+CREATE TABLE rule_tables_v6 (
+    id TEXT NOT NULL,
+    runtime_target TEXT NOT NULL DEFAULT 'native',
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 0,
+    priority INTEGER NOT NULL DEFAULT 0,
+    pack_id TEXT,
+    pack_version TEXT,
+    pending_json TEXT,
+    tools_json TEXT,
+    opaque INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (id, runtime_target)
+);
+
+INSERT INTO rule_tables_v6 (
+    id, runtime_target, kind, title, enabled, priority, pack_id, pack_version,
+    pending_json, tools_json, opaque, created_at, updated_at
+)
+SELECT id, 'native', kind, title, enabled, priority, pack_id, pack_version,
+       pending_json, tools_json, opaque, created_at, updated_at
+FROM rule_tables;
+
+CREATE TABLE rules_v6 (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    table_id TEXT NOT NULL,
+    runtime_target TEXT NOT NULL DEFAULT 'native',
+    position INTEGER NOT NULL,
+    from_text TEXT NOT NULL,
+    to_text TEXT NOT NULL,
+    FOREIGN KEY (table_id, runtime_target)
+        REFERENCES rule_tables_v6(id, runtime_target) ON DELETE CASCADE,
+    UNIQUE(table_id, runtime_target, from_text)
+);
+
+INSERT INTO rules_v6 (id, table_id, runtime_target, position, from_text, to_text)
+SELECT id, table_id, 'native', position, from_text, to_text FROM rules;
+
+DROP TABLE rules;
+DROP TABLE rule_tables;
+ALTER TABLE rule_tables_v6 RENAME TO rule_tables;
+ALTER TABLE rules_v6 RENAME TO rules;
+CREATE INDEX idx_rules_table ON rules(table_id, runtime_target, position);
+CREATE INDEX idx_rule_tables_runtime ON rule_tables(runtime_target, kind, priority);
+
+CREATE TABLE IF NOT EXISTS rewrite_profiles (
+    runtime_target TEXT PRIMARY KEY,
+    enabled INTEGER NOT NULL DEFAULT 0,
+    codex_enabled INTEGER NOT NULL DEFAULT 1,
+    claude_enabled INTEGER NOT NULL DEFAULT 1,
+    grok_enabled INTEGER NOT NULL DEFAULT 1,
+    zcode_enabled INTEGER NOT NULL DEFAULT 1,
+    updated_at TEXT NOT NULL
+);
+
+INSERT OR IGNORE INTO rewrite_profiles (
+    runtime_target, enabled, codex_enabled, claude_enabled, grok_enabled,
+    zcode_enabled, updated_at
+)
+SELECT
+    'native',
+    COALESCE((SELECT value IN ('true', '1', 'yes') FROM settings WHERE key = 'rewriteEnabled'), 0),
+    COALESCE((SELECT value IN ('true', '1', 'yes') FROM settings WHERE key = 'rewriteCodexEnabled'), 1),
+    COALESCE((SELECT value IN ('true', '1', 'yes') FROM settings WHERE key = 'rewriteClaudeEnabled'), 1),
+    COALESCE((SELECT value IN ('true', '1', 'yes') FROM settings WHERE key = 'rewriteGrokEnabled'), 1),
+    COALESCE((SELECT value IN ('true', '1', 'yes') FROM settings WHERE key = 'rewriteZcodeEnabled'), 1),
+    CURRENT_TIMESTAMP;
+"#;
+
+fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool> {
+    let mut statement = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let mut rows = statement.query([])?;
+    while let Some(row) = rows.next()? {
+        if row.get::<_, String>(1)? == column {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn apply_migration_5(conn: &Connection) -> Result<()> {
+    if !column_exists(conn, "activations", "runtime_target")? {
+        conn.execute_batch(
+            "ALTER TABLE activations ADD COLUMN runtime_target TEXT NOT NULL DEFAULT 'native';",
+        )?;
+    }
+    if !column_exists(conn, "operations", "runtime_target")? {
+        conn.execute_batch(
+            "ALTER TABLE operations ADD COLUMN runtime_target TEXT NOT NULL DEFAULT 'native';",
+        )?;
+    }
+    if !column_exists(conn, "tool_state", "runtime_target")? {
+        conn.execute_batch(MIGRATION_5_TOOL_STATE)?;
+    }
+    Ok(())
+}
+
 pub fn configure(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "PRAGMA foreign_keys = ON;
@@ -196,6 +317,16 @@ pub fn apply_pending(conn: &Connection, paths: &AppPaths) -> Result<Vec<i64>> {
         conn.execute_batch(MIGRATION_4)?;
         record_version(conn, 4)?;
         applied.push(4);
+    }
+    if current < 5 {
+        apply_migration_5(conn)?;
+        record_version(conn, 5)?;
+        applied.push(5);
+    }
+    if current < 6 {
+        conn.execute_batch(MIGRATION_6_REWRITE_RUNTIME)?;
+        record_version(conn, 6)?;
+        applied.push(6);
     }
     Ok(applied)
 }

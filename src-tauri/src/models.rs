@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -17,6 +18,69 @@ pub enum ToolKind {
     Zcode,
     Pi,
     Dsh,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum RuntimeTarget {
+    #[default]
+    Native,
+    Wsl {
+        distribution: String,
+        /// An explicit Linux account. `None` is kept for records created before
+        /// multi-user support and means the distribution's current default user.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        user: Option<String>,
+    },
+}
+
+impl RuntimeTarget {
+    pub fn storage_key(&self) -> String {
+        match self {
+            Self::Native => "native".to_string(),
+            Self::Wsl { distribution, user } => match user.as_deref() {
+                Some(user) if !user.is_empty() => {
+                    format!("wsl-user:{}:{distribution}{user}", distribution.len())
+                }
+                _ => format!("wsl:{distribution}"),
+            },
+        }
+    }
+
+    pub fn is_native(&self) -> bool {
+        matches!(self, Self::Native)
+    }
+
+    pub fn from_storage_key(value: &str) -> Result<Self> {
+        if value == "native" {
+            return Ok(Self::Native);
+        }
+        if let Some(encoded) = value.strip_prefix("wsl-user:") {
+            let (length, rest) = encoded
+                .split_once(':')
+                .ok_or_else(|| Error::invalid(format!("unknown runtime target: {value}")))?;
+            let length = length
+                .parse::<usize>()
+                .map_err(|_| Error::invalid(format!("unknown runtime target: {value}")))?;
+            if length == 0 || !rest.is_char_boundary(length) || rest.len() <= length {
+                return Err(Error::invalid(format!("unknown runtime target: {value}")));
+            }
+            let (distribution, user) = rest.split_at(length);
+            return Ok(Self::Wsl {
+                distribution: distribution.to_string(),
+                user: Some(user.to_string()),
+            });
+        }
+        let distribution = value
+            .strip_prefix("wsl:")
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .ok_or_else(|| Error::invalid(format!("unknown runtime target: {value}")))?;
+        Ok(Self::Wsl {
+            distribution: distribution.to_string(),
+            user: None,
+        })
+    }
 }
 
 impl ToolKind {
@@ -397,6 +461,8 @@ pub struct Activation {
     pub prompt_id: Option<String>,
     pub tool: ToolKind,
     pub scope: Scope,
+    #[serde(default)]
+    pub runtime_target: RuntimeTarget,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project_dir: Option<String>,
     pub status: ToolStatus,
@@ -416,6 +482,8 @@ pub struct Operation {
     pub kind: OperationKind,
     pub status: OperationStatus,
     pub preview: bool,
+    #[serde(default)]
+    pub runtime_target: RuntimeTarget,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prompt_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -460,6 +528,25 @@ pub struct Settings {
     pub rewrite_grok_enabled: bool,
     #[serde(default = "enabled_by_default")]
     pub rewrite_zcode_enabled: bool,
+    /// The machine environment each agent workspace reads and deploys to.
+    #[serde(default)]
+    pub agent_runtime_targets: HashMap<ToolKind, RuntimeTarget>,
+    /// Optional exact agent configuration roots for one machine environment.
+    #[serde(default)]
+    pub agent_directories: Vec<RuntimeDirectories>,
+    #[serde(default)]
+    pub extension_runtime_target: RuntimeTarget,
+    /// The machine environment currently managed by the input-rewrite page.
+    #[serde(default)]
+    pub rewrite_runtime_target: RuntimeTarget,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeDirectories {
+    pub target: RuntimeTarget,
+    #[serde(default)]
+    pub directories: HashMap<ToolKind, String>,
 }
 
 fn enabled_by_default() -> bool {
@@ -484,6 +571,10 @@ impl Default for Settings {
             rewrite_claude_enabled: true,
             rewrite_grok_enabled: true,
             rewrite_zcode_enabled: true,
+            agent_runtime_targets: HashMap::new(),
+            agent_directories: Vec::new(),
+            extension_runtime_target: RuntimeTarget::Native,
+            rewrite_runtime_target: RuntimeTarget::Native,
         }
     }
 }
@@ -506,6 +597,10 @@ pub struct SettingsPatch {
     pub rewrite_claude_enabled: Option<bool>,
     pub rewrite_grok_enabled: Option<bool>,
     pub rewrite_zcode_enabled: Option<bool>,
+    pub agent_runtime_targets: Option<HashMap<ToolKind, RuntimeTarget>>,
+    pub agent_directories: Option<Vec<RuntimeDirectories>>,
+    pub extension_runtime_target: Option<RuntimeTarget>,
+    pub rewrite_runtime_target: Option<RuntimeTarget>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -621,7 +716,7 @@ pub fn validate_scope(tool: ToolKind, scope: Scope, project_dir: Option<&Path>) 
     if scope.requires_project_dir() {
         let dir = project_dir
             .ok_or_else(|| Error::invalid("project/local scope requires an absolute projectDir"))?;
-        if !dir.is_absolute() {
+        if !dir.is_absolute() && !dir.to_string_lossy().starts_with('/') {
             return Err(Error::invalid(
                 "project/local scope requires an absolute projectDir",
             ));

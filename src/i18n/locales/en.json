@@ -3,6 +3,14 @@
     "name": "Keysmith Switch",
     "workflow": "Local prompt workflow"
   },
+  "runtime": {
+    "label": "Runtime environment",
+    "native": "Windows local",
+    "unavailable": "Unavailable",
+    "missing": "This runtime no longer exists",
+    "saveFailed": "Could not save the runtime environment",
+    "wslScope": "Deployments, components, cleanup, snapshots, and recovery affect only the selected WSL2 distribution and Linux user."
+  },
   "nav": {
     "claude": "Claude Code",
     "codex": "Codex",

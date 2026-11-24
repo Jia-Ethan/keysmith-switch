@@ -5,11 +5,12 @@ use std::path::PathBuf;
 
 use keysmith_switch_lib::db::Store;
 use keysmith_switch_lib::extensions::{
-    check_archive, clear_state, hidden_prompt_ids, install, is_hidden_prompt, refresh, state_view,
-    uninstall, ExtError, Fetch, IndexPack, PackKind, Source, OFFICIAL_URL_PREFIX, PACK_TAG,
+    check_archive, clear_state, hidden_prompt_ids, install, install_for, is_hidden_prompt, refresh,
+    state_view, state_view_for, uninstall, uninstall_for, ExtError, Fetch, IndexPack, PackKind,
+    Source, OFFICIAL_URL_PREFIX, PACK_TAG,
 };
 use keysmith_switch_lib::models::{
-    Activation, PromptSort, Scope, ToolKind, ToolStatus, UpdatePromptInput,
+    Activation, PromptSort, RuntimeTarget, Scope, ToolKind, ToolStatus, UpdatePromptInput,
 };
 use keysmith_switch_lib::paths::AppPaths;
 use sha2::{Digest, Sha256};
@@ -636,6 +637,7 @@ fn uninstalling_removes_only_what_is_safe_to_remove() {
             prompt_id: Some(alpha.clone()),
             tool: ToolKind::Claude,
             scope: Scope::User,
+            runtime_target: keysmith_switch_lib::models::RuntimeTarget::Native,
             project_dir: None,
             status: ToolStatus::Active,
             fingerprint: None,
@@ -814,6 +816,55 @@ fn a_rule_pack_installs_as_a_read_only_table_and_never_touches_prompts() {
     let snapshot =
         std::fs::read(keysmith_switch_lib::rewrite::snapshot_path(store.paths())).unwrap();
     assert!(String::from_utf8_lossy(&snapshot).contains("\"from\": \"a\""));
+}
+
+#[test]
+fn rule_pack_install_and_uninstall_are_isolated_by_runtime() {
+    let (_tmp, store) = store();
+    let fetch = Fixture::with(&[]);
+    rule_release(
+        &fetch,
+        "r1",
+        "0.1.0",
+        serde_json::json!([{"from": "a", "to": "wsl"}]),
+    );
+    let target = RuntimeTarget::Wsl {
+        distribution: "Ubuntu-24.04".into(),
+        user: Some("developer".into()),
+    };
+    install_for(
+        &store,
+        &fetch,
+        &source("r1"),
+        "fixture.rules",
+        "en",
+        true,
+        &target,
+    )
+    .unwrap();
+    assert!(pack_table(&store).is_none());
+    assert_eq!(
+        state_view(&store, &source("r1"), "en").packs[0].installed_version,
+        None
+    );
+    assert_eq!(
+        state_view_for(&store, &source("r1"), "en", &target).packs[0]
+            .installed_version
+            .as_deref(),
+        Some("0.1.0")
+    );
+
+    install(&store, &fetch, &source("r1"), "fixture.rules", "en", true).unwrap();
+    uninstall_for(&store, &source("r1"), "fixture.rules", "en", &target).unwrap();
+    assert!(store
+        .list_rule_tables_for(&target)
+        .unwrap()
+        .iter()
+        .all(|table| table.pack_id.as_deref() != Some("fixture.rules")));
+    assert!(
+        pack_table(&store).is_some(),
+        "the Windows table stays installed"
+    );
 }
 
 #[test]

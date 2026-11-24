@@ -12,6 +12,7 @@ import type {
   PlanResult,
   PromptDetail,
   ScopeId,
+  RuntimeTarget,
   ToolId,
 } from "../types";
 import { ConfirmDialog } from "./ConfirmDialog";
@@ -19,6 +20,10 @@ import { ErrorBanner } from "./ErrorBanner";
 import { PlanFailureNotice, PlanPreview } from "./PlanPreview";
 import { PromptViewPage } from "./PromptViewPage";
 import { Button } from "./ui";
+
+function runtimeRequest(target?: RuntimeTarget): { runtimeTarget?: RuntimeTarget } {
+  return target?.kind === "wsl" ? { runtimeTarget: target } : {};
+}
 
 export function PromptDetailPage({
   promptId,
@@ -29,6 +34,7 @@ export function PromptDetailPage({
   onClose,
   onEdit,
   onChanged,
+  runtimeTarget,
 }: {
   promptId: string;
   tool: ToolId;
@@ -38,6 +44,7 @@ export function PromptDetailPage({
   onClose: () => void;
   onEdit: (detail: PromptDetail) => void;
   onChanged: () => void;
+  runtimeTarget?: RuntimeTarget;
 }) {
   const { t } = useTranslation();
   const [activations, setActivations] = useState<Activation[] | null>(null);
@@ -59,11 +66,14 @@ export function PromptDetailPage({
     setContextLoading(true);
     setContextError(false);
     const [activationResult, statusResult] = await Promise.allSettled([
-      api.listActivations(tool),
+      runtimeTarget?.kind === "wsl"
+        ? api.listActivations(tool, runtimeTarget)
+        : api.listActivations(tool),
       api.toolStatus({
         tool,
         scope,
         projectDir: requireProject && projectDir ? projectDir : undefined,
+        ...runtimeRequest(runtimeTarget),
       }),
     ]);
     if (seq !== contextSeq.current) return;
@@ -73,7 +83,7 @@ export function PromptDetailPage({
     setStatus(statusResult.status === "fulfilled" ? statusResult.value : null);
     setContextError(activationResult.status === "rejected" || statusResult.status === "rejected");
     setContextLoading(false);
-  }, [projectDir, requireProject, scope, tool]);
+  }, [projectDir, requireProject, runtimeTarget, scope, tool]);
 
   useEffect(() => {
     void loadContext();
@@ -117,12 +127,14 @@ export function PromptDetailPage({
               promptId: detail.id,
               scope,
               projectDir: requireProject ? projectDir : undefined,
+              ...runtimeRequest(runtimeTarget),
             })
           : await api.planDeactivate({
               promptId: detail.id,
               tool,
               scope,
               projectDir: requireProject ? projectDir : undefined,
+              ...runtimeRequest(runtimeTarget),
             });
       setPlan({ kind, result });
     } catch (err) {
@@ -138,7 +150,10 @@ export function PromptDetailPage({
     if (busy || !plan) return;
     setBusy(true);
     try {
-      const result = await api.planReconcile(tool);
+      const result =
+        runtimeTarget?.kind === "wsl"
+          ? await api.planReconcile(tool, runtimeTarget)
+          : await api.planReconcile(tool);
       setPlanFailure(null);
       setPlan({ kind: "reconcile", result, then: plan.kind === "activate" ? "activate" : plan.then });
     } catch (err) {

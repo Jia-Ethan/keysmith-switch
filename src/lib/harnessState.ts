@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { getHarnessState } from "../api";
-import type { ToolId } from "../types";
+import type { RuntimeTarget, ToolId } from "../types";
 
 /**
  * Per-tool deployment state, remembered for one app run.
@@ -24,13 +24,25 @@ export interface HarnessEntry {
   promptTitle: string | null;
 }
 
-export type HarnessStatusMap = Partial<Record<ToolId, HarnessEntry>>;
+export type HarnessStatusMap = Record<string, HarnessEntry>;
 
 type Listener = () => void;
 
 let statuses: HarnessStatusMap = {};
 const listeners = new Set<Listener>();
-const inflight = new Map<ToolId, Promise<HarnessEntry>>();
+const inflight = new Map<string, Promise<HarnessEntry>>();
+
+export const NATIVE_RUNTIME: RuntimeTarget = { kind: "native" };
+
+export function runtimeTargetKey(target: RuntimeTarget = NATIVE_RUNTIME): string {
+  return target.kind === "native"
+    ? "native"
+    : `wsl:${target.distribution}:${target.user ?? ""}`;
+}
+
+function statusKey(tool: ToolId, target: RuntimeTarget = NATIVE_RUNTIME): string {
+  return `${tool}\0${runtimeTargetKey(target)}`;
+}
 
 function emit(): void {
   for (const listener of listeners) listener();
@@ -43,26 +55,30 @@ function subscribe(listener: Listener): () => void {
   };
 }
 
-function setStatus(tool: ToolId, entry: HarnessEntry): void {
-  statuses = { ...statuses, [tool]: entry };
+function setStatus(tool: ToolId, target: RuntimeTarget, entry: HarnessEntry): void {
+  statuses = { ...statuses, [statusKey(tool, target)]: entry };
   emit();
 }
 
-export function getHarnessStatus(tool: ToolId): HarnessEntry | undefined {
-  return statuses[tool];
+export function getHarnessStatus(tool: ToolId, target: RuntimeTarget = NATIVE_RUNTIME): HarnessEntry | undefined {
+  return statuses[statusKey(tool, target)];
 }
 
-export function useHarnessStatus(tool: ToolId): HarnessEntry | undefined {
+export function useHarnessStatus(tool: ToolId, target: RuntimeTarget = NATIVE_RUNTIME): HarnessEntry | undefined {
+  const key = statusKey(tool, target);
   return useSyncExternalStore(
     subscribe,
-    () => statuses[tool],
-    () => statuses[tool],
+    () => statuses[key],
+    () => statuses[key],
   );
 }
 
-async function read(tool: ToolId): Promise<HarnessEntry> {
+async function read(tool: ToolId, target: RuntimeTarget): Promise<HarnessEntry> {
   try {
-    const state = await getHarnessState(tool);
+    const state =
+      target.kind === "wsl"
+        ? await getHarnessState(tool, target)
+        : await getHarnessState(tool);
     const deployed = state.deployed;
     return {
       machine: deployed ? "deployed" : "undeployed",
@@ -86,19 +102,26 @@ async function read(tool: ToolId): Promise<HarnessEntry> {
  * Read the machine unless this run already knows the answer.
  * Concurrent callers for the same tool share one read.
  */
-export function loadHarnessStatus(tool: ToolId, force = false): Promise<HarnessEntry> {
-  const known = statuses[tool];
-  if (known && !force) return Promise.resolve(known);
+export function loadHarnessStatus(
+  tool: ToolId,
+  targetOrForce: RuntimeTarget | boolean = NATIVE_RUNTIME,
+  force = false,
+): Promise<HarnessEntry> {
+  const target = typeof targetOrForce === "boolean" ? NATIVE_RUNTIME : targetOrForce;
+  const shouldForce = typeof targetOrForce === "boolean" ? targetOrForce : force;
+  const key = statusKey(tool, target);
+  const known = statuses[key];
+  if (known && !shouldForce) return Promise.resolve(known);
 
-  const pending = inflight.get(tool);
+  const pending = inflight.get(key);
   if (pending) return pending;
 
-  const request = read(tool).then((entry) => {
-    inflight.delete(tool);
-    setStatus(tool, entry);
+  const request = read(tool, target).then((entry) => {
+    inflight.delete(key);
+    setStatus(tool, target, entry);
     return entry;
   });
-  inflight.set(tool, request);
+  inflight.set(key, request);
   return request;
 }
 
@@ -110,6 +133,7 @@ export function applyHarnessOutcome(
   tool: ToolId,
   action: "deploy" | "remove",
   prompt?: { id?: string | null; title?: string | null },
+  target: RuntimeTarget = NATIVE_RUNTIME,
 ): HarnessEntry {
   const deployed = action === "deploy";
   const entry: HarnessEntry = {
@@ -118,7 +142,7 @@ export function applyHarnessOutcome(
     promptId: deployed ? prompt?.id ?? null : null,
     promptTitle: deployed ? prompt?.title ?? null : null,
   };
-  setStatus(tool, entry);
+  setStatus(tool, target, entry);
   return entry;
 }
 

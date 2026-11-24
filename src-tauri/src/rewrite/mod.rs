@@ -9,6 +9,7 @@
 pub mod claude;
 pub mod grok;
 pub mod link;
+pub mod runtime_target;
 pub mod service;
 pub mod zcode;
 
@@ -19,11 +20,21 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 
 use keysmith_rewrite::{Snapshot, Tool, ToolSwitches, SNAPSHOT_SCHEMA};
+use sha2::{Digest, Sha256};
 
 use crate::db::rules::RuleTable;
 use crate::db::Store;
 use crate::error::{Error, Result};
 use crate::paths::{atomic_write, AppPaths};
+
+fn runtime_route_id(value: &str) -> bool {
+    let Some(rest) = value.strip_prefix('w') else {
+        return false;
+    };
+    rest.len() > 13
+        && rest.as_bytes().get(12) == Some(&b'-')
+        && rest[..12].chars().all(|ch| ch.is_ascii_hexdigit())
+}
 
 pub fn rewrite_dir(paths: &AppPaths) -> PathBuf {
     paths.home.join("input-rewrite")
@@ -33,24 +44,48 @@ pub fn snapshot_path(paths: &AppPaths) -> PathBuf {
     rewrite_dir(paths).join("rules.json")
 }
 
+pub fn runtime_profile(target: &crate::models::RuntimeTarget) -> Option<String> {
+    if target.is_native() {
+        return None;
+    }
+    let digest = hex::encode(Sha256::digest(target.storage_key().as_bytes()));
+    Some(format!("w{}", &digest[..12]))
+}
+
+pub fn snapshot_path_for(paths: &AppPaths, target: &crate::models::RuntimeTarget) -> PathBuf {
+    match runtime_profile(target) {
+        Some(profile) => rewrite_dir(paths)
+            .join("runtime-rules")
+            .join(format!("{profile}.json")),
+        None => snapshot_path(paths),
+    }
+}
+
 /// The snapshot the relay reads. `rules` is Codex's list, the one a v0.4.0 relay reads;
 /// `byTool` is written only when some agent's list differs from it.
 pub fn build_snapshot(store: &Store) -> Result<Snapshot> {
-    let settings = store.get_settings()?;
-    let codex = store.active_rules(Tool::Codex)?;
+    build_snapshot_for(store, &crate::models::RuntimeTarget::Native)
+}
+
+pub fn build_snapshot_for(
+    store: &Store,
+    runtime_target: &crate::models::RuntimeTarget,
+) -> Result<Snapshot> {
+    let switches = store.rewrite_switches(runtime_target)?;
+    let codex = store.active_rules_for(Tool::Codex, runtime_target)?;
     let mut by_tool = BTreeMap::new();
     for tool in Tool::ALL {
-        by_tool.insert(tool, store.active_rules(tool)?);
+        by_tool.insert(tool, store.active_rules_for(tool, runtime_target)?);
     }
     let uniform = by_tool.values().all(|rules| *rules == codex);
     Ok(Snapshot {
         schema: SNAPSHOT_SCHEMA,
-        enabled: settings.rewrite_enabled,
+        enabled: switches.enabled,
         tools: ToolSwitches {
-            codex: settings.rewrite_codex_enabled,
-            claude: settings.rewrite_claude_enabled,
-            grok: settings.rewrite_grok_enabled,
-            zcode: settings.rewrite_zcode_enabled,
+            codex: switches.codex_enabled,
+            claude: switches.claude_enabled,
+            grok: switches.grok_enabled,
+            zcode: switches.zcode_enabled,
         },
         rules: codex,
         by_tool: (!uniform).then_some(by_tool),
@@ -61,15 +96,30 @@ pub fn build_snapshot(store: &Store) -> Result<Snapshot> {
 /// Changes arrive from more than one thread: building and writing hold one lock, so the file
 /// always ends with the latest settings, never an older snapshot that finished last.
 pub fn publish(store: &Store) -> Result<()> {
+    publish_for(store, &crate::models::RuntimeTarget::Native)
+}
+
+pub fn publish_for(store: &Store, runtime_target: &crate::models::RuntimeTarget) -> Result<()> {
     static PUBLISH: std::sync::Mutex<()> = std::sync::Mutex::new(());
     let _turn = PUBLISH
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let snapshot = build_snapshot(store)?;
+    let snapshot = build_snapshot_for(store, runtime_target)?;
     atomic_write(
-        &snapshot_path(store.paths()),
+        &snapshot_path_for(store.paths(), runtime_target),
         &serde_json::to_string_pretty(&snapshot)?,
     )
+}
+
+pub fn publish_all(store: &Store) -> Result<()> {
+    let runtime_rules = rewrite_dir(store.paths()).join("runtime-rules");
+    if runtime_rules.exists() {
+        std::fs::remove_dir_all(&runtime_rules)?;
+    }
+    for target in store.rewrite_runtime_targets()? {
+        publish_for(store, &target)?;
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -148,17 +198,17 @@ pub fn view(store: &Store) -> Result<RewriteView> {
 
 /// `home` overrides where `.codex` is looked up (tests, isolated previews).
 pub fn view_with(store: &Store, home: Option<&Path>) -> Result<RewriteView> {
-    let settings = store.get_settings()?;
+    let switches = store.rewrite_switches(&crate::models::RuntimeTarget::Native)?;
     let mut tables = store.list_rule_tables()?;
     for table in &mut tables {
         table.seal_for_view();
     }
     Ok(RewriteView {
-        enabled: settings.rewrite_enabled,
-        codex_enabled: settings.rewrite_codex_enabled,
-        claude_enabled: settings.rewrite_claude_enabled,
-        grok_enabled: settings.rewrite_grok_enabled,
-        zcode_enabled: settings.rewrite_zcode_enabled,
+        enabled: switches.enabled,
+        codex_enabled: switches.codex_enabled,
+        claude_enabled: switches.claude_enabled,
+        grok_enabled: switches.grok_enabled,
+        zcode_enabled: switches.zcode_enabled,
         tables,
         codex: codex_view(store.paths(), home),
         claude: claude_view(store.paths(), home),
@@ -183,6 +233,11 @@ fn codex_view(paths: &AppPaths, home: Option<&Path>) -> CodexView {
         .as_ref()
         .map(|record| record.codex_dir.clone())
         .or_else(|| link::codex_dir(home));
+    codex_view_in(paths, codex_dir)
+}
+
+fn codex_view_in(paths: &AppPaths, codex_dir: Option<PathBuf>) -> CodexView {
+    let record = read_link_record(paths);
     let (link_state, provider, unsupported) = match &codex_dir {
         Some(dir) => {
             let state = link::state(record.as_ref(), dir);
@@ -211,6 +266,11 @@ pub fn connect_codex(paths: &AppPaths, home: Option<&Path>) -> Result<()> {
         .map(|record| record.codex_dir.clone())
         .or_else(|| link::codex_dir(home))
         .ok_or_else(|| Error::unavailable("no-config: cannot find the Codex folder"))?;
+    connect_codex_in(paths, &codex_dir)
+}
+
+pub fn connect_codex_in(paths: &AppPaths, codex_dir: &Path) -> Result<()> {
+    let record = read_link_record(paths);
     let mut config = service::ensure_config(paths)?;
 
     // Decide the provider first so nothing changes when Codex cannot be linked. While Codex
@@ -255,11 +315,27 @@ pub fn disconnect_codex(paths: &AppPaths) -> Result<link::UnlinkReport> {
 }
 
 /// The relay keeps running while any agent has a link record.
-fn stop_service_if_unused(paths: &AppPaths) -> Result<()> {
+pub(crate) fn stop_service_if_unused(paths: &AppPaths) -> Result<()> {
+    let target_records = rewrite_dir(paths).join("targets");
+    let target_in_use = std::fs::read_dir(target_records)
+        .ok()
+        .is_some_and(|targets| {
+            targets.filter_map(|entry| entry.ok()).any(|entry| {
+                std::fs::read_dir(entry.path()).ok().is_some_and(|records| {
+                    records.filter_map(|record| record.ok()).any(|record| {
+                        record
+                            .path()
+                            .extension()
+                            .is_some_and(|extension| extension == "json")
+                    })
+                })
+            })
+        });
     if read_link_record(paths).is_none()
         && read_claude_record(paths).is_none()
         && read_zcode_record(paths).is_none()
         && read_grok_record(paths).is_none()
+        && !target_in_use
     {
         service::uninstall(paths)?;
     }
@@ -287,6 +363,11 @@ fn claude_view(paths: &AppPaths, home: Option<&Path>) -> ClaudeView {
         .as_ref()
         .map(|record| record.claude_dir.clone())
         .or_else(|| claude::claude_dir(home));
+    claude_view_in(paths, dir)
+}
+
+fn claude_view_in(paths: &AppPaths, dir: Option<PathBuf>) -> ClaudeView {
+    let record = read_claude_record(paths);
     let Some(dir) = dir else {
         return ClaudeView {
             link: claude::ClaudeLinkState::Unlinked,
@@ -330,6 +411,11 @@ pub fn connect_claude(paths: &AppPaths, home: Option<&Path>) -> Result<()> {
         .map(|record| record.claude_dir.clone())
         .or_else(|| claude::claude_dir(home))
         .ok_or_else(|| Error::unavailable("no-config: cannot find the Claude Code folder"))?;
+    connect_claude_in(paths, &dir)
+}
+
+pub fn connect_claude_in(paths: &AppPaths, dir: &Path) -> Result<()> {
+    let record = read_claude_record(paths);
     let mut config = service::ensure_config(paths)?;
     let still_linked = record
         .as_ref()
@@ -385,6 +471,11 @@ fn zcode_view(paths: &AppPaths, home: Option<&Path>) -> ZcodeView {
         .as_ref()
         .map(|record| record.zcode_dir.clone())
         .or_else(|| zcode::zcode_dir(home));
+    zcode_view_in(paths, dir)
+}
+
+fn zcode_view_in(paths: &AppPaths, dir: Option<PathBuf>) -> ZcodeView {
+    let record = read_zcode_record(paths);
     let Some(dir) = dir else {
         return ZcodeView {
             link: zcode::ZcodeLinkState::Unlinked,
@@ -440,6 +531,11 @@ pub fn connect_zcode(paths: &AppPaths, home: Option<&Path>) -> Result<()> {
         .map(|record| record.zcode_dir.clone())
         .or_else(|| zcode::zcode_dir(home))
         .ok_or_else(|| Error::unavailable("no-config: cannot find the ZCode folder"))?;
+    connect_zcode_in(paths, &dir)
+}
+
+pub fn connect_zcode_in(paths: &AppPaths, dir: &Path) -> Result<()> {
+    let record = read_zcode_record(paths);
     // Nothing changes when ZCode cannot be linked.
     zcode::providers(&dir).map_err(|reason| {
         Error::unavailable(format!("{}: ZCode cannot be linked", reason.code()))
@@ -468,10 +564,11 @@ pub fn connect_zcode(paths: &AppPaths, home: Option<&Path>) -> Result<()> {
     // Drop routes for providers that are no longer linked.
     config.routes.retain(|key, _| {
         key.strip_prefix("zcode/").is_none_or(|id| {
-            new_record
-                .providers
-                .iter()
-                .any(|linked| linked.provider_id == id)
+            runtime_route_id(id)
+                || new_record
+                    .providers
+                    .iter()
+                    .any(|linked| linked.provider_id == id)
         })
     });
     service::write_config(paths, &config)?;
@@ -523,6 +620,11 @@ fn grok_view(paths: &AppPaths, home: Option<&Path>) -> GrokView {
         .as_ref()
         .map(|record| record.grok_dir.clone())
         .or_else(|| grok::grok_dir(home));
+    grok_view_in(paths, dir)
+}
+
+fn grok_view_in(paths: &AppPaths, dir: Option<PathBuf>) -> GrokView {
+    let record = read_grok_record(paths);
     let Some(dir) = dir else {
         return GrokView {
             link: grok::GrokLinkState::Unlinked,
@@ -564,12 +666,18 @@ pub fn connect_grok(paths: &AppPaths, home: Option<&Path>) -> Result<()> {
         .map(|record| record.grok_dir.clone())
         .or_else(|| grok::grok_dir(home))
         .ok_or_else(|| Error::unavailable("no-config: cannot find the Grok folder"))?;
+    connect_grok_in(paths, &dir)
+}
+
+pub fn connect_grok_in(paths: &AppPaths, dir: &Path) -> Result<()> {
     let models = grok::routable(&dir).map_err(|reason| {
         Error::unavailable(format!("{}: Grok cannot be linked", reason.code()))
     })?;
     // Routes first: Grok may start a request the moment the file changes.
     let mut config = service::ensure_config(paths)?;
-    config.routes.retain(|key, _| !key.starts_with("grok/"));
+    config
+        .routes
+        .retain(|key, _| key.strip_prefix("grok/").is_none_or(runtime_route_id));
     let mut table = BTreeMap::new();
     for model in &models {
         let upstream = grok_upstream_id(&model.base_url);
@@ -632,4 +740,60 @@ pub fn change(store: &Store, apply: impl FnOnce(&Store) -> Result<()>) -> Result
     apply(store)?;
     publish(store)?;
     view(store)
+}
+
+pub fn view_for_options(
+    store: &Store,
+    opts: &crate::adapter::AdapterOptions,
+) -> Result<RewriteView> {
+    if opts.runtime_target.is_native() {
+        if opts.config_dirs.is_empty() {
+            return view_with(store, opts.home.as_deref());
+        }
+        let switches = store.rewrite_switches(&opts.runtime_target)?;
+        let mut tables = store.list_rule_tables()?;
+        for table in &mut tables {
+            table.seal_for_view();
+        }
+        let exact = |tool| opts.config_dirs.get(&tool).cloned();
+        let zcode_dir = exact(crate::models::ToolKind::Zcode)
+            .map(|dir| crate::runtime::join_path(&dir, "v2"))
+            .or_else(|| zcode::zcode_dir(opts.home.as_deref()));
+        Ok(RewriteView {
+            enabled: switches.enabled,
+            codex_enabled: switches.codex_enabled,
+            claude_enabled: switches.claude_enabled,
+            grok_enabled: switches.grok_enabled,
+            zcode_enabled: switches.zcode_enabled,
+            tables,
+            codex: codex_view_in(
+                store.paths(),
+                exact(crate::models::ToolKind::Codex)
+                    .or_else(|| link::codex_dir(opts.home.as_deref())),
+            ),
+            claude: claude_view_in(
+                store.paths(),
+                exact(crate::models::ToolKind::Claude)
+                    .or_else(|| claude::claude_dir(opts.home.as_deref())),
+            ),
+            zcode: zcode_view_in(store.paths(), zcode_dir),
+            grok: grok_view_in(
+                store.paths(),
+                exact(crate::models::ToolKind::Grok)
+                    .or_else(|| grok::grok_dir(opts.home.as_deref())),
+            ),
+        })
+    } else {
+        runtime_target::view(store, opts)
+    }
+}
+
+pub fn change_for_options(
+    store: &Store,
+    opts: &crate::adapter::AdapterOptions,
+    apply: impl FnOnce(&Store) -> Result<()>,
+) -> Result<RewriteView> {
+    apply(store)?;
+    publish_for(store, &opts.runtime_target)?;
+    view_for_options(store, opts)
 }
