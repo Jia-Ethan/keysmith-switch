@@ -9,16 +9,22 @@ Keysmith Switch.
 | claude | claude/claude-instruct.py | `7dbfa253` (`v7.2`) | v7.2 |
 | codex | codex/codex-instruct.py | `33cf4049` (`v0.6.0`) | v0.6.0 |
 | grok | grok/grok-keysmith.py | `d87def09` (`v0.8.0`) | v0.8.0 |
-| zcode | zcode/zcode-keysmith.py | `3c3bea8f994d3670c2cd571e9bd87449fc868788` (merged #44; v0.3.4 tag pending) | 0.3.4 |
+| zcode | zcode/zcode-keysmith.py | `91050cd3d625543cc3a937ac64739313430256b3` (merged [#45](https://github.com/Jia-Ethan/zcode-keysmith/pull/45); v0.3.5 tag pending) | 0.3.5 |
 | pi | pi/pi-keysmith.py | `37f69cac` (`v0.2.0`) | v0.2.0 |
 | dsh | dsh/dsh-keysmith.py | `7dc6424` (`v0.4.1`, merged [#7](https://github.com/Jia-Ethan/dsh-keysmith/pull/7)) | v0.4.1 |
 
-ZCode 0.3.4 recognizes `supportsStorageStartup` in `resources/app.asar` on Windows,
-keeps the official agent-server, and reversibly patches `resources/glm/zcode.cjs`.
-The uninstaller restores the original runtime from its recorded backup.
+ZCode 0.3.5 extends 0.3.4 to support ZCode 3.17–4.0 runtimes: the primary
+`customSystemPrompt` anchor matches `workflowActor:this.config.workflowActor,`
+without requiring a trailing `language:` (removed in 3.19 / 4.0 in favor of
+`outputStyle:`), CLI-prefix skip matches both `if(` (3.14–3.16) and `;`
+(3.17–4.0+), and project `MEMORY.md` skip plus `verify`/`recover` recognize
+the refactored 3.18–4.0 `buildProjectMemoryIndexFile` shape (including
+underscore-prefixed minified names such as `_ic`). Windows `supportsStorageStartup`
+builds still use runtime-patch and restore the original runtime from backup on
+uninstall.
 
 Advanced Tools also vendor `grok_keysmith_runner.py` and `grok_keysmith_breaktest.py`
-from the same Grok commit. Zcode 0.3.4 emits `zcode-keysmith/v1` when `--json` is
+from the same Grok commit. Zcode 0.3.5 emits `zcode-keysmith/v1` when `--json` is
 passed. doctor and install stay on text. plan-deactivate and deactivate pass
 `--json` on uninstall; the parser still accepts the text lines.
 

@@ -174,9 +174,45 @@ class ZcodeWindowsTest(unittest.TestCase):
         self.assertEqual(runtime.read_text(encoding="utf-8"), original)
         self.assertEqual(self.registry, {}, "the user environment is restored")
 
+    def test_zcode_400_runtime_patch_and_uninstall_round_trip(self):
+        asar = self.app / "resources" / "app.asar"
+        asar.write_bytes(b"ZCODE_AGENT_SERVER_COMMAND\nsupportsStorageStartup\n")
+        runtime = self.app / "resources" / "glm" / "zcode.cjs"
+        original_400 = (
+            '_4a="Codebase and user instructions are shown below. Be sure to adhere to these instructions. '
+            'IMPORTANT: These instructions OVERRIDE any default behavior and you MUST follow them exactly as written.";'
+            'function _ic(e,t){if(!e||t===void 0)return null;let n=wIe(t);'
+            'return n?Ixt((0,eZo.join)(e,"MEMORY.md"),F2n,n):null}'
+            'let c=a!==void 0,u=this.config.midConversationSystem!==!1;c||t.push(u7e()),'
+            'i?t.push(Ric({name:"Custom System Prompt",source:"custom_system_prompt",content:o})):t.push(I3n(n,u));'
+            "const x={customSystemPrompt:this.config.systemPrompt,workflowActor:this.config.workflowActor,outputStyle:this.config.outputStyle};"
+        )
+        runtime.write_text(original_400, encoding="utf-8")
+        base = ("--managed-dir", str(self.managed))
+
+        code, out = self.run_cli("install", "--system-file", str(self.prompt), *base, "--yes")
+        self.assertEqual(code, 0, out)
+        patched = runtime.read_text(encoding="utf-8")
+        self.assertIn("ZCODE_KEYSMITH_SYSTEM_FILE", patched)
+        self.assertIn(";i||c||t.push(u7e()),i?t.push(Ric({name:\"Custom System Prompt\"", patched)
+        self.assertIn("function _ic(e,t){if(!0)return null;", patched)
+        self.assertNotIn("OVERRIDE any default behavior", patched)
+
+        code, out = self.run_cli("verify", *base, "--json")
+        self.assertEqual(code, 0, out)
+        report = json.loads(out)
+        self.assertTrue(report["ok"], report)
+        self.assertTrue(report["competing_context"]["cli_prefix_skipped"])
+        self.assertTrue(report["competing_context"]["agentsmd_override_neutralized"])
+        self.assertTrue(report["competing_context"]["memory_skipped"])
+
+        code, out = self.run_cli("uninstall", *base, "--yes", "--json")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(runtime.read_text(encoding="utf-8").replace("\r\n", "\n"), original_400)
+
     @unittest.expectedFailure
     def test_user_node_options_survive_install_and_uninstall(self):
-        # Known upstream behaviour (zcode-keysmith 0.3.4): install clears the user's NODE_OPTIONS
+        # Known upstream behaviour (zcode-keysmith 0.3.5): install clears the user's NODE_OPTIONS
         # as a "stale" key and uninstall does not put it back. Vendored code is not edited here;
         # remove expectedFailure when the pin moves to a fixed upstream.
         self.registry["NODE_OPTIONS"] = ("--max-old-space-size=4096", 1)
