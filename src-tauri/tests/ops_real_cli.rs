@@ -425,6 +425,80 @@ async fn real_zcode_refusal_on_stderr_says_why() {
     );
 }
 
+/// The real vendored ZCode adapter accepts the ZCode 3.19 / 4.0 runtime shape (`outputStyle:`
+/// after `workflowActor`, semicolon-delimited CLI-prefix guard, and refactored `MEMORY.md`
+/// helper) during a read-only deploy preview (#168).
+#[tokio::test]
+async fn real_zcode_plan_activate_accepts_400_runtime_shape() {
+    if !python3_available() {
+        return;
+    }
+    let Some(cli) = vendor("zcode/zcode-keysmith.py") else {
+        return;
+    };
+    let tmp = tempfile::tempdir().unwrap();
+    let user_home = tmp.path().join("home");
+    std::fs::create_dir_all(&user_home).unwrap();
+    let app = tmp.path().join("ZCode.app");
+    let (runtime_path, asar_path, node_path) = if cfg!(windows) {
+        (
+            app.join("resources/glm/zcode.cjs"),
+            app.join("resources/app.asar"),
+            app.join("ZCode.exe"),
+        )
+    } else {
+        (
+            app.join("Contents/Resources/glm/zcode.cjs"),
+            app.join("Contents/Resources/app.asar"),
+            app.join("Contents/Frameworks/ZCode Helper.app/Contents/MacOS/ZCode Helper"),
+        )
+    };
+    std::fs::create_dir_all(runtime_path.parent().unwrap()).unwrap();
+    std::fs::create_dir_all(node_path.parent().unwrap()).unwrap();
+    std::fs::write(&asar_path, b"supportsStorageStartup\n").unwrap();
+    std::fs::write(&node_path, "#!/bin/sh\nexit 0\n").unwrap();
+    let runtime_400 = concat!(
+        r#"_4a="Codebase and user instructions are shown below. Be sure to adhere to these instructions. "#,
+        r#"IMPORTANT: These instructions OVERRIDE any default behavior and you MUST follow them exactly as written.";"#,
+        r#"function _ic(e,t){if(!e||t===void 0)return null;let n=wIe(t);"#,
+        r#"return n?Ixt((0,eZo.join)(e,"MEMORY.md"),F2n,n):null}"#,
+        r#"let c=a!==void 0,u=this.config.midConversationSystem!==!1;c||t.push(u7e()),"#,
+        r#"i?t.push(Ric({name:"Custom System Prompt",source:"custom_system_prompt",content:o})):t.push(I3n(n,u));"#,
+        r#"const x={customSystemPrompt:this.config.systemPrompt,workflowActor:this.config.workflowActor,outputStyle:this.config.outputStyle};"#,
+    );
+    std::fs::write(&runtime_path, runtime_400).unwrap();
+
+    let prompt = tmp.path().join("prompt.md");
+    std::fs::write(&prompt, "# Rules\nBe careful.\n").unwrap();
+    let opts = AdapterOptions {
+        home: Some(user_home),
+        cli_override: Some(cli),
+        extra_env: [("ZCODE_APP_PATH".to_string(), app.display().to_string())]
+            .into_iter()
+            .collect(),
+        ..AdapterOptions::default()
+    };
+    let envelope = keysmith_switch_lib::adapter::run_adapter_with(
+        ToolKind::Zcode,
+        keysmith_switch_lib::adapter::AdapterCommand::PlanActivate {
+            file: prompt,
+            scope: Scope::User,
+            project_dir: None,
+            name: None,
+            runtime: false,
+            append_file: None,
+            max_tokens: None,
+        },
+        &opts,
+    )
+    .await
+    .unwrap();
+    assert!(envelope.ok, "{envelope:?}");
+    assert_eq!(envelope.exit_code, 0);
+    assert!(envelope.blockers.is_empty(), "{:?}", envelope.blockers);
+    assert_eq!(std::fs::read_to_string(&runtime_path).unwrap(), runtime_400);
+}
+
 /// The real pi adapter, in a temporary home: activate, read back, deactivate, read back. pi's
 /// own APPEND_SYSTEM.md and AGENTS.md stay byte for byte as they were the whole time, and a
 /// prompt the library forgot can be taken back from SYSTEM.md.
