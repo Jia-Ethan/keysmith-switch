@@ -5,7 +5,7 @@ description = "Keysmith Switch — local prompt manager for Claude Code, Codex, 
 authors = ["Jia-Ethan"]
 license = "PolyForm-Noncommercial-1.0.0"
 edition = "2021"
-rust-version = "1.85.0"
+rust-version = "1.90.0"
 
 [workspace]
 members = ["crates/rewrite", "crates/relay"]
