@@ -39,6 +39,8 @@ import type {
   PromptVersion,
   RollbackPlan,
   RollbackResult,
+  RuntimeInfo,
+  RuntimeTarget,
   ScopeId,
   Settings,
   SettingsPatch,
@@ -80,11 +82,16 @@ export function listTools(): Promise<{ tools: ToolInfo[] }> {
   return call("list_tools", {});
 }
 
+export function listRuntimes(): Promise<{ runtimes: RuntimeInfo[] }> {
+  return call("list_runtimes", {});
+}
+
 export function listPrompts(input: {
   tool: ToolId;
   query?: string;
   tag?: string;
   sort?: PromptSort;
+  runtimeTarget?: RuntimeTarget;
 }): Promise<{ prompts: PromptSummary[] }> {
   return call("list_prompts", input);
 }
@@ -147,6 +154,7 @@ export function toolStatus(input: {
   tool: ToolId;
   scope?: ScopeId;
   projectDir?: string;
+  runtimeTarget?: RuntimeTarget;
 }): Promise<Envelope> {
   return call("tool_status", input);
 }
@@ -155,6 +163,7 @@ export function planActivate(input: {
   promptId: string;
   scope: ScopeId;
   projectDir?: string;
+  runtimeTarget?: RuntimeTarget;
 }): Promise<PlanResult> {
   return call("plan_activate", input);
 }
@@ -170,6 +179,7 @@ export function planDeactivate(input: {
   projectDir?: string;
   /** Grok only: keep config.toml as it is (its managed backup is lost). */
   salvageConfig?: boolean;
+  runtimeTarget?: RuntimeTarget;
 }): Promise<PlanResult> {
   return call("plan_deactivate", input);
 }
@@ -200,32 +210,33 @@ export interface HarnessState {
   promptTitle?: string | null;
 }
 
-export function getHarnessState(tool: ToolId): Promise<HarnessState> {
-  return call("harness_state", { tool });
+export function getHarnessState(tool: ToolId, runtimeTarget?: RuntimeTarget): Promise<HarnessState> {
+  return call("harness_state", { tool, runtimeTarget });
 }
 
 /** Take the prompt live on the machine into the library, so it can be edited. */
-export function adoptLivePrompt(input: { tool: ToolId; title: string }): Promise<PromptDetail> {
+export function adoptLivePrompt(input: { tool: ToolId; title: string; runtimeTarget?: RuntimeTarget }): Promise<PromptDetail> {
   return call("adopt_live_prompt", input);
 }
 
 /** Grok only: put the managed lines of a drifted config back. Preview first, then confirm. */
-export function planReconcile(tool: ToolId): Promise<PlanResult> {
-  return call("plan_reconcile", { tool });
+export function planReconcile(tool: ToolId, runtimeTarget?: RuntimeTarget): Promise<PlanResult> {
+  return call("plan_reconcile", { tool, runtimeTarget });
 }
 
 export function confirmReconcile(operationId: string): Promise<PlanResult> {
   return call("confirm_reconcile", { operationId });
 }
 
-export function removeHarness(tool: ToolId): Promise<HarnessOutcome> {
-  return call("remove_harness", { tool });
+export function removeHarness(tool: ToolId, runtimeTarget?: RuntimeTarget): Promise<HarnessOutcome> {
+  return call("remove_harness", { tool, runtimeTarget });
 }
 
 export function recoverTool(input: {
   tool: ToolId;
   scope?: ScopeId;
   projectDir?: string;
+  runtimeTarget?: RuntimeTarget;
 }): Promise<PlanResult> {
   return call("recover_tool", input);
 }
@@ -234,16 +245,16 @@ export function confirmRecover(operationId: string): Promise<PlanResult> {
   return call("confirm_recover", { operationId });
 }
 
-export function doctor(tool: ToolId): Promise<Envelope> {
-  return call("doctor", { tool });
+export function doctor(tool: ToolId, runtimeTarget?: RuntimeTarget): Promise<Envelope> {
+  return call("doctor", { tool, runtimeTarget });
 }
 
-export function listActivations(tool: ToolId): Promise<{ activations: Activation[] }> {
-  return call("list_activations", { tool });
+export function listActivations(tool: ToolId, runtimeTarget?: RuntimeTarget): Promise<{ activations: Activation[] }> {
+  return call("list_activations", { tool, runtimeTarget });
 }
 
-export function listOperations(tool?: ToolId): Promise<{ operations: Operation[] }> {
-  return call("list_operations", tool ? { tool } : {});
+export function listOperations(tool?: ToolId, runtimeTarget?: RuntimeTarget): Promise<{ operations: Operation[] }> {
+  return call("list_operations", tool ? { tool, runtimeTarget } : {});
 }
 
 export function getSettings(): Promise<Settings> {

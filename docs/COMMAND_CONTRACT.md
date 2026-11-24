@@ -1,6 +1,6 @@
 # Keysmith Switch command contract
 
-前后端与测试共用。契约版本 `0.1.0`。envelope schema 固定为 `keysmith-switch/adapter-v1`。
+前后端与测试共用。契约版本 `0.2.0`。envelope schema 固定为 `keysmith-switch/adapter-v1`。
 
 ## Tools
 
@@ -48,6 +48,22 @@
 
 `status` 取值：`not-installed` | `inactive` | `active` | `drift` | `conflict` | `recovery-required` | `unavailable`
 
+## Runtime targets
+
+```ts
+type RuntimeTarget =
+  | { kind: "native" }
+  | { kind: "wsl"; distribution: string };
+```
+
+- 运行时按 Agent 单独保存。省略 `runtimeTarget` 等同 `{ kind: "native" }`，保持旧客户端兼容。
+- 提示词正文和版本库跨运行时共享；激活状态、机器状态、操作历史和前端机器状态缓存按运行时隔离。
+- Windows 枚举已注册的具体发行版，过滤 `docker-desktop*` 并将 WSL1 标记为不可用。执行 WSL 操作时会检查 `python3`，缺失则明确报错，应用不自动安装 Python。
+- WSL 支持 status、preview、deploy、deactivate、doctor、recover、reconcile 和采用机器上的提示词。清理/回滚、组件、官方安装和输入替换仅限本机运行时。
+- ZCode 适配器不支持 Linux，选择 WSL 时不可用。
+- Claude 的 WSL project/local 路径可使用目标发行版内的 Linux 绝对路径，或匹配该发行版的 `\\wsl.localhost\...` / `\\wsl$\...` UNC 路径。
+- `activate`、`deactivate`、`confirm_recover` 和 `confirm_reconcile` 从数据库中的预览请求恢复运行时，不接受新的运行时目标。
+
 ## Tauri commands
 
 参数/返回均为 camelCase JSON。
@@ -55,7 +71,8 @@
 | command | 入参 | 返回 |
 | --- | --- | --- |
 | `list_tools` | `{}` | `{ tools: ToolInfo[] }` |
-| `list_prompts` | `{ tool, query?, tag?, sort? }` | `{ prompts: PromptSummary[] }` |
+| `list_runtimes` | `{}` | `{ runtimes: RuntimeInfo[] }` |
+| `list_prompts` | `{ tool, query?, tag?, sort?, runtimeTarget? }` | `{ prompts: PromptSummary[] }` |
 | `get_prompt` | `{ id }` | `PromptDetail` |
 | `create_prompt` | `{ tool, title, content, tags }` | `PromptDetail` |
 | `create_pasted_prompt` | `{ tool, title, content }` | `PromptDetail`（新内容存入库并标记 `pasted`；同 Agent 同正文复用既有条目，返回其原有标题与标签） |
@@ -65,17 +82,19 @@
 | `prompt_history` | `{ id }` | `{ versions: PromptVersion[] }` |
 | `prompt_diff` | `{ id, fromVersion, toVersion }` | `{ unified, summary }` |
 | `restore_prompt_version` | `{ id, version }` | `PromptDetail` |
-| `tool_status` | `{ tool, scope?, projectDir? }` | `Envelope` |
-| `plan_activate` | `{ promptId, scope, projectDir? }` | `{ operationId, envelope }` |
+| `tool_status` | `{ tool, scope?, projectDir?, runtimeTarget? }` | `Envelope` |
+| `plan_activate` | `{ promptId, scope, projectDir?, runtimeTarget? }` | `{ operationId, envelope }` |
 | `activate` | `{ operationId }` | `{ operationId, envelope }` |
-| `plan_deactivate` | `{ promptId?, tool, scope, projectDir? }` | `{ operationId, envelope }` |
+| `plan_deactivate` | `{ promptId?, tool, scope, projectDir?, runtimeTarget? }` | `{ operationId, envelope }` |
 | `deactivate` | `{ operationId }` | `{ operationId, envelope }` |
-| `harness_state` | `{ tool }` | `{ tool, deployed, error, promptId?, promptTitle? }`（`promptId`/`promptTitle` 仅在已部署且能在库中识别时返回） |
-| `remove_harness` | `{ tool }` | `HarnessOutcome` |
-| `recover_tool` | `{ tool, scope?, projectDir? }` | `{ operationId, envelope }` |
-| `doctor` | `{ tool }` | `Envelope` |
-| `list_activations` | `{ tool }` | `{ activations: Activation[] }` |
-| `list_operations` | `{ tool? }` | `{ operations: Operation[] }` |
+| `harness_state` | `{ tool, runtimeTarget? }` | `{ tool, deployed, error, promptId?, promptTitle? }`（`promptId`/`promptTitle` 仅在已部署且能在库中识别时返回） |
+| `adopt_live_prompt` | `{ tool, title, runtimeTarget? }` | `PromptDetail` |
+| `remove_harness` | `{ tool, runtimeTarget? }` | `HarnessOutcome` |
+| `plan_reconcile` | `{ tool, runtimeTarget? }` | `{ operationId, envelope }` |
+| `recover_tool` | `{ tool, scope?, projectDir?, runtimeTarget? }` | `{ operationId, envelope }` |
+| `doctor` | `{ tool, runtimeTarget? }` | `Envelope` |
+| `list_activations` | `{ tool, runtimeTarget? }` | `{ activations: Activation[] }` |
+| `list_operations` | `{ tool?, runtimeTarget? }` | `{ operations: Operation[] }`；指定 `tool` 而省略目标时只返回本机历史，不指定 `tool` 时返回全局历史 |
 | `get_settings` | `{}` | `Settings` |
 | `update_settings` | `SettingsPatch` | `Settings` |
 | `get_about` | `{}` | `AboutInfo` |
@@ -98,6 +117,7 @@
   defaultClaudeScope: "user" | "project" | "local";
   recentProjectDirs: string[];
   updaterEndpointOverride: string | null; // 仅本地 fixture
+  agentRuntimeTargets: Partial<Record<ToolId, RuntimeTarget>>;
 }
 ```
 

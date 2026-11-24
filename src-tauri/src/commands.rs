@@ -12,8 +12,8 @@ use crate::db::Store;
 use crate::error::{Error, Result};
 use crate::harness::{self, HarnessOutcome, HarnessState};
 use crate::models::{
-    CreatePromptInput, PlanActivateInput, PlanDeactivateInput, PromptSort, Scope, Settings,
-    SettingsPatch, ToolKind, ToolStatus, UpdatePromptInput, APP_VERSION,
+    CreatePromptInput, PlanActivateInput, PlanDeactivateInput, PromptSort, RuntimeTarget, Scope,
+    Settings, SettingsPatch, ToolKind, ToolStatus, UpdatePromptInput, APP_VERSION,
 };
 use crate::official::{
     confirm_official_action_cancellable as official_confirm, plan_official_action as official_plan,
@@ -55,6 +55,13 @@ fn opts() -> AdapterOptions {
         }
     }
     opts
+}
+
+fn opts_for(runtime_target: Option<RuntimeTarget>) -> AdapterOptions {
+    AdapterOptions {
+        runtime_target: runtime_target.unwrap_or_default(),
+        ..opts()
+    }
 }
 
 fn parse_sort(raw: Option<&str>) -> PromptSort {
@@ -251,6 +258,7 @@ pub struct UiActivation {
     pub prompt_id: String,
     pub prompt_title: Option<String>,
     pub scope: Scope,
+    pub runtime_target: RuntimeTarget,
     pub project_dir: Option<String>,
     pub active: bool,
     pub created_at: String,
@@ -264,6 +272,7 @@ pub struct UiOperation {
     pub tool: ToolKind,
     pub kind: String,
     pub status: String,
+    pub runtime_target: RuntimeTarget,
     pub error: Option<String>,
     pub created_at: String,
     pub recover_available: bool,
@@ -333,8 +342,9 @@ fn summarize_prompt(
     prompt: &crate::models::PromptSummary,
     content: Option<&str>,
     locked: bool,
+    runtime_target: &RuntimeTarget,
 ) -> Result<UiPromptSummary> {
-    let activations = store.list_activations(prompt.tool)?;
+    let activations = store.list_activations_for_runtime(prompt.tool, runtime_target)?;
     let hit = activations.iter().find(|item| {
         item.prompt_id.as_deref() == Some(prompt.id.as_str()) && item.status == ToolStatus::Active
     });
@@ -370,7 +380,13 @@ fn detail_from_store(store: &Store, id: &str) -> Result<UiPromptDetail> {
     };
     let locked = crate::extensions::is_hidden_prompt(store, id);
     Ok(UiPromptDetail {
-        summary: summarize_prompt(store, &summary, Some(&prompt.content), locked)?,
+        summary: summarize_prompt(
+            store,
+            &summary,
+            Some(&prompt.content),
+            locked,
+            &RuntimeTarget::Native,
+        )?,
         // The text of a pack prompt stays in the backend; it is what gets deployed, not shown.
         content: if locked {
             String::new()
@@ -405,6 +421,11 @@ pub fn list_tools() -> Result<serde_json::Value> {
     Ok(serde_json::json!({ "tools": tools }))
 }
 
+#[tauri::command]
+pub async fn list_runtimes() -> Result<serde_json::Value> {
+    Ok(serde_json::json!({ "runtimes": crate::runtime::list().await? }))
+}
+
 #[tauri::command(rename_all = "camelCase")]
 pub fn list_prompts(
     state: State<'_, AppState>,
@@ -412,9 +433,11 @@ pub fn list_prompts(
     query: Option<String>,
     tag: Option<String>,
     sort: Option<String>,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<serde_json::Value> {
     let tool = parse_tool(&tool)?;
     let sort = parse_sort(sort.as_deref());
+    let runtime_target = runtime_target.unwrap_or_default();
     let items = state
         .store
         .list_prompts(tool, query.as_deref(), tag.as_deref(), sort)?;
@@ -437,6 +460,7 @@ pub fn list_prompts(
             &item,
             content.as_deref(),
             locked,
+            &runtime_target,
         )?);
     }
     Ok(serde_json::json!({ "prompts": prompts }))
@@ -564,13 +588,15 @@ pub async fn tool_status(
     tool: String,
     scope: Option<String>,
     project_dir: Option<String>,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<UiEnvelope> {
+    let runtime_opts = opts_for(runtime_target);
     let envelope = ops::tool_status(
         &state.store,
         parse_tool(&tool)?,
         parse_scope(scope.as_deref())?,
         project_dir.map(PathBuf::from),
-        &opts(),
+        &runtime_opts,
     )
     .await?;
     Ok(envelope.into())
@@ -585,7 +611,9 @@ pub async fn plan_activate(
     runtime: Option<bool>,
     append_file: Option<String>,
     max_tokens: Option<u64>,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<UiPlanResult> {
+    let runtime_opts = opts_for(runtime_target.clone());
     let result = ops::plan_activate(
         &state.store,
         PlanActivateInput {
@@ -596,7 +624,7 @@ pub async fn plan_activate(
             append_file: append_file.map(PathBuf::from),
             max_tokens,
         },
-        &opts(),
+        &runtime_opts,
     )
     .await?;
     Ok(map_plan(result))
@@ -616,7 +644,9 @@ pub async fn plan_deactivate(
     scope: String,
     project_dir: Option<String>,
     salvage_config: Option<bool>,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<UiPlanResult> {
+    let runtime_opts = opts_for(runtime_target.clone());
     let result = ops::plan_deactivate(
         &state.store,
         PlanDeactivateInput {
@@ -626,7 +656,7 @@ pub async fn plan_deactivate(
             project_dir: project_dir.map(PathBuf::from),
             salvage_config: salvage_config.unwrap_or(false),
         },
-        &opts(),
+        &runtime_opts,
     )
     .await?;
     Ok(map_plan(result))
@@ -639,8 +669,12 @@ pub async fn deactivate(state: State<'_, AppState>, operation_id: String) -> Res
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub async fn harness_state(state: State<'_, AppState>, tool: String) -> Result<HarnessState> {
-    harness::harness_state(&state.store, parse_tool(&tool)?, &opts()).await
+pub async fn harness_state(
+    state: State<'_, AppState>,
+    tool: String,
+    runtime_target: Option<RuntimeTarget>,
+) -> Result<HarnessState> {
+    harness::harness_state(&state.store, parse_tool(&tool)?, &opts_for(runtime_target)).await
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -648,20 +682,31 @@ pub async fn adopt_live_prompt(
     state: State<'_, AppState>,
     tool: String,
     title: String,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<UiPromptDetail> {
     let tool = parse_tool(&tool)?;
-    let id = harness::adopt_live_prompt(&state.store, tool, &title, &opts()).await?;
+    let id =
+        harness::adopt_live_prompt(&state.store, tool, &title, &opts_for(runtime_target)).await?;
     detail_from_store(&state.store, &id)
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub async fn remove_harness(state: State<'_, AppState>, tool: String) -> Result<HarnessOutcome> {
-    harness::remove_harness(&state.store, parse_tool(&tool)?, &opts()).await
+pub async fn remove_harness(
+    state: State<'_, AppState>,
+    tool: String,
+    runtime_target: Option<RuntimeTarget>,
+) -> Result<HarnessOutcome> {
+    harness::remove_harness(&state.store, parse_tool(&tool)?, &opts_for(runtime_target)).await
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub async fn plan_reconcile(state: State<'_, AppState>, tool: String) -> Result<UiPlanResult> {
-    let result = ops::plan_reconcile(&state.store, parse_tool(&tool)?, &opts()).await?;
+pub async fn plan_reconcile(
+    state: State<'_, AppState>,
+    tool: String,
+    runtime_target: Option<RuntimeTarget>,
+) -> Result<UiPlanResult> {
+    let result =
+        ops::plan_reconcile(&state.store, parse_tool(&tool)?, &opts_for(runtime_target)).await?;
     Ok(map_plan(result))
 }
 
@@ -733,13 +778,15 @@ pub async fn recover_tool(
     tool: String,
     scope: Option<String>,
     project_dir: Option<String>,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<UiPlanResult> {
+    let runtime_opts = opts_for(runtime_target);
     let result = ops::plan_recover(
         &state.store,
         parse_tool(&tool)?,
         parse_scope(scope.as_deref())?,
         project_dir.map(PathBuf::from),
-        &opts(),
+        &runtime_opts,
     )
     .await?;
     Ok(map_plan(result))
@@ -755,16 +802,24 @@ pub async fn confirm_recover(
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub async fn doctor(tool: String) -> Result<UiEnvelope> {
-    let envelope = ops::doctor_tool(parse_tool(&tool)?, &opts()).await?;
+pub async fn doctor(tool: String, runtime_target: Option<RuntimeTarget>) -> Result<UiEnvelope> {
+    let envelope = ops::doctor_tool(parse_tool(&tool)?, &opts_for(runtime_target)).await?;
     Ok(envelope.into())
 }
 
 #[tauri::command(rename_all = "camelCase")]
-pub fn list_activations(state: State<'_, AppState>, tool: String) -> Result<serde_json::Value> {
+pub fn list_activations(
+    state: State<'_, AppState>,
+    tool: String,
+    runtime_target: Option<RuntimeTarget>,
+) -> Result<serde_json::Value> {
     let tool = parse_tool(&tool)?;
+    let runtime_target = runtime_target.unwrap_or_default();
     let mut activations = Vec::new();
-    for item in state.store.list_activations(tool)? {
+    for item in state
+        .store
+        .list_activations_for_runtime(tool, &runtime_target)?
+    {
         let prompt_title = item
             .prompt_id
             .as_deref()
@@ -776,6 +831,7 @@ pub fn list_activations(state: State<'_, AppState>, tool: String) -> Result<serd
             prompt_id: item.prompt_id.unwrap_or_default(),
             prompt_title,
             scope: item.scope,
+            runtime_target: item.runtime_target,
             project_dir: item.project_dir,
             active: item.status == ToolStatus::Active,
             created_at: item.created_at,
@@ -789,11 +845,16 @@ pub fn list_activations(state: State<'_, AppState>, tool: String) -> Result<serd
 pub fn list_operations(
     state: State<'_, AppState>,
     tool: Option<String>,
+    runtime_target: Option<RuntimeTarget>,
 ) -> Result<serde_json::Value> {
     let tool = tool.as_deref().map(parse_tool).transpose()?;
-    let operations = state
-        .store
-        .list_operations(tool)?
+    let items = match tool {
+        Some(tool) => state
+            .store
+            .list_operations_for_runtime(tool, &runtime_target.unwrap_or_default())?,
+        None => state.store.list_operations(None)?,
+    };
+    let operations = items
         .into_iter()
         .map(|item| UiOperation {
             recover_available: item.kind == crate::models::OperationKind::Recover
@@ -802,6 +863,7 @@ pub fn list_operations(
             tool: item.tool,
             kind: item.kind.as_str().to_string(),
             status: item.status.as_str().to_string(),
+            runtime_target: item.runtime_target,
             error: item.error,
             created_at: item.created_at,
         })
@@ -832,6 +894,7 @@ pub fn update_settings(
     rewrite_claude_enabled: Option<bool>,
     rewrite_grok_enabled: Option<bool>,
     rewrite_zcode_enabled: Option<bool>,
+    agent_runtime_targets: Option<std::collections::HashMap<ToolKind, RuntimeTarget>>,
 ) -> Result<Settings> {
     let settings = state.store.update_settings(SettingsPatch {
         language,
@@ -849,6 +912,7 @@ pub fn update_settings(
         rewrite_claude_enabled,
         rewrite_grok_enabled,
         rewrite_zcode_enabled,
+        agent_runtime_targets,
     })?;
     if rewrite_enabled.is_some()
         || rewrite_codex_enabled.is_some()

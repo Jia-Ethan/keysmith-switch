@@ -1,7 +1,10 @@
 use keysmith_switch_lib::db::markdown::{parse_markdown, render_markdown, FrontMatter};
 use keysmith_switch_lib::db::schema::SCHEMA_VERSION;
 use keysmith_switch_lib::db::Store;
-use keysmith_switch_lib::models::ToolKind;
+use keysmith_switch_lib::models::{
+    Activation, Operation, OperationKind, OperationStatus, RuntimeTarget, Scope, SettingsPatch,
+    ToolKind, ToolStatus,
+};
 use keysmith_switch_lib::paths::{atomic_write, AppPaths};
 
 fn write_sample(paths: &AppPaths, id: &str, tool: ToolKind, title: &str, body: &str) {
@@ -54,6 +57,172 @@ fn sqlite_backup_db_writes_copy() {
     let store = Store::open(&paths).unwrap();
     let dest = store.backup_db("manual").unwrap();
     assert!(dest.is_file());
+}
+
+#[test]
+fn activations_are_isolated_by_runtime_target() {
+    let (_tmp, paths) = AppPaths::in_temp_dir().unwrap();
+    let store = Store::open(&paths).unwrap();
+    let activation = |id: &str, runtime_target: RuntimeTarget| Activation {
+        id: id.into(),
+        prompt_id: Some(format!("prompt-{id}")),
+        tool: ToolKind::Codex,
+        scope: Scope::User,
+        runtime_target,
+        project_dir: None,
+        status: ToolStatus::Active,
+        fingerprint: None,
+        operation_id: None,
+        created_at: "2026-11-24T00:00:00Z".into(),
+        updated_at: "2026-11-24T00:00:00Z".into(),
+    };
+    let native = activation("native", RuntimeTarget::Native);
+    let ubuntu = activation(
+        "ubuntu",
+        RuntimeTarget::Wsl {
+            distribution: "Ubuntu-24.04".into(),
+        },
+    );
+    store.upsert_activation(&native).unwrap();
+    store.upsert_activation(&ubuntu).unwrap();
+
+    assert_eq!(
+        store
+            .list_activations_for_runtime(ToolKind::Codex, &RuntimeTarget::Native)
+            .unwrap(),
+        vec![native]
+    );
+    assert_eq!(
+        store
+            .list_activations_for_runtime(
+                ToolKind::Codex,
+                &RuntimeTarget::Wsl {
+                    distribution: "Ubuntu-24.04".into(),
+                },
+            )
+            .unwrap(),
+        vec![ubuntu]
+    );
+}
+
+#[test]
+fn operations_and_settings_are_isolated_by_runtime_target() {
+    let (_tmp, paths) = AppPaths::in_temp_dir().unwrap();
+    let store = Store::open(&paths).unwrap();
+    let operation = |id: &str, runtime_target: RuntimeTarget| Operation {
+        id: id.into(),
+        tool: ToolKind::Codex,
+        kind: OperationKind::PlanActivate,
+        status: OperationStatus::Preview,
+        preview: true,
+        runtime_target,
+        prompt_id: None,
+        scope: Some(Scope::User),
+        project_dir: None,
+        request_json: "{}".into(),
+        envelope_json: None,
+        error: None,
+        parent_id: None,
+        created_at: "2026-11-24T00:00:00Z".into(),
+        updated_at: "2026-11-24T00:00:00Z".into(),
+    };
+    let native = operation("native-op", RuntimeTarget::Native);
+    let ubuntu_target = RuntimeTarget::Wsl {
+        distribution: "Ubuntu-24.04".into(),
+    };
+    let ubuntu = operation("ubuntu-op", ubuntu_target.clone());
+    store.insert_operation(&native).unwrap();
+    store.insert_operation(&ubuntu).unwrap();
+
+    assert_eq!(
+        store
+            .list_operations_for_runtime(ToolKind::Codex, &RuntimeTarget::Native)
+            .unwrap(),
+        vec![native]
+    );
+    assert_eq!(
+        store
+            .list_operations_for_runtime(ToolKind::Codex, &ubuntu_target)
+            .unwrap(),
+        vec![ubuntu]
+    );
+
+    let mut targets = std::collections::HashMap::new();
+    targets.insert(ToolKind::Codex, ubuntu_target.clone());
+    store
+        .update_settings(SettingsPatch {
+            agent_runtime_targets: Some(targets),
+            ..SettingsPatch::default()
+        })
+        .unwrap();
+    drop(store);
+
+    let reopened = Store::open(&paths).unwrap();
+    assert_eq!(
+        reopened
+            .get_settings()
+            .unwrap()
+            .agent_runtime_targets
+            .get(&ToolKind::Codex),
+        Some(&ubuntu_target)
+    );
+}
+
+#[test]
+fn schema_v4_rows_migrate_to_native_runtime() {
+    let (_tmp, paths) = AppPaths::in_temp_dir().unwrap();
+    let store = Store::open(&paths).unwrap();
+    let activation = Activation {
+        id: "legacy".into(),
+        prompt_id: None,
+        tool: ToolKind::Codex,
+        scope: Scope::User,
+        runtime_target: RuntimeTarget::Native,
+        project_dir: None,
+        status: ToolStatus::Active,
+        fingerprint: None,
+        operation_id: None,
+        created_at: "2026-11-24T00:00:00Z".into(),
+        updated_at: "2026-11-24T00:00:00Z".into(),
+    };
+    store.upsert_activation(&activation).unwrap();
+    drop(store);
+
+    let conn = rusqlite::Connection::open(&paths.db).unwrap();
+    conn.execute_batch(
+        "ALTER TABLE activations DROP COLUMN runtime_target;
+         ALTER TABLE operations DROP COLUMN runtime_target;
+         DROP TABLE tool_state;
+         CREATE TABLE tool_state (
+             tool TEXT NOT NULL,
+             scope TEXT NOT NULL,
+             project_dir TEXT NOT NULL DEFAULT '',
+             status TEXT,
+             fingerprint TEXT,
+             last_operation_id TEXT,
+             last_checked_at TEXT,
+             PRIMARY KEY (tool, scope, project_dir)
+         );
+         DELETE FROM schema_migrations WHERE version = 5;",
+    )
+    .unwrap();
+    drop(conn);
+
+    let migrated = Store::open(&paths).unwrap();
+    assert_eq!(migrated.schema_version().unwrap(), SCHEMA_VERSION);
+    assert_eq!(
+        migrated
+            .find_activation_for_runtime(
+                ToolKind::Codex,
+                &RuntimeTarget::Native,
+                Scope::User,
+                None,
+            )
+            .unwrap()
+            .unwrap()
+            .id,
+        "legacy"
+    );
 }
 
 #[test]

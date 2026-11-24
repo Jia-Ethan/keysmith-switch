@@ -12,8 +12,8 @@ use walkdir::WalkDir;
 use crate::error::{Error, Result};
 use crate::models::{
     now_rfc3339, Activation, Operation, OperationKind, OperationStatus, PromptDetail, PromptSort,
-    PromptSummary, PromptVersion, RebuildReport, Scope, Settings, SettingsPatch, ToolKind,
-    ToolStatus,
+    PromptSummary, PromptVersion, RebuildReport, RuntimeTarget, Scope, Settings, SettingsPatch,
+    ToolKind, ToolStatus,
 };
 use crate::paths::{atomic_write, AppPaths};
 use crate::redact::redact_text;
@@ -547,9 +547,9 @@ impl Store {
         let conn = self.conn()?;
         conn.execute(
             "INSERT INTO operations (
-                id, tool, kind, status, preview, prompt_id, scope, project_dir,
+                id, tool, kind, status, preview, prompt_id, scope, project_dir, runtime_target,
                 request_json, envelope_json, error, parent_id, created_at, updated_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
             params![
                 operation.id,
                 operation.tool.as_str(),
@@ -559,6 +559,7 @@ impl Store {
                 operation.prompt_id,
                 operation.scope.map(|scope| scope.as_str().to_string()),
                 operation.project_dir,
+                operation.runtime_target.storage_key(),
                 redact_text(&operation.request_json),
                 operation.envelope_json.as_deref().map(redact_text),
                 operation.error.as_deref().map(redact_text),
@@ -596,7 +597,7 @@ impl Store {
     pub fn get_operation(&self, id: &str) -> Result<Option<Operation>> {
         let conn = self.conn()?;
         conn.query_row(
-            "SELECT id, tool, kind, status, preview, prompt_id, scope, project_dir,
+            "SELECT id, tool, kind, status, preview, prompt_id, scope, project_dir, runtime_target,
                     request_json, envelope_json, error, parent_id, created_at, updated_at
              FROM operations WHERE id = ?1",
             params![id],
@@ -610,7 +611,7 @@ impl Store {
         let conn = self.conn()?;
         if let Some(tool) = tool {
             let mut stmt = conn.prepare(
-                "SELECT id, tool, kind, status, preview, prompt_id, scope, project_dir,
+                "SELECT id, tool, kind, status, preview, prompt_id, scope, project_dir, runtime_target,
                         request_json, envelope_json, error, parent_id, created_at, updated_at
                  FROM operations WHERE tool = ?1 ORDER BY created_at DESC",
             )?;
@@ -620,11 +621,30 @@ impl Store {
                 .map_err(Error::from);
         }
         let mut stmt = conn.prepare(
-            "SELECT id, tool, kind, status, preview, prompt_id, scope, project_dir,
+            "SELECT id, tool, kind, status, preview, prompt_id, scope, project_dir, runtime_target,
                     request_json, envelope_json, error, parent_id, created_at, updated_at
              FROM operations ORDER BY created_at DESC",
         )?;
         let rows = stmt.query_map([], map_operation)?;
+        rows.collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(Error::from)
+    }
+
+    pub fn list_operations_for_runtime(
+        &self,
+        tool: ToolKind,
+        runtime_target: &RuntimeTarget,
+    ) -> Result<Vec<Operation>> {
+        let conn = self.conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, tool, kind, status, preview, prompt_id, scope, project_dir, runtime_target,
+                    request_json, envelope_json, error, parent_id, created_at, updated_at
+             FROM operations WHERE tool = ?1 AND runtime_target = ?2 ORDER BY created_at DESC",
+        )?;
+        let rows = stmt.query_map(
+            params![tool.as_str(), runtime_target.storage_key()],
+            map_operation,
+        )?;
         rows.collect::<std::result::Result<Vec<_>, _>>()
             .map_err(Error::from)
     }
@@ -634,8 +654,8 @@ impl Store {
         let project_dir = activation.project_dir.clone().unwrap_or_default();
         conn.execute(
             "INSERT INTO activations (
-                id, prompt_id, tool, scope, project_dir, status, fingerprint, operation_id, created_at, updated_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                id, prompt_id, tool, scope, project_dir, runtime_target, status, fingerprint, operation_id, created_at, updated_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
              ON CONFLICT(id) DO UPDATE SET
                 prompt_id = excluded.prompt_id,
                 status = excluded.status,
@@ -648,6 +668,7 @@ impl Store {
                 activation.tool.as_str(),
                 activation.scope.as_str(),
                 project_dir,
+                activation.runtime_target.storage_key(),
                 activation.status.as_str(),
                 activation.fingerprint,
                 activation.operation_id,
@@ -664,14 +685,24 @@ impl Store {
         scope: Scope,
         project_dir: Option<&str>,
     ) -> Result<Option<Activation>> {
+        self.find_activation_for_runtime(tool, &RuntimeTarget::Native, scope, project_dir)
+    }
+
+    pub fn find_activation_for_runtime(
+        &self,
+        tool: ToolKind,
+        runtime_target: &RuntimeTarget,
+        scope: Scope,
+        project_dir: Option<&str>,
+    ) -> Result<Option<Activation>> {
         let conn = self.conn()?;
         let project_dir = project_dir.unwrap_or("");
         conn.query_row(
-            "SELECT id, prompt_id, tool, scope, project_dir, status, fingerprint, operation_id, created_at, updated_at
+            "SELECT id, prompt_id, tool, scope, project_dir, runtime_target, status, fingerprint, operation_id, created_at, updated_at
              FROM activations
-             WHERE tool = ?1 AND scope = ?2 AND project_dir = ?3
+             WHERE tool = ?1 AND runtime_target = ?2 AND scope = ?3 AND project_dir = ?4
              ORDER BY updated_at DESC LIMIT 1",
-            params![tool.as_str(), scope.as_str(), project_dir],
+            params![tool.as_str(), runtime_target.storage_key(), scope.as_str(), project_dir],
             map_activation,
         )
         .optional()
@@ -681,7 +712,7 @@ impl Store {
     pub fn list_activations(&self, tool: ToolKind) -> Result<Vec<Activation>> {
         let conn = self.conn()?;
         let mut stmt = conn.prepare(
-            "SELECT id, prompt_id, tool, scope, project_dir, status, fingerprint, operation_id, created_at, updated_at
+            "SELECT id, prompt_id, tool, scope, project_dir, runtime_target, status, fingerprint, operation_id, created_at, updated_at
              FROM activations WHERE tool = ?1 ORDER BY updated_at DESC",
         )?;
         let rows = stmt.query_map(params![tool.as_str()], map_activation)?;
@@ -689,9 +720,28 @@ impl Store {
             .map_err(Error::from)
     }
 
+    pub fn list_activations_for_runtime(
+        &self,
+        tool: ToolKind,
+        runtime_target: &RuntimeTarget,
+    ) -> Result<Vec<Activation>> {
+        let conn = self.conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT id, prompt_id, tool, scope, project_dir, runtime_target, status, fingerprint, operation_id, created_at, updated_at
+             FROM activations WHERE tool = ?1 AND runtime_target = ?2 ORDER BY updated_at DESC",
+        )?;
+        let rows = stmt.query_map(
+            params![tool.as_str(), runtime_target.storage_key()],
+            map_activation,
+        )?;
+        rows.collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(Error::from)
+    }
+
     pub fn upsert_tool_state(
         &self,
         tool: ToolKind,
+        runtime_target: &RuntimeTarget,
         scope: Scope,
         project_dir: Option<&str>,
         status: ToolStatus,
@@ -701,15 +751,16 @@ impl Store {
         let conn = self.conn()?;
         let project_dir = project_dir.unwrap_or("");
         conn.execute(
-            "INSERT INTO tool_state (tool, scope, project_dir, status, fingerprint, last_operation_id, last_checked_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-             ON CONFLICT(tool, scope, project_dir) DO UPDATE SET
+            "INSERT INTO tool_state (tool, runtime_target, scope, project_dir, status, fingerprint, last_operation_id, last_checked_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(tool, runtime_target, scope, project_dir) DO UPDATE SET
                 status = excluded.status,
                 fingerprint = excluded.fingerprint,
                 last_operation_id = excluded.last_operation_id,
                 last_checked_at = excluded.last_checked_at",
             params![
                 tool.as_str(),
+                runtime_target.storage_key(),
                 scope.as_str(),
                 project_dir,
                 status.as_str(),
@@ -774,6 +825,9 @@ impl Store {
         }
         if let Some(value) = patch.rewrite_zcode_enabled {
             settings.rewrite_zcode_enabled = value;
+        }
+        if let Some(value) = patch.agent_runtime_targets {
+            settings.agent_runtime_targets = value;
         }
         write_settings(&conn, &settings)?;
         Ok(settings)
@@ -1137,6 +1191,10 @@ fn write_settings(conn: &Connection, settings: &Settings) -> Result<()> {
             "rewriteZcodeEnabled",
             settings.rewrite_zcode_enabled.to_string(),
         ),
+        (
+            "agentRuntimeTargets",
+            serde_json::to_string(&settings.agent_runtime_targets)?,
+        ),
     ];
     for (key, value) in pairs {
         conn.execute(
@@ -1185,6 +1243,11 @@ fn apply_setting(settings: &mut Settings, key: &str, value: &str) {
         "rewriteClaudeEnabled" => settings.rewrite_claude_enabled = truthy(value),
         "rewriteGrokEnabled" => settings.rewrite_grok_enabled = truthy(value),
         "rewriteZcodeEnabled" => settings.rewrite_zcode_enabled = truthy(value),
+        "agentRuntimeTargets" => {
+            if let Ok(targets) = serde_json::from_str(value) {
+                settings.agent_runtime_targets = targets;
+            }
+        }
         _ => {}
     }
 }
@@ -1231,6 +1294,11 @@ fn parse_tool_status(raw: String) -> std::result::Result<ToolStatus, rusqlite::E
         .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))
 }
 
+fn parse_runtime(raw: String) -> std::result::Result<RuntimeTarget, rusqlite::Error> {
+    RuntimeTarget::from_storage_key(&raw)
+        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))
+}
+
 fn map_operation(row: &rusqlite::Row<'_>) -> rusqlite::Result<Operation> {
     Ok(Operation {
         id: row.get(0)?,
@@ -1241,12 +1309,13 @@ fn map_operation(row: &rusqlite::Row<'_>) -> rusqlite::Result<Operation> {
         prompt_id: row.get(5)?,
         scope: parse_scope_opt(row.get(6)?)?,
         project_dir: row.get(7)?,
-        request_json: row.get(8)?,
-        envelope_json: row.get(9)?,
-        error: row.get(10)?,
-        parent_id: row.get(11)?,
-        created_at: row.get(12)?,
-        updated_at: row.get(13)?,
+        runtime_target: parse_runtime(row.get(8)?)?,
+        request_json: row.get(9)?,
+        envelope_json: row.get(10)?,
+        error: row.get(11)?,
+        parent_id: row.get(12)?,
+        created_at: row.get(13)?,
+        updated_at: row.get(14)?,
     })
 }
 
@@ -1257,15 +1326,16 @@ fn map_activation(row: &rusqlite::Row<'_>) -> rusqlite::Result<Activation> {
         prompt_id: row.get(1)?,
         tool: parse_tool(row.get(2)?)?,
         scope: parse_scope_opt(Some(row.get(3)?))?.unwrap_or(Scope::User),
+        runtime_target: parse_runtime(row.get(5)?)?,
         project_dir: if project_dir.is_empty() {
             None
         } else {
             Some(project_dir)
         },
-        status: parse_tool_status(row.get(5)?)?,
-        fingerprint: row.get(6)?,
-        operation_id: row.get(7)?,
-        created_at: row.get(8)?,
-        updated_at: row.get(9)?,
+        status: parse_tool_status(row.get(6)?)?,
+        fingerprint: row.get(7)?,
+        operation_id: row.get(8)?,
+        created_at: row.get(9)?,
+        updated_at: row.get(10)?,
     })
 }

@@ -3,6 +3,15 @@
     "name": "Keysmith Switch",
     "workflow": "本机提示词工作流"
   },
+  "runtime": {
+    "label": "运行环境",
+    "native": "Windows 本机",
+    "unavailable": "不可用",
+    "missing": "该运行环境已不存在",
+    "saveFailed": "无法保存运行环境",
+    "wslScope": "此 Agent 的部署、停用和恢复操作将在所选 WSL2 发行版中执行；清理、组件、安装和输入替换仍仅支持 Windows 本机。",
+    "zcodeUnsupported": "ZCode 当前没有受支持的 Linux/WSL 运行时，请选择 Windows 本机。"
+  },
   "nav": {
     "claude": "Claude Code",
     "codex": "Codex",

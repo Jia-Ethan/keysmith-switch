@@ -7,7 +7,7 @@ use tokio::process::{Child, Command};
 use tokio::time::timeout;
 
 use crate::error::{Error, Result};
-use crate::models::ToolKind;
+use crate::models::{RuntimeTarget, ToolKind};
 use crate::redact::redact_text;
 
 use super::AdapterOptions;
@@ -29,10 +29,14 @@ pub struct ResolvedCli {
     pub program: PathBuf,
     pub prefix: Vec<String>,
     pub frozen: bool,
+    pub display_path: Option<String>,
 }
 
 impl ResolvedCli {
     pub fn cli_path(&self) -> String {
+        if let Some(path) = &self.display_path {
+            return path.clone();
+        }
         if self.frozen {
             self.program.to_string_lossy().into_owned()
         } else if let Some(script) = self.prefix.first() {
@@ -128,6 +132,35 @@ pub fn resolve_cli(tool: ToolKind, opts: &AdapterOptions) -> Result<ResolvedCli>
     )))
 }
 
+pub async fn resolve_cli_for_runtime(tool: ToolKind, opts: &AdapterOptions) -> Result<ResolvedCli> {
+    match &opts.runtime_target {
+        RuntimeTarget::Native => resolve_cli(tool, opts),
+        RuntimeTarget::Wsl { distribution } => {
+            crate::runtime::python_available(distribution).await?;
+            let script = find_vendored_script(tool).ok_or_else(|| {
+                Error::cli_missing(format!(
+                    "bundled {} adapter script is missing; reinstall Keysmith Switch",
+                    tool.as_str()
+                ))
+            })?;
+            let script = crate::runtime::translate_path(distribution, &script).await?;
+            let display_path = script.to_string_lossy().into_owned();
+            Ok(ResolvedCli {
+                program: crate::runtime::program(),
+                prefix: vec![
+                    "--distribution".into(),
+                    distribution.clone(),
+                    "--exec".into(),
+                    "python3".into(),
+                    display_path.clone(),
+                ],
+                frozen: false,
+                display_path: Some(display_path),
+            })
+        }
+    }
+}
+
 fn packaged_app() -> bool {
     if !cfg!(debug_assertions) {
         return true;
@@ -181,6 +214,7 @@ fn python_script(script: PathBuf) -> Result<ResolvedCli> {
         program: python,
         prefix: vec![script.to_string_lossy().into_owned()],
         frozen: false,
+        display_path: None,
     })
 }
 
@@ -189,6 +223,7 @@ fn frozen(program: PathBuf) -> ResolvedCli {
         program,
         prefix: Vec::new(),
         frozen: true,
+        display_path: None,
     }
 }
 
@@ -321,10 +356,12 @@ pub async fn invoke(
     command.kill_on_drop(true);
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
-    if let Some(home) = &opts.home {
-        command.env("HOME", home);
-        command.env("USERPROFILE", home);
-        command.env("CLAUDE_KEYSMITH_HOME", home);
+    if opts.runtime_target.is_native() {
+        if let Some(home) = &opts.home {
+            command.env("HOME", home);
+            command.env("USERPROFILE", home);
+            command.env("CLAUDE_KEYSMITH_HOME", home);
+        }
     }
     for (key, value) in &opts.extra_env {
         command.env(key, value);

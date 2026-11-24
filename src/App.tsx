@@ -135,6 +135,7 @@ export function App() {
           page={visiblePage}
           onNavigate={navigate}
           advancedEnabled={advancedEnabled}
+          runtimeTargets={settingsState.settings.agentRuntimeTargets}
           onOpenPalette={() => setPaletteOpen(true)}
         >
           {settingsState.error ? (
@@ -152,6 +153,7 @@ export function App() {
                 key={visiblePage.tool}
                 tool={visiblePage.tool}
                 settings={settingsState.settings}
+                onSettingsSave={settingsState.save}
                 toast={toast}
                 onNavigate={navigate}
                 onDirtyChange={setDirty}
@@ -165,6 +167,7 @@ export function App() {
               tool={visiblePage.tool}
               scope={visiblePage.scope}
               projectDir={visiblePage.projectDir}
+              runtimeTarget={settingsState.settings.agentRuntimeTargets[visiblePage.tool]}
               toast={toast}
               onClose={() => navigate({ kind: "tool", tool: visiblePage.tool })}
               onEdit={(detail: PromptDetail) =>
@@ -197,7 +200,10 @@ export function App() {
                 setDirty(false);
                 setLibraryEpoch((value) => value + 1);
                 // Saving does not touch the machine: say so when the edited prompt is the live one.
-                if (getHarnessStatus(visiblePage.tool)?.promptId === id) {
+                if (getHarnessStatus(
+                  visiblePage.tool,
+                  settingsState.settings.agentRuntimeTargets[visiblePage.tool],
+                )?.promptId === id) {
                   toast.info(t("prompts.savedRedeploy", { tool: t(`nav.${visiblePage.tool}`) }));
                 }
                 setPage({

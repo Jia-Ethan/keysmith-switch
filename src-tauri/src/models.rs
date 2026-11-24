@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -17,6 +18,43 @@ pub enum ToolKind {
     Zcode,
     Pi,
     Dsh,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum RuntimeTarget {
+    #[default]
+    Native,
+    Wsl {
+        distribution: String,
+    },
+}
+
+impl RuntimeTarget {
+    pub fn storage_key(&self) -> String {
+        match self {
+            Self::Native => "native".to_string(),
+            Self::Wsl { distribution } => format!("wsl:{distribution}"),
+        }
+    }
+
+    pub fn is_native(&self) -> bool {
+        matches!(self, Self::Native)
+    }
+
+    pub fn from_storage_key(value: &str) -> Result<Self> {
+        if value == "native" {
+            return Ok(Self::Native);
+        }
+        let distribution = value
+            .strip_prefix("wsl:")
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .ok_or_else(|| Error::invalid(format!("unknown runtime target: {value}")))?;
+        Ok(Self::Wsl {
+            distribution: distribution.to_string(),
+        })
+    }
 }
 
 impl ToolKind {
@@ -397,6 +435,8 @@ pub struct Activation {
     pub prompt_id: Option<String>,
     pub tool: ToolKind,
     pub scope: Scope,
+    #[serde(default)]
+    pub runtime_target: RuntimeTarget,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project_dir: Option<String>,
     pub status: ToolStatus,
@@ -416,6 +456,8 @@ pub struct Operation {
     pub kind: OperationKind,
     pub status: OperationStatus,
     pub preview: bool,
+    #[serde(default)]
+    pub runtime_target: RuntimeTarget,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prompt_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -460,6 +502,9 @@ pub struct Settings {
     pub rewrite_grok_enabled: bool,
     #[serde(default = "enabled_by_default")]
     pub rewrite_zcode_enabled: bool,
+    /// The machine environment each agent workspace reads and deploys to.
+    #[serde(default)]
+    pub agent_runtime_targets: HashMap<ToolKind, RuntimeTarget>,
 }
 
 fn enabled_by_default() -> bool {
@@ -484,6 +529,7 @@ impl Default for Settings {
             rewrite_claude_enabled: true,
             rewrite_grok_enabled: true,
             rewrite_zcode_enabled: true,
+            agent_runtime_targets: HashMap::new(),
         }
     }
 }
@@ -506,6 +552,7 @@ pub struct SettingsPatch {
     pub rewrite_claude_enabled: Option<bool>,
     pub rewrite_grok_enabled: Option<bool>,
     pub rewrite_zcode_enabled: Option<bool>,
+    pub agent_runtime_targets: Option<HashMap<ToolKind, RuntimeTarget>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -621,7 +668,7 @@ pub fn validate_scope(tool: ToolKind, scope: Scope, project_dir: Option<&Path>) 
     if scope.requires_project_dir() {
         let dir = project_dir
             .ok_or_else(|| Error::invalid("project/local scope requires an absolute projectDir"))?;
-        if !dir.is_absolute() {
+        if !dir.is_absolute() && !dir.to_string_lossy().starts_with('/') {
             return Err(Error::invalid(
                 "project/local scope requires an absolute projectDir",
             ));

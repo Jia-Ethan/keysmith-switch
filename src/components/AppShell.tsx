@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { useHarnessStatus } from "../lib/harnessState";
+import { NATIVE_RUNTIME, useHarnessStatus } from "../lib/harnessState";
 import type { ReactNode, RefObject } from "react";
 import { useTranslation } from "react-i18next";
-import type { ScopeId, ToolId } from "../types";
+import type { RuntimeTarget, ScopeId, ToolId } from "../types";
 import { TOOL_IDS } from "../types";
 import { CountBadge, NoticeDot, cx, useSlidingIndicator } from "./ui";
 import { IconBell, IconPuzzle, IconSearch, IconSettings, IconSwap, IconTerminal } from "./icons";
@@ -115,6 +115,7 @@ export function AppShell({
   onNavigate,
   advancedEnabled,
   onOpenPalette,
+  runtimeTargets,
   children,
 }: {
   page: AppPage;
@@ -122,6 +123,7 @@ export function AppShell({
   advancedEnabled: boolean;
   /** Opens the command palette; the rail shows its button only when this is given. */
   onOpenPalette?: () => void;
+  runtimeTargets?: Partial<Record<ToolId, RuntimeTarget>>;
   children: ReactNode;
 }) {
   const { t, i18n } = useTranslation();
@@ -198,6 +200,7 @@ export function AppShell({
                 active={activeTool === tool}
                 compact={fit.compact}
                 indicatorReady={Boolean(indicator)}
+                runtimeTarget={runtimeTargets?.[tool] ?? NATIVE_RUNTIME}
                 onSelect={(next) => onNavigate({ kind: "tool", tool: next })}
               />
             ))}
@@ -298,16 +301,18 @@ function RailButton({
   active,
   compact,
   indicatorReady,
+  runtimeTarget,
   onSelect,
 }: {
   tool: ToolId;
   active: boolean;
   compact: boolean;
   indicatorReady: boolean;
+  runtimeTarget: RuntimeTarget;
   onSelect: (tool: ToolId) => void;
 }) {
   const { t } = useTranslation();
-  const status = useHarnessStatus(tool);
+  const status = useHarnessStatus(tool, runtimeTarget);
   const deployed = status?.machine === "deployed" && !status.error;
   return (
     <button

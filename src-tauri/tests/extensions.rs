@@ -636,6 +636,7 @@ fn uninstalling_removes_only_what_is_safe_to_remove() {
             prompt_id: Some(alpha.clone()),
             tool: ToolKind::Claude,
             scope: Scope::User,
+            runtime_target: keysmith_switch_lib::models::RuntimeTarget::Native,
             project_dir: None,
             status: ToolStatus::Active,
             fingerprint: None,
