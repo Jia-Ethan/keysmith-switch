@@ -21,6 +21,7 @@ pub mod ops;
 pub mod paths;
 pub mod redact;
 pub mod rewrite;
+pub mod runtime;
 pub mod updater;
 
 use tauri::Manager;
@@ -67,6 +68,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::list_tools,
+            commands::list_runtimes,
             commands::list_prompts,
             commands::get_prompt,
             commands::create_prompt,

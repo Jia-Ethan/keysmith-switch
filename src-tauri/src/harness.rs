@@ -84,9 +84,12 @@ pub struct HarnessState {
 fn deployed_prompt(
     store: &Store,
     tool: ToolKind,
+    runtime_target: &crate::models::RuntimeTarget,
     fingerprint: Option<&str>,
 ) -> Option<(String, String)> {
-    if let Ok(Some(activation)) = store.find_activation(tool, Scope::User, None) {
+    if let Ok(Some(activation)) =
+        store.find_activation_for_runtime(tool, runtime_target, Scope::User, None)
+    {
         if activation.status == ToolStatus::Active {
             // A prompt deleted from the library is not "the library prompt that
             // is live": the machine then runs text the library no longer has.
@@ -137,7 +140,12 @@ pub async fn harness_state(
             let deployed = envelope.status == ToolStatus::Active || drifted;
             let wrong_profile = drifted && dsh_in_wrong_profile(tool, &envelope);
             let prompt = if deployed {
-                deployed_prompt(store, tool, live_fingerprint(tool, &envelope).as_deref())
+                deployed_prompt(
+                    store,
+                    tool,
+                    &opts.runtime_target,
+                    live_fingerprint(tool, &envelope).as_deref(),
+                )
             } else {
                 None
             };
@@ -577,6 +585,7 @@ mod tests {
             prompt_id: Some(prompt_id.into()),
             tool: ToolKind::Grok,
             scope: Scope::User,
+            runtime_target: crate::models::RuntimeTarget::Native,
             project_dir: None,
             status,
             fingerprint: None,
@@ -620,7 +629,12 @@ mod tests {
             Some(content_sha("line one\nline two\n").as_str())
         );
         assert_eq!(
-            deployed_prompt(&store, ToolKind::Zcode, fingerprint.as_deref()),
+            deployed_prompt(
+                &store,
+                ToolKind::Zcode,
+                &crate::models::RuntimeTarget::Native,
+                fingerprint.as_deref()
+            ),
             Some(("p1".to_string(), "Role".to_string()))
         );
         assert_eq!(
@@ -638,17 +652,48 @@ mod tests {
         let sha = content_sha("body\n");
 
         assert_eq!(
-            deployed_prompt(&store, ToolKind::Grok, Some(&sha)),
+            deployed_prompt(
+                &store,
+                ToolKind::Grok,
+                &crate::models::RuntimeTarget::Native,
+                Some(&sha)
+            ),
             Some(("p1".to_string(), "Rules".to_string()))
         );
         assert_eq!(
-            deployed_prompt(&store, ToolKind::Grok, Some("deadbeef")),
+            deployed_prompt(
+                &store,
+                ToolKind::Grok,
+                &crate::models::RuntimeTarget::Native,
+                Some("deadbeef")
+            ),
             None
         );
-        assert_eq!(deployed_prompt(&store, ToolKind::Grok, Some("")), None);
-        assert_eq!(deployed_prompt(&store, ToolKind::Grok, None), None);
         assert_eq!(
-            deployed_prompt(&store, ToolKind::Claude, Some(&sha)),
+            deployed_prompt(
+                &store,
+                ToolKind::Grok,
+                &crate::models::RuntimeTarget::Native,
+                Some("")
+            ),
+            None
+        );
+        assert_eq!(
+            deployed_prompt(
+                &store,
+                ToolKind::Grok,
+                &crate::models::RuntimeTarget::Native,
+                None
+            ),
+            None
+        );
+        assert_eq!(
+            deployed_prompt(
+                &store,
+                ToolKind::Claude,
+                &crate::models::RuntimeTarget::Native,
+                Some(&sha)
+            ),
             None,
             "another tool's library is never searched"
         );
@@ -668,7 +713,12 @@ mod tests {
             .unwrap();
 
         assert_eq!(
-            deployed_prompt(&store, ToolKind::Grok, Some(&content_sha("two\n"))),
+            deployed_prompt(
+                &store,
+                ToolKind::Grok,
+                &crate::models::RuntimeTarget::Native,
+                Some(&content_sha("two\n"))
+            ),
             Some(("p1".to_string(), "One".to_string())),
             "the recorded activation is authoritative"
         );
@@ -677,7 +727,12 @@ mod tests {
             .upsert_activation(&activation("p1", ToolStatus::Inactive))
             .unwrap();
         assert_eq!(
-            deployed_prompt(&store, ToolKind::Grok, Some(&content_sha("two\n"))),
+            deployed_prompt(
+                &store,
+                ToolKind::Grok,
+                &crate::models::RuntimeTarget::Native,
+                Some(&content_sha("two\n"))
+            ),
             Some(("p2".to_string(), "Two".to_string())),
             "without an active record the fingerprint decides"
         );

@@ -12,7 +12,8 @@ use crate::lock::HomeLock;
 use crate::models::{
     now_rfc3339, sha256_hex, validate_scope, Activation, CreatePromptInput, DiffResult, Operation,
     OperationKind, OperationResult, OperationStatus, PlanActivateInput, PlanDeactivateInput,
-    PromptDetail, PromptVersion, RebuildReport, Scope, ToolKind, ToolStatus, UpdatePromptInput,
+    PromptDetail, PromptVersion, RebuildReport, RuntimeTarget, Scope, ToolKind, ToolStatus,
+    UpdatePromptInput,
 };
 use crate::paths::atomic_write;
 
@@ -20,6 +21,32 @@ use crate::paths::atomic_write;
 // and must never be passed directly to a target Agent. A deterministic path
 // keeps Grok's preview token stable, while Drop removes the transient file.
 struct AdapterPromptFile(PathBuf);
+
+fn options_for_request(
+    opts: &AdapterOptions,
+    request: &serde_json::Value,
+) -> Result<AdapterOptions> {
+    let runtime_target = request
+        .get("runtimeTarget")
+        .cloned()
+        .map(serde_json::from_value::<RuntimeTarget>)
+        .transpose()?
+        .unwrap_or_default();
+    Ok(AdapterOptions {
+        runtime_target,
+        ..opts.clone()
+    })
+}
+
+fn runtime_from_request(request: &serde_json::Value) -> Result<RuntimeTarget> {
+    request
+        .get("runtimeTarget")
+        .cloned()
+        .map(serde_json::from_value::<RuntimeTarget>)
+        .transpose()
+        .map(|target| target.unwrap_or_default())
+        .map_err(Error::from)
+}
 
 impl Drop for AdapterPromptFile {
     fn drop(&mut self) {
@@ -141,8 +168,12 @@ pub fn prompt_diff(
 /// Codex refuses to deploy without a `config.toml`, but a cleanup takes the file away (a copy
 /// without its login is kept in the snapshot). An empty file is a valid config, and the
 /// adapter's uninstall puts it back exactly, so a missing one is recreated for the deploy.
-fn ensure_codex_config(tool: ToolKind, opts: &AdapterOptions) {
+async fn ensure_codex_config(tool: ToolKind, opts: &AdapterOptions) {
     if tool != ToolKind::Codex {
+        return;
+    }
+    if let RuntimeTarget::Wsl { distribution } = &opts.runtime_target {
+        let _ = crate::runtime::ensure_codex_config(distribution).await;
         return;
     }
     let Some(home) = opts.home.clone().or_else(dirs::home_dir) else {
@@ -175,7 +206,7 @@ pub async fn plan_activate(
     }
     validate_scope(prompt.tool, input.scope, input.project_dir.as_deref())?;
     let name = cli_name(&prompt);
-    ensure_codex_config(prompt.tool, opts);
+    ensure_codex_config(prompt.tool, opts).await;
     let adapter_file = write_adapter_prompt(&prompt)?;
     let command = AdapterCommand::PlanActivate {
         file: adapter_file.0.clone(),
@@ -199,6 +230,7 @@ pub async fn plan_activate(
         "runtime": input.runtime,
         "appendFile": input.append_file,
         "maxTokens": input.max_tokens,
+        "runtimeTarget": opts.runtime_target,
     });
     let operation = store_preview(
         store,
@@ -224,6 +256,7 @@ pub async fn confirm_activate(
     let _lock = HomeLock::acquire(store.paths())?;
     let plan = require_preview(store, operation_id, OperationKind::PlanActivate)?;
     let request: serde_json::Value = serde_json::from_str(&plan.request_json)?;
+    let runtime_opts = options_for_request(opts, &request)?;
     let prompt_id = request
         .get("promptId")
         .and_then(|value| value.as_str())
@@ -263,7 +296,7 @@ pub async fn confirm_activate(
             }
         }
     }
-    if let Err(error) = check_adapter_version(plan.tool, opts).await {
+    if let Err(error) = check_adapter_version(plan.tool, &runtime_opts).await {
         store.update_operation(
             operation_id,
             OperationStatus::Failed,
@@ -279,7 +312,7 @@ pub async fn confirm_activate(
         .and_then(|value| value.as_str())
         .map(str::to_string)
         .unwrap_or_else(|| cli_name(&prompt));
-    ensure_codex_config(prompt.tool, opts);
+    ensure_codex_config(prompt.tool, &runtime_opts).await;
     let adapter_file = write_adapter_prompt(&prompt)?;
     let command = AdapterCommand::Activate {
         file: adapter_file.0.clone(),
@@ -302,7 +335,7 @@ pub async fn confirm_activate(
             .filter(|tokens| *tokens > 0),
         expected_preview_token: preview_token,
     };
-    let envelope = run_adapter_with(plan.tool, command, opts).await?;
+    let envelope = run_adapter_with(plan.tool, command, &runtime_opts).await?;
     let execute_id = persist_execute(store, &plan, OperationKind::Activate, &envelope, request)?;
     if envelope.ok {
         record_activation(
@@ -312,6 +345,7 @@ pub async fn confirm_activate(
             project_dir.as_ref(),
             &execute_id,
             &envelope,
+            &runtime_opts.runtime_target,
         )?;
         store.update_operation(operation_id, OperationStatus::Succeeded, None, None)?;
     } else {
@@ -430,6 +464,7 @@ pub async fn plan_deactivate(
         "drift": drifted,
         "salvageConfig": salvage,
         "recordOnly": record_only,
+        "runtimeTarget": opts.runtime_target,
     });
     let operation = store_preview(
         store,
@@ -455,6 +490,7 @@ pub async fn confirm_deactivate(
     let _lock = HomeLock::acquire(store.paths())?;
     let plan = require_preview(store, operation_id, OperationKind::PlanDeactivate)?;
     let request: serde_json::Value = serde_json::from_str(&plan.request_json)?;
+    let runtime_opts = options_for_request(opts, &request)?;
     if request.get("drift").and_then(|value| value.as_bool()) == Some(true) {
         store.update_operation(
             operation_id,
@@ -503,7 +539,7 @@ pub async fn confirm_deactivate(
                 project_dir: project_dir.clone(),
                 name,
             },
-            opts,
+            &runtime_opts,
         )
         .await?;
         now.command = OperationKind::Deactivate.as_str().to_string();
@@ -533,14 +569,15 @@ pub async fn confirm_deactivate(
                     .and_then(|value| value.as_bool())
                     .unwrap_or(false),
             },
-            opts,
+            &runtime_opts,
         )
         .await?
     };
     let execute_id = persist_execute(store, &plan, OperationKind::Deactivate, &envelope, request)?;
     if envelope.ok {
-        if let Some(mut existing) = store.find_activation(
+        if let Some(mut existing) = store.find_activation_for_runtime(
             plan.tool,
+            &runtime_opts.runtime_target,
             scope,
             project_dir.as_ref().and_then(|p| p.to_str()),
         )? {
@@ -551,6 +588,7 @@ pub async fn confirm_deactivate(
         }
         store.upsert_tool_state(
             plan.tool,
+            &runtime_opts.runtime_target,
             scope,
             project_dir.as_ref().and_then(|p| p.to_str()),
             ToolStatus::Inactive,
@@ -594,7 +632,7 @@ pub async fn plan_recover(
             None,
             scope,
             project_dir.as_ref(),
-            json!({"tool": tool, "scope": scope}),
+            json!({"tool": tool, "scope": scope, "runtimeTarget": opts.runtime_target}),
             &envelope,
         )?;
         return Ok(OperationResult {
@@ -621,7 +659,7 @@ pub async fn plan_recover(
         None,
         scope,
         project_dir.as_ref(),
-        json!({"tool": tool, "scope": scope, "projectDir": project_dir}),
+        json!({"tool": tool, "scope": scope, "projectDir": project_dir, "runtimeTarget": opts.runtime_target}),
         &preview,
     )?;
     if !preview.ok {
@@ -659,6 +697,7 @@ pub async fn confirm_recover(
         }
     }
     let request: serde_json::Value = serde_json::from_str(&plan.request_json)?;
+    let runtime_opts = options_for_request(opts, &request)?;
     let scope = plan.scope.unwrap_or(Scope::User);
     let project_dir = plan.project_dir.as_ref().map(PathBuf::from);
     let envelope = run_adapter_with(
@@ -669,12 +708,13 @@ pub async fn confirm_recover(
             execute: true,
             expected_preview_token: preview_token,
         },
-        opts,
+        &runtime_opts,
     )
     .await?;
     let execute_id = persist_execute(store, &plan, OperationKind::Recover, &envelope, request)?;
     store.upsert_tool_state(
         plan.tool,
+        &runtime_opts.runtime_target,
         scope,
         project_dir.as_ref().and_then(|p| p.to_str()),
         envelope.status,
@@ -715,7 +755,7 @@ pub async fn plan_reconcile(
         None,
         Scope::User,
         None,
-        json!({"tool": tool, "scope": Scope::User}),
+        json!({"tool": tool, "scope": Scope::User, "runtimeTarget": opts.runtime_target}),
         &preview,
     )?;
     Ok(OperationResult {
@@ -746,15 +786,16 @@ pub async fn confirm_reconcile(
     let token = preview.confirmation_token.clone().ok_or_else(|| {
         Error::command_failed("grok preview did not include a confirmation token")
     })?;
-    check_adapter_version(plan.tool, opts).await?;
     let request: serde_json::Value = serde_json::from_str(&plan.request_json)?;
+    let runtime_opts = options_for_request(opts, &request)?;
+    check_adapter_version(plan.tool, &runtime_opts).await?;
     let envelope = run_adapter_with(
         plan.tool,
         AdapterCommand::Reconcile {
             execute: true,
             expected_preview_token: Some(token),
         },
-        opts,
+        &runtime_opts,
     )
     .await?;
     let execute_id = persist_execute(store, &plan, OperationKind::Reconcile, &envelope, request)?;
@@ -794,6 +835,7 @@ pub async fn tool_status(
     .await?;
     store.upsert_tool_state(
         tool,
+        &opts.runtime_target,
         scope,
         project_dir.as_ref().and_then(|p| p.to_str()),
         envelope.status,
@@ -839,7 +881,9 @@ pub(crate) async fn forget_removed_deployment(
         return Ok(());
     }
     let _lock = HomeLock::acquire(store.paths())?;
-    if let Some(mut existing) = store.find_activation(tool, Scope::User, None)? {
+    if let Some(mut existing) =
+        store.find_activation_for_runtime(tool, &opts.runtime_target, Scope::User, None)?
+    {
         if existing.status == ToolStatus::Active {
             existing.status = ToolStatus::Inactive;
             existing.updated_at = now_rfc3339();
@@ -895,6 +939,7 @@ pub(crate) fn store_preview(
             OperationStatus::Failed
         },
         preview: true,
+        runtime_target: runtime_from_request(&request)?,
         prompt_id: prompt_id.map(str::to_string),
         scope: Some(scope),
         project_dir: project_dir.map(|path| path.to_string_lossy().into_owned()),
@@ -927,6 +972,7 @@ fn persist_execute(
             OperationStatus::Failed
         },
         preview: false,
+        runtime_target: parent.runtime_target.clone(),
         prompt_id: parent.prompt_id.clone(),
         scope: parent.scope,
         project_dir: parent.project_dir.clone(),
@@ -948,19 +994,33 @@ fn record_activation(
     project_dir: Option<&PathBuf>,
     operation_id: &str,
     envelope: &Envelope,
+    runtime_target: &RuntimeTarget,
 ) -> Result<()> {
     let now = now_rfc3339();
     let project = project_dir.map(|path| path.to_string_lossy().into_owned());
-    let activation = Activation {
-        id: sha256_hex(format!(
+    let identity = if runtime_target.is_native() {
+        // Preserve the pre-runtime identity so migration does not leave a second active row.
+        format!(
             "{}:{}:{}",
             prompt.tool.as_str(),
             scope.as_str(),
             project.clone().unwrap_or_default()
-        )),
+        )
+    } else {
+        format!(
+            "{}:{}:{}:{}",
+            prompt.tool.as_str(),
+            runtime_target.storage_key(),
+            scope.as_str(),
+            project.clone().unwrap_or_default()
+        )
+    };
+    let activation = Activation {
+        id: sha256_hex(identity),
         prompt_id: Some(prompt.id.clone()),
         tool: prompt.tool,
         scope,
+        runtime_target: runtime_target.clone(),
         project_dir: project.clone(),
         status: if envelope.ok {
             ToolStatus::Active
@@ -979,6 +1039,7 @@ fn record_activation(
     store.upsert_activation(&activation)?;
     store.upsert_tool_state(
         prompt.tool,
+        runtime_target,
         scope,
         project.as_deref(),
         activation.status,

@@ -10,7 +10,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
-use crate::models::{validate_scope, Scope, ToolInfo, ToolStatus};
+use crate::models::{validate_scope, RuntimeTarget, Scope, ToolInfo, ToolStatus};
 
 pub use crate::models::ToolKind;
 pub use envelope::Envelope;
@@ -21,6 +21,7 @@ pub struct AdapterOptions {
     pub extra_env: BTreeMap<String, String>,
     pub timeout: Option<Duration>,
     pub cli_override: Option<PathBuf>,
+    pub runtime_target: RuntimeTarget,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -199,14 +200,33 @@ pub async fn run_adapter_with(
         return Ok(envelope);
     }
 
+    if matches!(opts.runtime_target, RuntimeTarget::Wsl { .. }) && tool == ToolKind::Zcode {
+        envelope.available = false;
+        envelope.status = ToolStatus::Unavailable;
+        envelope.unavailable_reason =
+            Some("ZCode does not provide a supported Linux/WSL runtime".into());
+        envelope.error = envelope.unavailable_reason.clone();
+        envelope
+            .blockers
+            .push("Select Windows local for ZCode; its adapter does not support Linux/WSL".into());
+        envelope.ok = false;
+        return Ok(envelope);
+    }
+
     if let Some((scope, project_dir)) = command_scope(&command) {
         validate_scope(tool, scope, project_dir.as_deref())?;
     }
 
-    let prepared = argv::prepare(tool, &command, opts.home.as_deref())?;
+    let command = prepare_runtime_command(command, &opts.runtime_target).await?;
+    let isolated_home = opts
+        .runtime_target
+        .is_native()
+        .then_some(opts.home.as_deref())
+        .flatten();
+    let prepared = argv::prepare(tool, &command, isolated_home)?;
     envelope.preview = prepared.preview;
 
-    let cli = process::resolve_cli(tool, opts)?;
+    let cli = process::resolve_cli_for_runtime(tool, opts).await?;
     envelope.cli_path = Some(cli.cli_path());
 
     let limit = opts
@@ -230,6 +250,64 @@ pub async fn run_adapter_with(
     }
     envelope.redact_inplace();
     Ok(envelope)
+}
+
+async fn prepare_runtime_command(
+    mut command: AdapterCommand,
+    target: &RuntimeTarget,
+) -> Result<AdapterCommand> {
+    let RuntimeTarget::Wsl { distribution } = target else {
+        return Ok(command);
+    };
+
+    async fn convert(distribution: &str, path: &mut PathBuf) -> Result<()> {
+        *path = crate::runtime::translate_path(distribution, path).await?;
+        Ok(())
+    }
+
+    match &mut command {
+        AdapterCommand::Status { project_dir, .. }
+        | AdapterCommand::Backups { project_dir, .. }
+        | AdapterCommand::PlanDeactivate { project_dir, .. }
+        | AdapterCommand::Deactivate { project_dir, .. }
+        | AdapterCommand::Recover { project_dir, .. } => {
+            if let Some(path) = project_dir {
+                convert(distribution, path).await?;
+            }
+        }
+        AdapterCommand::PlanActivate {
+            file,
+            project_dir,
+            append_file,
+            ..
+        }
+        | AdapterCommand::Activate {
+            file,
+            project_dir,
+            append_file,
+            ..
+        } => {
+            convert(distribution, file).await?;
+            if let Some(path) = project_dir {
+                convert(distribution, path).await?;
+            }
+            if let Some(path) = append_file {
+                convert(distribution, path).await?;
+            }
+        }
+        AdapterCommand::Restore {
+            target,
+            project_dir,
+            ..
+        } => {
+            convert(distribution, target).await?;
+            if let Some(path) = project_dir {
+                convert(distribution, path).await?;
+            }
+        }
+        AdapterCommand::Doctor | AdapterCommand::Version | AdapterCommand::Reconcile { .. } => {}
+    }
+    Ok(command)
 }
 
 pub async fn check_adapter_version(tool: ToolKind, opts: &AdapterOptions) -> Result<String> {

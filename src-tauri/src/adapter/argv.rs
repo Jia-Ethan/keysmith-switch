@@ -695,7 +695,7 @@ fn push_flag_name(args: &mut Vec<String>, name: Option<&str>) {
 }
 
 fn abs(path: &Path) -> Result<String> {
-    if path.is_absolute() {
+    if path.is_absolute() || path.to_string_lossy().starts_with('/') {
         return Ok(path.to_string_lossy().into_owned());
     }
     let cwd = std::env::current_dir()?;

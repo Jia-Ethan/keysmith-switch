@@ -34,6 +34,7 @@ export function AgentHero({
   onEdit,
   editing = false,
   onCleanup,
+  runtimeControl,
 }: {
   tool: ToolId;
   name: string;
@@ -63,6 +64,8 @@ export function AgentHero({
   editing?: boolean;
   /** Clean the agent back to nothing (a version is saved first). */
   onCleanup?: () => void;
+  /** The environment this agent is read from and deployed to. */
+  runtimeControl?: ReactNode;
 }) {
   const { t } = useTranslation();
   const deployed = machine === "deployed";
@@ -187,7 +190,8 @@ export function AgentHero({
           ) : null}
         </div>
 
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+          {runtimeControl}
           {showLive && drifted && wrongProfile && onRedeploy ? (
             <Button
               size="md"

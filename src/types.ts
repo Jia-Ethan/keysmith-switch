@@ -1,5 +1,19 @@
 export type ToolId = "claude" | "codex" | "grok" | "zcode" | "pi" | "dsh";
 
+export type RuntimeTarget =
+  | { kind: "native" }
+  | { kind: "wsl"; distribution: string };
+
+export interface RuntimeInfo {
+  target: RuntimeTarget;
+  label: string;
+  isDefault: boolean;
+  state: string;
+  wslVersion: number | null;
+  available: boolean;
+  unavailableReason: string | null;
+}
+
 export type ScopeId = "user" | "project" | "local";
 
 export type Language = "zh-CN" | "zh-TW" | "en";
@@ -141,6 +155,7 @@ export interface Activation {
   promptId: string;
   promptTitle: string | null;
   scope: ScopeId;
+  runtimeTarget: RuntimeTarget;
   projectDir: string | null;
   active: boolean;
   createdAt: string;
@@ -152,6 +167,7 @@ export interface Operation {
   tool: ToolId;
   kind: string;
   status: string;
+  runtimeTarget: RuntimeTarget;
   error: string | null;
   createdAt: string;
   recoverAvailable: boolean;
@@ -178,6 +194,7 @@ export interface Settings {
   rewriteClaudeEnabled: boolean;
   rewriteGrokEnabled: boolean;
   rewriteZcodeEnabled: boolean;
+  agentRuntimeTargets: Partial<Record<ToolId, RuntimeTarget>>;
 }
 
 export type SettingsPatch = Partial<Settings>;
@@ -391,6 +408,7 @@ export const DEFAULT_SETTINGS: Settings = {
   rewriteClaudeEnabled: true,
   rewriteGrokEnabled: true,
   rewriteZcodeEnabled: true,
+  agentRuntimeTargets: {},
 };
 
 export const TOOL_IDS: ToolId[] = ["claude", "codex", "grok", "zcode", "pi", "dsh"];

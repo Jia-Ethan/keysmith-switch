@@ -6,7 +6,7 @@ use crate::error::{Error, Result};
 use crate::models::now_rfc3339;
 use crate::paths::AppPaths;
 
-pub const SCHEMA_VERSION: i64 = 4;
+pub const SCHEMA_VERSION: i64 = 5;
 /// The oldest schema a backup may carry. Restoring one migrates it forward.
 pub const MIN_RESTORABLE_SCHEMA: i64 = 1;
 
@@ -127,6 +127,30 @@ const MIGRATION_4: &str = r#"
 ALTER TABLE rule_tables ADD COLUMN opaque INTEGER NOT NULL DEFAULT 0;
 "#;
 
+const MIGRATION_5: &str = r#"
+ALTER TABLE activations ADD COLUMN runtime_target TEXT NOT NULL DEFAULT 'native';
+ALTER TABLE operations ADD COLUMN runtime_target TEXT NOT NULL DEFAULT 'native';
+
+CREATE TABLE tool_state_v5 (
+    tool TEXT NOT NULL,
+    runtime_target TEXT NOT NULL DEFAULT 'native',
+    scope TEXT NOT NULL,
+    project_dir TEXT NOT NULL DEFAULT '',
+    status TEXT,
+    fingerprint TEXT,
+    last_operation_id TEXT,
+    last_checked_at TEXT,
+    PRIMARY KEY (tool, runtime_target, scope, project_dir)
+);
+INSERT INTO tool_state_v5 (
+    tool, runtime_target, scope, project_dir, status, fingerprint, last_operation_id, last_checked_at
+)
+SELECT tool, 'native', scope, project_dir, status, fingerprint, last_operation_id, last_checked_at
+FROM tool_state;
+DROP TABLE tool_state;
+ALTER TABLE tool_state_v5 RENAME TO tool_state;
+"#;
+
 pub fn configure(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "PRAGMA foreign_keys = ON;
@@ -196,6 +220,11 @@ pub fn apply_pending(conn: &Connection, paths: &AppPaths) -> Result<Vec<i64>> {
         conn.execute_batch(MIGRATION_4)?;
         record_version(conn, 4)?;
         applied.push(4);
+    }
+    if current < 5 {
+        conn.execute_batch(MIGRATION_5)?;
+        record_version(conn, 5)?;
+        applied.push(5);
     }
     Ok(applied)
 }
