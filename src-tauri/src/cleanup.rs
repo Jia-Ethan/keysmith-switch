@@ -476,6 +476,14 @@ pub struct MemoriesMeta {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct AbsentExtra {
+    pub name: String,
+    #[serde(default)]
+    pub category: CleanupCategory,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct SnapshotMeta {
     pub id: String,
     pub created_at: String,
@@ -490,6 +498,9 @@ pub struct SnapshotMeta {
     /// The rest of the user-level setup, kept inside the snapshot's own `extras` folder.
     #[serde(default)]
     pub extras: Vec<ExtraMeta>,
+    /// Saved paths created by the rollback and moved out again when undoing it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub absent_extras: Vec<AbsentExtra>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1110,7 +1121,7 @@ fn extra_info(
         _ => return Ok(None),
     }
     let (files, bytes) = path_stats(&path)?;
-    Ok((files > 0).then(|| ExtraMeta {
+    Ok(Some(ExtraMeta {
         name: name.to_string(),
         path: path.to_string_lossy().into_owned(),
         files,
@@ -1205,16 +1216,8 @@ fn sqlite_entries(root: &Path, database: &str, strict: bool) -> Result<Vec<Strin
 fn current_extras(
     tool: ToolKind,
     entries: &[Entry],
-    opts: &AdapterOptions,
-) -> Result<Vec<ExtraMeta>> {
-    collect_extras(tool, entries, opts, false)
-}
-
-fn collect_extras(
-    tool: ToolKind,
-    entries: &[Entry],
-    opts: &AdapterOptions,
     for_rollback: bool,
+    opts: &AdapterOptions,
 ) -> Result<Vec<ExtraMeta>> {
     let Some(home) = agent_home(tool, opts)? else {
         return Ok(Vec::new());
@@ -1237,7 +1240,9 @@ fn collect_extras(
                 }
             }
         } else if let Some(info) = extra_info(&home, name, kind, *category)? {
-            found.push(info);
+            if info.files > 0 || for_rollback {
+                found.push(info);
+            }
         }
     }
     Ok(found)
@@ -1266,18 +1271,80 @@ fn current_rollback_pieces(
         .iter()
         .filter(|extra| extra.kind == "saved")
         .map(|extra| (extra.name.clone(), extra.kind.clone(), extra.category))
+        .chain(
+            snapshot
+                .absent_extras
+                .iter()
+                .map(|extra| (extra.name.clone(), kind_saved(), extra.category)),
+        )
         .collect();
-    collect_extras(tool, &entries, opts, true)
+    let mut current = current_extras(tool, &entries, true, opts)?;
+    let mut seen = std::collections::HashSet::new();
+    current.retain(|extra| seen.insert(extra.name.clone()));
+    if let Some(root) = agent_home(tool, opts)? {
+        for extra in &snapshot.absent_extras {
+            if !valid_extra_name(&extra.name) {
+                return Err(Error::invalid(
+                    "snapshot is damaged: an absent piece has a bad name",
+                ));
+            }
+            let path = root.join(&extra.name);
+            require_contained(&root, &path)?;
+            if path_exists(&path)? && !current.iter().any(|piece| piece.name == extra.name) {
+                return Err(Error::command_failed(format!(
+                    "{} cannot be moved safely",
+                    extra.name
+                )));
+            }
+        }
+    }
+    Ok(current)
+}
+
+fn path_exists(path: &Path) -> Result<bool> {
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn missing_rollback_extras(
+    home: Option<&Path>,
+    snapshot: &SnapshotMeta,
+) -> Result<Vec<AbsentExtra>> {
+    let Some(root) = home else {
+        return Ok(Vec::new());
+    };
+    let mut absent = Vec::new();
+    for extra in snapshot.extras.iter().filter(|extra| extra.kind == "saved") {
+        let path = root.join(&extra.name);
+        if is_contained(root, &path)? && !path_exists(&path)? {
+            absent.push(AbsentExtra {
+                name: extra.name.clone(),
+                category: extra.category,
+            });
+        }
+    }
+    Ok(absent)
+}
+
+fn absences_need_snapshot(snapshot: &SnapshotMeta, absent: &[AbsentExtra]) -> bool {
+    // Adapter leftovers restored along with a deployment do not on their own create an undo
+    // snapshot. Undoing a deployment would also require calling the adapter to deactivate it.
+    absent
+        .iter()
+        .any(|extra| extra.category != Deployment || !snapshot.deployment.restorable)
 }
 
 fn rollback_needs_idle_agent(snapshot: &SnapshotMeta) -> bool {
     snapshot.memories.is_some()
-        || snapshot.extras.iter().any(|extra| {
-            matches!(
-                extra.category,
-                CleanupCategory::Sessions | CleanupCategory::Memories
-            )
-        })
+        || snapshot
+            .extras
+            .iter()
+            .map(|extra| extra.category)
+            .chain(snapshot.absent_extras.iter().map(|extra| extra.category))
+            .any(|category| matches!(category, Sessions | Memories))
 }
 
 /// What goes into a snapshot: everything except what is erased.
@@ -1662,6 +1729,7 @@ fn create_snapshot(
         memory: memory.as_ref().map(|(info, _)| info.clone()),
         memories,
         extras,
+        absent_extras: Vec::new(),
     };
     let root = prepare_snapshots_dir(store)?;
     let staging = root.join(format!(".{id}.writing"));
@@ -2218,7 +2286,7 @@ pub async fn plan_cleanup(
     let memory_meta = memory.as_ref().map(|(info, _)| info.clone());
     let memories = current_memories(tool, opts)?;
     let entries = extra_entries(store, tool, &envelope, CleanupSelection::all(), opts)?;
-    let extras = current_extras(tool, &entries, opts)?;
+    let extras = current_extras(tool, &entries, false, opts)?;
     let login_in_keychain = !keychain_services(tool, opts).is_empty();
     let nothing_to_do = !deployment.present
         && memory_meta.as_ref().is_none_or(|m| m.bytes == 0)
@@ -2367,7 +2435,7 @@ async fn run_cleanup(
 
     // Regenerate the selected entries so a newly created prefix match also invalidates the preview.
     let entries = extra_entries(store, tool, &envelope, selection, opts)?;
-    let extras = current_extras(tool, &entries, opts)?;
+    let extras = current_extras(tool, &entries, false, opts)?;
     let mut planned_extras: Vec<ExtraMeta> = serde_json::from_value(
         request
             .get("extras")
@@ -2591,6 +2659,7 @@ pub async fn plan_rollback(
     let envelope = ops::tool_status(store, tool, Scope::User, None, opts).await?;
     let (deployment, _body, memory) = current_state(store, tool, &envelope, opts)?;
     let current_extras = current_rollback_pieces(tool, &snapshot, opts)?;
+    let missing_extras = missing_rollback_extras(agent_home(tool, opts)?.as_deref(), &snapshot)?;
     let mut blockers = Vec::new();
     if envelope.status == ToolStatus::Drift || envelope.recovery_required {
         blockers.push(
@@ -2637,7 +2706,8 @@ pub async fn plan_rollback(
         saves_current: deployment.present
             || overwrites_memory
             || current_memories.is_some()
-            || !current_extras.is_empty(),
+            || !current_extras.is_empty()
+            || absences_need_snapshot(&snapshot, &missing_extras),
         memory: memory_plan,
         memories: memories_plan,
         extras: snapshot.extras.len() as u64,
@@ -2717,8 +2787,12 @@ async fn run_rollback(store: &Store, id: &str, opts: &AdapterOptions) -> Result<
     let current_pieces = current_rollback_pieces(tool, &snapshot, opts)?;
     check_extras_volume(store, &current_pieces)?;
     let home = agent_home(tool, opts)?;
+    let missing_extras = missing_rollback_extras(home.as_deref(), &snapshot)?;
     let mut staged_groups = std::collections::BTreeMap::new();
     if let Some(root) = &home {
+        for (saved, _) in &saved_extras {
+            require_contained(root, &root.join(&saved.name))?;
+        }
         for (database, group) in sqlite_groups(&saved_extras, |(extra, _)| extra) {
             require_contained(root, &root.join(database))?;
             staged_groups.insert(database, stage_sqlite_group(root, &group)?);
@@ -2728,6 +2802,7 @@ async fn run_rollback(store: &Store, id: &str, opts: &AdapterOptions) -> Result<
         || current_differs
         || current_folder.is_some()
         || !current_pieces.is_empty()
+        || absences_need_snapshot(&snapshot, &missing_extras)
     {
         Some(create_snapshot(
             store,
@@ -2749,7 +2824,7 @@ async fn run_rollback(store: &Store, id: &str, opts: &AdapterOptions) -> Result<
     // The config files and instruction folders come back first: the adapter's deploy needs them.
     let mut extras_restored = 0;
     let mut sessions_restored = 0;
-    if !saved_extras.is_empty() {
+    if !saved_extras.is_empty() || !current_pieces.is_empty() {
         let root = home
             .ok_or_else(|| Error::invalid("this agent has no setup folder; nothing was changed"))?;
         // Whatever is there now goes into the snapshot made above first.
@@ -2770,6 +2845,11 @@ async fn run_rollback(store: &Store, id: &str, opts: &AdapterOptions) -> Result<
                         }
                         return Err(error);
                     }
+                    if let Some(before) = &saved_snapshot {
+                        record_restored_absences(store, before, &missing_extras, |extra| {
+                            sqlite_database(&extra.name, "saved") == Some(database)
+                        })?;
+                    }
                     extras_restored += staged.paths.len() as u64;
                     sessions_restored += staged.sessions;
                 }
@@ -2784,6 +2864,11 @@ async fn run_rollback(store: &Store, id: &str, opts: &AdapterOptions) -> Result<
                 continue;
             }
             let restored = u64::from(restore_extra(&root, saved, source)?);
+            if let Some(before) = &saved_snapshot {
+                record_restored_absences(store, before, &missing_extras, |extra| {
+                    extra.name == saved.name
+                })?;
+            }
             extras_restored += restored;
             if saved.category == CleanupCategory::Sessions {
                 sessions_restored += restored;
@@ -3056,6 +3141,23 @@ fn put_back_sqlite_group(
             meta.extras
                 .retain(|extra| sqlite_database(&extra.name, &extra.kind) != Some(database));
         })?;
+    }
+    Ok(())
+}
+
+fn record_restored_absences(
+    store: &Store,
+    before: &SnapshotMeta,
+    missing: &[AbsentExtra],
+    restored: impl Fn(&AbsentExtra) -> bool,
+) -> Result<()> {
+    let restored: Vec<_> = missing
+        .iter()
+        .filter(|extra| restored(extra))
+        .cloned()
+        .collect();
+    if !restored.is_empty() {
+        rewrite_meta(store, before, |meta| meta.absent_extras.extend(restored))?;
     }
     Ok(())
 }

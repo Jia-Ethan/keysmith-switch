@@ -267,6 +267,89 @@ async fn rolling_back_restores_the_memory_file_byte_for_byte_and_the_deployment(
 }
 
 #[tokio::test]
+async fn undo_of_rollback_moves_newly_restored_history_into_a_safety_snapshot() {
+    let world = world("claude/claude-instruct.py");
+    let relative = ".claude/history.jsonl";
+    let history = world.home.join(relative);
+    write(history.clone(), "original session\n");
+    let plan = plan_cleanup(&world.store, ToolKind::Claude, &world.opts)
+        .await
+        .unwrap();
+    let cleaned = confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection {
+            deployment: false,
+            sessions: true,
+            ..CleanupSelection::default_safe()
+        },
+        &world.opts,
+    )
+    .await
+    .unwrap();
+    assert!(!history.exists());
+
+    let plan = plan_rollback(
+        &world.store,
+        cleaned.snapshot_id.as_deref().unwrap(),
+        &world.opts,
+    )
+    .await
+    .unwrap();
+    assert!(plan.saves_current);
+    let result = confirm_rollback(&world.store, &plan.operation_id, &world.opts)
+        .await
+        .unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&history).unwrap(),
+        "original session\n"
+    );
+    let before = result.saved_snapshot_id.unwrap();
+    let snapshots = world.store.paths().home.join("snapshots");
+    let metadata: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(snapshots.join(&before).join("meta.json")).unwrap())
+            .unwrap();
+    assert_eq!(metadata["extras"], serde_json::json!([]));
+    assert_eq!(
+        metadata["absentExtras"],
+        serde_json::json!([{"name": relative, "category":"sessions"}])
+    );
+
+    let mut running = world.opts.clone();
+    running
+        .extra_env
+        .insert(CODEX_RUNNING_KEY.into(), "1".into());
+    let blocked = plan_rollback(&world.store, &before, &running)
+        .await
+        .unwrap();
+    assert!(blocked.agent_running);
+    let error = confirm_rollback(&world.store, &blocked.operation_id, &running)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("close the agent first"));
+
+    write(history.clone(), "session changed after rollback\n");
+    let undo = plan_rollback(&world.store, &before, &world.opts)
+        .await
+        .unwrap();
+    assert!(undo.saves_current);
+    let undone = confirm_rollback(&world.store, &undo.operation_id, &world.opts)
+        .await
+        .unwrap();
+    assert!(!history.exists());
+    assert_eq!(
+        std::fs::read_to_string(
+            snapshots
+                .join(undone.saved_snapshot_id.unwrap())
+                .join("extras")
+                .join(relative)
+        )
+        .unwrap(),
+        "session changed after rollback\n"
+    );
+}
+
+#[tokio::test]
 async fn a_rollback_saves_what_it_overwrites_so_it_can_be_undone() {
     if !python3_available() {
         return;
@@ -975,6 +1058,68 @@ async fn failed_wal_restore_leaves_the_live_database_and_sidecars_untouched() {
     assert_eq!(std::fs::read_to_string(wal).unwrap(), "current WAL");
     assert_eq!(std::fs::read_to_string(journal).unwrap(), "current journal");
     assert_eq!(list_snapshots(&world.store).len(), 1);
+}
+
+#[tokio::test]
+async fn undo_of_rollback_moves_new_sqlite_sidecars_with_the_restored_database() {
+    let world = world("grok/grok-keysmith.py");
+    let relative = ".grok/worktrees.db";
+    let database = world.home.join(relative);
+    write(database.clone(), "original database");
+    let plan = plan_cleanup(&world.store, ToolKind::Grok, &world.opts)
+        .await
+        .unwrap();
+    let cleaned = confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection {
+            deployment: false,
+            sessions: true,
+            ..CleanupSelection::default_safe()
+        },
+        &world.opts,
+    )
+    .await
+    .unwrap();
+    let plan = plan_rollback(
+        &world.store,
+        cleaned.snapshot_id.as_deref().unwrap(),
+        &world.opts,
+    )
+    .await
+    .unwrap();
+    let result = confirm_rollback(&world.store, &plan.operation_id, &world.opts)
+        .await
+        .unwrap();
+    let sidecar = ".grok/worktrees.db-journal";
+    write(world.home.join(sidecar), "new journal");
+    let plan = plan_rollback(
+        &world.store,
+        &result.saved_snapshot_id.unwrap(),
+        &world.opts,
+    )
+    .await
+    .unwrap();
+    let undone = confirm_rollback(&world.store, &plan.operation_id, &world.opts)
+        .await
+        .unwrap();
+    let extras = world
+        .store
+        .paths()
+        .home
+        .join("snapshots")
+        .join(undone.saved_snapshot_id.unwrap())
+        .join("extras");
+    assert!(!database.exists());
+    assert!(!world.home.join(sidecar).exists());
+    assert_eq!(
+        std::fs::read_to_string(extras.join(relative)).unwrap(),
+        "original database"
+    );
+    assert_eq!(
+        std::fs::read_to_string(extras.join(sidecar)).unwrap(),
+        "new journal"
+    );
 }
 
 #[tokio::test]
