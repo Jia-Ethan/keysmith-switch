@@ -1153,6 +1153,91 @@ async fn selected_sessions_and_logins_are_blocked_while_agent_runs_but_deploymen
 }
 
 #[tokio::test]
+#[cfg(unix)]
+async fn cleanup_rechecks_the_agent_after_deactivation() {
+    use std::os::unix::fs::PermissionsExt;
+
+    const CHILD: &str = "KEYSMITH_CLEANUP_RECHECK_FIXTURE_HOME";
+    if let Some(home) = std::env::var_os(CHILD) {
+        let home = PathBuf::from(home);
+        let store = Store::open(&AppPaths::from_home(home.join("switch"))).unwrap();
+        let opts = AdapterOptions {
+            cli_override: Some(home.join("adapter.py")),
+            ..AdapterOptions::default()
+        };
+        let plan = plan_cleanup(&store, ToolKind::Zcode, &opts).await.unwrap();
+        assert!(plan.deployment.present);
+        assert!(!plan.agent_running);
+        let error = confirm_cleanup(&store, &plan.operation_id, CleanupSelection::all(), &opts)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("close the agent first"));
+        assert!(home.join("uninstalled").exists());
+        for path in [
+            ".zcode/v2/tasks-index.sqlite",
+            ".zcode/cli/memories/note.md",
+            ".zcode/v2/credentials.json",
+        ] {
+            assert_eq!(std::fs::read_to_string(home.join(path)).unwrap(), "fixture");
+        }
+        assert!(list_snapshots(&store)[0].extras.is_empty());
+        return;
+    }
+
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path();
+    write(
+        home.join("adapter.py"),
+        r#"import json, sys
+from pathlib import Path
+removed = Path.home() / 'uninstalled'
+if sys.argv[1] == 'doctor':
+    print('zcode-keysmith doctor')
+    print(f'system_file_exists: {str(not removed.exists()).lower()}')
+else:
+    execute = '--yes' in sys.argv
+    if execute:
+        removed.touch()
+    print(json.dumps({'schema': 'zcode-keysmith/v1', 'operation': 'uninstall',
+                      'mode': 'execute' if execute else 'preview', 'ok': True}))
+"#,
+    );
+    let ps = home.join("bin/ps");
+    write(
+        ps.clone(),
+        "#!/bin/sh\nif test -f \"$HOME/uninstalled\"; then printf 'ZCode\\n'; fi\n",
+    );
+    std::fs::set_permissions(ps, std::fs::Permissions::from_mode(0o700)).unwrap();
+    for path in [
+        ".zcode/v2/tasks-index.sqlite",
+        ".zcode/cli/memories/note.md",
+        ".zcode/v2/credentials.json",
+    ] {
+        write(home.join(path), "fixture");
+    }
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    let path =
+        std::env::join_paths(std::iter::once(home.join("bin")).chain(std::env::split_paths(&path)))
+            .unwrap();
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .args([
+            "--exact",
+            "cleanup_rechecks_the_agent_after_deactivation",
+            "--nocapture",
+        ])
+        .env(CHILD, home)
+        .env("HOME", home)
+        .env("PATH", path)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+}
+
+#[tokio::test]
 async fn running_agent_blocks_rollback_of_session_snapshot() {
     if !python3_available() {
         return;

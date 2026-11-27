@@ -798,9 +798,8 @@ fn current_memories(tool: ToolKind, opts: &AdapterOptions) -> Result<Option<Memo
     })
 }
 
-/// Whether the agent is running, which keeps its sessions, login and memory folder in use. A
-/// process list that cannot be read counts as not running; the person is also told to quit it
-/// first. A test or preview run with a home of its own never asks the system.
+/// Whether the agent may be using its sessions, login or memories. Isolated homes skip the
+/// system process listing unless a test explicitly exercises the real-home path.
 fn agent_running(tool: ToolKind, opts: &AdapterOptions) -> bool {
     if table(tool).is_none() {
         return false;
@@ -823,10 +822,21 @@ fn agent_running(tool: ToolKind, opts: &AdapterOptions) -> bool {
         .no_window()
         .output();
     #[cfg(not(any(unix, windows)))]
-    return false;
+    return true;
     #[cfg(any(unix, windows))]
-    listing.ok().is_some_and(|out| {
-        String::from_utf8_lossy(&out.stdout).lines().any(|line| {
+    running_in_process_listing(tool, listing)
+}
+
+#[cfg(any(unix, windows))]
+fn running_in_process_listing(
+    tool: ToolKind,
+    listing: std::io::Result<std::process::Output>,
+) -> bool {
+    let Ok(out) = listing else {
+        return true;
+    };
+    !out.status.success()
+        || String::from_utf8_lossy(&out.stdout).lines().any(|line| {
             let name = line.trim().trim_start_matches('"');
             let name = name.split('"').next().unwrap_or(name);
             let base = name.rsplit(['/', '\\']).next().unwrap_or(name);
@@ -846,7 +856,6 @@ fn agent_running(tool: ToolKind, opts: &AdapterOptions) -> bool {
                 ToolKind::Dsh => base == "dsh",
             }
         })
-    })
 }
 
 fn memories_in_snapshot(store: &Store, id: &str) -> Result<PathBuf> {
@@ -2277,8 +2286,25 @@ async fn run_cleanup(
         }
     }
 
+    let lock = HomeLock::acquire(store.paths())?;
+    if touches_running_data && agent_running(tool, opts) {
+        let error = Error::command_failed(
+            "close the agent first: its sessions, memories or login are in use",
+        );
+        if !deactivated {
+            return Err(discard(error));
+        }
+        if let Some(snapshot) = &snapshot {
+            rewrite_meta(store, snapshot, |meta| {
+                meta.memories = None;
+                meta.extras
+                    .retain(|extra| extra.kind == "saved-without-login");
+            });
+        }
+        return Err(error);
+    }
+
     let memory_cleared = if let Some((info, _)) = memory.filter(|(info, _)| info.bytes > 0) {
-        let _lock = HomeLock::acquire(store.paths())?;
         truncate_file(&home_dir(opts)?, Path::new(&info.path))?;
         true
     } else {
@@ -2288,7 +2314,6 @@ async fn run_cleanup(
     // Last, and the folder is put back empty so the agent finds what it expects.
     let mut memories_cleared = false;
     if let (Some(info), Some(snapshot)) = (&memories, &snapshot) {
-        let _lock = HomeLock::acquire(store.paths())?;
         let from = Path::new(&info.path);
         move_memories_into(store, snapshot, &home_dir(opts)?, from)?;
         std::fs::create_dir(from)?;
@@ -2298,7 +2323,6 @@ async fn run_cleanup(
     let (mut extras_cleared, mut sessions_cleared) = (0, 0);
     let mut erased = 0;
     if let Some(home) = agent_home(tool, opts)? {
-        let _lock = HomeLock::acquire(store.paths())?;
         if selection.deployment {
             stop_launch_agents(tool, opts);
         }
@@ -2315,6 +2339,7 @@ async fn run_cleanup(
     } else {
         false
     };
+    drop(lock);
     // A drifted Grok deployment is not removed through its adapter, but the cleanup has just
     // moved its manifest and rule away: nothing of it is left, so Switch's record says so too.
     // The cleanup itself is done by now; a failed read here only leaves the record as it was.
@@ -2760,6 +2785,35 @@ mod tests {
         assert!(!serde_json::from_value::<CleanupSelection>(json!({}))
             .unwrap()
             .any_selected());
+    }
+
+    #[test]
+    #[cfg(any(unix, windows))]
+    fn process_listing_failures_count_as_running() {
+        #[cfg(unix)]
+        use std::os::unix::process::ExitStatusExt;
+        #[cfg(windows)]
+        use std::os::windows::process::ExitStatusExt;
+        use std::process::{ExitStatus, Output};
+
+        let tool = ToolKind::Codex;
+        assert!(running_in_process_listing(
+            tool,
+            Err(std::io::ErrorKind::NotFound.into())
+        ));
+        let output = |status, stdout: &[u8]| {
+            Ok(Output {
+                status: ExitStatus::from_raw(status),
+                stdout: stdout.to_vec(),
+                stderr: Vec::new(),
+            })
+        };
+        assert!(running_in_process_listing(tool, output(256, b"")));
+        assert!(!running_in_process_listing(
+            tool,
+            output(0, b"another-process")
+        ));
+        assert!(running_in_process_listing(tool, output(0, b"codex.exe")));
     }
 
     #[test]
