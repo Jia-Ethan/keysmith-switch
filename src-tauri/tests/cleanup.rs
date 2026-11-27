@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use keysmith_switch_lib::adapter::AdapterOptions;
 use keysmith_switch_lib::cleanup::{
     confirm_cleanup, confirm_rollback, delete_snapshot, list_snapshots, plan_cleanup,
-    plan_rollback, CODEX_RUNNING_KEY,
+    plan_rollback, CleanupCategory, CleanupSelection, CODEX_RUNNING_KEY,
 };
 use keysmith_switch_lib::db::Store;
 use keysmith_switch_lib::harness::{deploy_harness_with, harness_state};
@@ -54,6 +54,32 @@ fn world(script: &str) -> World {
         opts,
         home,
     }
+}
+
+fn zcode_world() -> World {
+    let mut world = world("zcode/zcode-keysmith.py");
+    let app = world.home.join("ZCode-fixture");
+    std::fs::create_dir(&app).unwrap();
+    world
+        .opts
+        .extra_env
+        .insert("ZCODE_APP_PATH".into(), app.to_str().unwrap().to_owned());
+    #[cfg(target_os = "macos")]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let bin = world.home.join("test-bin");
+        let launchctl = bin.join("launchctl");
+        write(launchctl.clone(), "#!/bin/sh\nexit 0\n");
+        std::fs::set_permissions(&launchctl, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let path = std::env::var_os("PATH").unwrap_or_default();
+        let path =
+            std::env::join_paths(std::iter::once(bin).chain(std::env::split_paths(&path))).unwrap();
+        world
+            .opts
+            .extra_env
+            .insert("PATH".into(), path.to_str().unwrap().to_owned());
+    }
+    world
 }
 
 fn memory_path(world: &World) -> PathBuf {
@@ -115,9 +141,21 @@ async fn cleaning_claude_removes_the_deployment_and_empties_memory_after_saving_
         "a preview saves nothing"
     );
 
-    let done = confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
-        .await
-        .unwrap();
+    let done = confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection {
+            deployment: true,
+            memory: true,
+            memories: false,
+            setup: false,
+            sessions: false,
+            login_and_cache: false,
+        },
+        &world.opts,
+    )
+    .await
+    .unwrap();
     assert!(done.deactivated && done.memory_cleared);
     let snapshot_id = done.snapshot_id.expect("a snapshot is taken first");
 
@@ -168,11 +206,16 @@ async fn rolling_back_restores_the_memory_file_byte_for_byte_and_the_deployment(
     let plan = plan_cleanup(&world.store, ToolKind::Claude, &world.opts)
         .await
         .unwrap();
-    let snapshot_id = confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
-        .await
-        .unwrap()
-        .snapshot_id
-        .unwrap();
+    let snapshot_id = confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection::all(),
+        &world.opts,
+    )
+    .await
+    .unwrap()
+    .snapshot_id
+    .unwrap();
 
     let back = plan_rollback(&world.store, &snapshot_id, &world.opts)
         .await
@@ -223,11 +266,16 @@ async fn a_rollback_saves_what_it_overwrites_so_it_can_be_undone() {
     let plan = plan_cleanup(&world.store, ToolKind::Claude, &world.opts)
         .await
         .unwrap();
-    let first = confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
-        .await
-        .unwrap()
-        .snapshot_id
-        .unwrap();
+    let first = confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection::all(),
+        &world.opts,
+    )
+    .await
+    .unwrap()
+    .snapshot_id
+    .unwrap();
 
     // After the cleanup the person writes new notes.
     let newer = b"# Written after the cleanup\nuse tabs\n".to_vec();
@@ -282,9 +330,14 @@ async fn only_the_user_level_memory_file_is_ever_touched() {
     let plan = plan_cleanup(&world.store, ToolKind::Claude, &world.opts)
         .await
         .unwrap();
-    confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
-        .await
-        .unwrap();
+    confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection::all(),
+        &world.opts,
+    )
+    .await
+    .unwrap();
 
     let after: Vec<Vec<u8>> = ["CLAUDE.md", ".claude/CLAUDE.local.md", "main.rs"]
         .iter()
@@ -325,9 +378,14 @@ async fn a_plan_is_used_once_and_only_while_nothing_has_changed() {
     let mut edited = std::fs::read_to_string(memory_path(&world)).unwrap();
     edited.push_str("\nchanged after the preview\n");
     std::fs::write(memory_path(&world), &edited).unwrap();
-    let refused = confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
-        .await
-        .unwrap_err();
+    let refused = confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection::all(),
+        &world.opts,
+    )
+    .await
+    .unwrap_err();
     assert!(
         refused.to_string().contains("plan already used"),
         "{refused}"
@@ -346,12 +404,22 @@ async fn a_plan_is_used_once_and_only_while_nothing_has_changed() {
     let fresh = plan_cleanup(&world.store, ToolKind::Claude, &world.opts)
         .await
         .unwrap();
-    confirm_cleanup(&world.store, &fresh.operation_id, false, &world.opts)
-        .await
-        .unwrap();
-    let again = confirm_cleanup(&world.store, &fresh.operation_id, false, &world.opts)
-        .await
-        .unwrap_err();
+    confirm_cleanup(
+        &world.store,
+        &fresh.operation_id,
+        CleanupSelection::all(),
+        &world.opts,
+    )
+    .await
+    .unwrap();
+    let again = confirm_cleanup(
+        &world.store,
+        &fresh.operation_id,
+        CleanupSelection::all(),
+        &world.opts,
+    )
+    .await
+    .unwrap_err();
     assert!(again.to_string().contains("plan already used"), "{again}");
 }
 
@@ -365,9 +433,14 @@ async fn cleaning_an_agent_with_nothing_to_clean_says_so_and_saves_nothing() {
         .await
         .unwrap();
     assert!(plan.nothing_to_do && plan.memory.is_none() && !plan.deployment.present);
-    let done = confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
-        .await
-        .unwrap();
+    let done = confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection::all(),
+        &world.opts,
+    )
+    .await
+    .unwrap();
     assert!(!done.deactivated && !done.memory_cleared && done.snapshot_id.is_none());
     assert!(list_snapshots(&world.store).is_empty());
 }
@@ -395,9 +468,14 @@ async fn cleaning_grok_removes_the_deployment_and_rolling_back_restores_it() {
         plan.deployment.present && plan.memory.is_none(),
         "grok has no memory file Keysmith touches"
     );
-    let done = confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
-        .await
-        .unwrap();
+    let done = confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection::all(),
+        &world.opts,
+    )
+    .await
+    .unwrap();
     assert!(done.deactivated && !done.memory_cleared);
     assert!(!deployed(&world, ToolKind::Grok).await);
 
@@ -432,11 +510,16 @@ async fn snapshot_ids_cannot_name_other_paths_and_snapshots_can_be_deleted() {
     let plan = plan_cleanup(&world.store, ToolKind::Claude, &world.opts)
         .await
         .unwrap();
-    let id = confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
-        .await
-        .unwrap()
-        .snapshot_id
-        .unwrap();
+    let id = confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection::all(),
+        &world.opts,
+    )
+    .await
+    .unwrap()
+    .snapshot_id
+    .unwrap();
     assert_eq!(list_snapshots(&world.store).len(), 1);
     delete_snapshot(&world.store, &id).unwrap();
     assert!(list_snapshots(&world.store).is_empty());
@@ -451,11 +534,16 @@ async fn an_unfinished_snapshot_is_not_listed_and_a_damaged_one_is_refused() {
     let plan = plan_cleanup(&world.store, ToolKind::Claude, &world.opts)
         .await
         .unwrap();
-    let id = confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
-        .await
-        .unwrap()
-        .snapshot_id
-        .unwrap();
+    let id = confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection::all(),
+        &world.opts,
+    )
+    .await
+    .unwrap()
+    .snapshot_id
+    .unwrap();
     let root = world.store.paths().home.join("snapshots");
     std::fs::create_dir_all(root.join(".half-written.writing")).unwrap();
     std::fs::create_dir_all(root.join("20260101T000000Z-claude-abc123")).unwrap();
@@ -536,9 +624,17 @@ async fn cleaning_codex_empties_agents_md_but_leaves_the_memories_folder_unless_
     assert_eq!(memories.files, 2);
     assert!(!plan.agent_running);
 
-    let done = confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
-        .await
-        .unwrap();
+    let done = confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection {
+            memories: false,
+            ..CleanupSelection::all()
+        },
+        &world.opts,
+    )
+    .await
+    .unwrap();
     assert!(done.deactivated && done.memory_cleared && !done.memories_cleared);
     assert_eq!(std::fs::read(root.join("AGENTS.md")).unwrap(), b"");
     assert_eq!(
@@ -548,6 +644,658 @@ async fn cleaning_codex_empties_agents_md_but_leaves_the_memories_folder_unless_
     );
     let snapshots = list_snapshots(&world.store);
     assert!(snapshots[0].memories.is_none());
+}
+
+#[tokio::test]
+async fn default_safe_cleanup_only_removes_keysmith_deployment_and_ignores_running_sessions() {
+    if !python3_available() {
+        return;
+    }
+    let world = codex_with_memories(true).await;
+    let root = world.home.join(".codex");
+    write(root.join("rules/rule.md"), "rule\n");
+    write(root.join("AGENTS.md.2026"), "memory backup\n");
+    write(root.join("auth.json"), "credentials\n");
+    write(root.join("sessions/s1.jsonl"), "session\n");
+    write(world.home.join(".agents/skills/sample/SKILL.md"), "skill\n");
+    let session = std::fs::read(root.join("sessions/s1.jsonl")).unwrap();
+    let memories = memories_text(&world);
+
+    let plan = plan_cleanup(&world.store, ToolKind::Codex, &world.opts)
+        .await
+        .unwrap();
+    std::fs::write(root.join("sessions/late.jsonl"), "late session\n").unwrap();
+    let done = confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection::default_safe(),
+        &world.opts,
+    )
+    .await
+    .unwrap();
+
+    assert!(done.deactivated);
+    assert!(done.snapshot_id.is_some());
+    assert_eq!(
+        std::fs::read(root.join("AGENTS.md")).unwrap(),
+        b"# Mine\nAnswer in Chinese.\n"
+    );
+    assert!(root.join("rules/rule.md").exists());
+    assert!(root.join("AGENTS.md.2026").exists());
+    assert!(root.join("sessions/s1.jsonl").exists());
+    assert_eq!(
+        std::fs::read(root.join("sessions/s1.jsonl")).unwrap(),
+        session
+    );
+    assert!(root.join("sessions/late.jsonl").exists());
+    assert!(root.join("auth.json").exists());
+    assert_eq!(memories_text(&world), memories);
+    assert!(world.home.join(".agents/skills/sample/SKILL.md").exists());
+}
+
+#[tokio::test]
+async fn default_safe_claude_cleanup_leaves_memory_setup_sessions_login_and_rewrite_untouched() {
+    if !python3_available() {
+        return;
+    }
+    let (world, original_memory) = claude_with_notes().await;
+    let claude = world.home.join(".claude");
+    write(claude.join("rules/rule.md"), "rule\n");
+    write(claude.join("skills/skill.md"), "skill\n");
+    write(claude.join("projects/p/session.jsonl"), "session\n");
+    write(claude.join("auth.json"), "login\n");
+    let rewrite = keysmith_switch_lib::rewrite::claude::link(
+        &claude,
+        None,
+        "http://127.0.0.1:4000/t/token/claude/anthropic",
+    )
+    .unwrap();
+    let rewrite_dir = world.store.paths().home.join("input-rewrite");
+    std::fs::create_dir_all(&rewrite_dir).unwrap();
+    std::fs::write(
+        rewrite_dir.join("claude-link.json"),
+        serde_json::to_vec(&rewrite).unwrap(),
+    )
+    .unwrap();
+    let mut running_opts = world.opts.clone();
+    running_opts
+        .extra_env
+        .insert(CODEX_RUNNING_KEY.into(), "1".into());
+
+    let plan = plan_cleanup(&world.store, ToolKind::Claude, &running_opts)
+        .await
+        .unwrap();
+    write(claude.join("projects/p/new-session.jsonl"), "new session\n");
+    let result = confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection::default_safe(),
+        &running_opts,
+    )
+    .await
+    .unwrap();
+
+    assert!(result.deactivated);
+    assert_eq!(
+        std::fs::read(memory_path(&world)).unwrap(),
+        b"\n# My own notes\nAlways answer in Chinese.\nNever touch the billing code.\n"
+    );
+    assert!(original_memory.starts_with(b"<!-- claude-keysmith:start"));
+    assert_eq!(
+        std::fs::read(claude.join("rules/rule.md")).unwrap(),
+        b"rule\n"
+    );
+    assert_eq!(
+        std::fs::read(claude.join("skills/skill.md")).unwrap(),
+        b"skill\n"
+    );
+    assert_eq!(
+        std::fs::read(claude.join("projects/p/session.jsonl")).unwrap(),
+        b"session\n"
+    );
+    assert_eq!(
+        std::fs::read(claude.join("projects/p/new-session.jsonl")).unwrap(),
+        b"new session\n"
+    );
+    assert_eq!(std::fs::read(claude.join("auth.json")).unwrap(), b"login\n");
+    assert!(keysmith_switch_lib::rewrite::read_claude_record(world.store.paths()).is_some());
+}
+
+#[tokio::test]
+async fn session_snapshots_restore_claude_and_codex_data_and_preserve_new_sessions() {
+    if !python3_available() {
+        return;
+    }
+    let (claude, _) = claude_with_notes().await;
+    let projects = claude.home.join(".claude/projects/p/session.jsonl");
+    let history = claude.home.join(".claude/history.jsonl");
+    write(projects.clone(), "original project session\n");
+    write(history.clone(), "original history\n");
+    let project_bytes = std::fs::read(&projects).unwrap();
+    let history_bytes = std::fs::read(&history).unwrap();
+    let plan = plan_cleanup(&claude.store, ToolKind::Claude, &claude.opts)
+        .await
+        .unwrap();
+    let done = confirm_cleanup(
+        &claude.store,
+        &plan.operation_id,
+        CleanupSelection {
+            deployment: false,
+            memory: false,
+            memories: false,
+            setup: false,
+            sessions: true,
+            login_and_cache: false,
+        },
+        &claude.opts,
+    )
+    .await
+    .unwrap();
+    assert_eq!(done.sessions_cleared, 2);
+    assert!(!projects.exists() && !history.exists());
+    write(projects.clone(), "new project session\n");
+    let rollback = plan_rollback(
+        &claude.store,
+        done.snapshot_id.as_deref().unwrap(),
+        &claude.opts,
+    )
+    .await
+    .unwrap();
+    let restored = confirm_rollback(&claude.store, &rollback.operation_id, &claude.opts)
+        .await
+        .unwrap();
+    assert_eq!(restored.sessions_restored, 2);
+    assert_eq!(std::fs::read(projects).unwrap(), project_bytes);
+    assert_eq!(std::fs::read(history).unwrap(), history_bytes);
+    let before = claude
+        .store
+        .paths()
+        .home
+        .join("snapshots")
+        .join(restored.saved_snapshot_id.unwrap());
+    assert_eq!(
+        std::fs::read(before.join("extras/.claude/projects/p/session.jsonl")).unwrap(),
+        b"new project session\n"
+    );
+
+    let codex = codex_world(false);
+    let codex_root = codex.home.join(".codex");
+    std::fs::create_dir_all(&codex_root).unwrap();
+    std::fs::write(codex_root.join("config.toml"), "").unwrap();
+    let sessions = codex_root.join("sessions/2026/01.jsonl");
+    let database = codex_root.join("state_5.sqlite");
+    let original_wal = codex_root.join("state_5.sqlite-wal");
+    let database_without_wal = codex_root.join("goals_1.sqlite");
+    let orphan_wal = codex_root.join("goals_1.sqlite-wal");
+    write(sessions.clone(), "codex original\n");
+    write(database.clone(), "sqlite bytes\0\x01");
+    write(original_wal.clone(), "original wal\0");
+    write(database_without_wal.clone(), "original goals\0");
+    let session_bytes = std::fs::read(&sessions).unwrap();
+    let db_bytes = std::fs::read(&database).unwrap();
+    let wal_bytes = std::fs::read(&original_wal).unwrap();
+    let plan = plan_cleanup(&codex.store, ToolKind::Codex, &codex.opts)
+        .await
+        .unwrap();
+    let done = confirm_cleanup(
+        &codex.store,
+        &plan.operation_id,
+        CleanupSelection {
+            deployment: false,
+            memory: false,
+            memories: false,
+            setup: false,
+            sessions: true,
+            login_and_cache: false,
+        },
+        &codex.opts,
+    )
+    .await
+    .unwrap();
+    assert_eq!(done.sessions_cleared, 4);
+    assert!(!sessions.exists() && !database.exists() && !original_wal.exists());
+    assert!(!database_without_wal.exists());
+    let snapshot = list_snapshots(&codex.store)
+        .into_iter()
+        .find(|snapshot| Some(&snapshot.id) == done.snapshot_id.as_ref())
+        .unwrap();
+    let database_meta = snapshot
+        .extras
+        .iter()
+        .find(|extra| extra.name == ".codex/state_5.sqlite")
+        .unwrap();
+    assert_eq!(database_meta.files, 1);
+    assert_eq!(database_meta.bytes, db_bytes.len() as u64);
+    write(sessions.clone(), "new session\n");
+    write(database.clone(), "new database\0");
+    write(original_wal.clone(), "new wal\n");
+    write(codex_root.join("state_5.sqlite-shm"), "new shm\n");
+    write(orphan_wal.clone(), "orphan wal\n");
+    let rollback = plan_rollback(
+        &codex.store,
+        done.snapshot_id.as_deref().unwrap(),
+        &codex.opts,
+    )
+    .await
+    .unwrap();
+    let restored = confirm_rollback(&codex.store, &rollback.operation_id, &codex.opts)
+        .await
+        .unwrap();
+    assert_eq!(restored.sessions_restored, 4);
+    assert_eq!(std::fs::read(sessions).unwrap(), session_bytes);
+    assert_eq!(std::fs::read(&database).unwrap(), db_bytes);
+    assert_eq!(std::fs::read(original_wal).unwrap(), wal_bytes);
+    assert_eq!(
+        std::fs::read(database_without_wal).unwrap(),
+        b"original goals\0"
+    );
+    assert!(!codex_root.join("state_5.sqlite-shm").exists());
+    assert!(!orphan_wal.exists());
+    let before = list_snapshots(&codex.store)
+        .into_iter()
+        .find(|snapshot| Some(&snapshot.id) == restored.saved_snapshot_id.as_ref())
+        .unwrap();
+    let before_root = codex.store.paths().home.join("snapshots").join(before.id);
+    assert_eq!(
+        std::fs::read(before_root.join("extras/.codex/sessions/2026/01.jsonl")).unwrap(),
+        b"new session\n"
+    );
+    assert_eq!(
+        std::fs::read(before_root.join("extras/.codex/state_5.sqlite-wal")).unwrap(),
+        b"new wal\n"
+    );
+    assert_eq!(
+        std::fs::read(before_root.join("extras/.codex/state_5.sqlite-shm")).unwrap(),
+        b"new shm\n"
+    );
+    assert_eq!(
+        std::fs::read(before_root.join("extras/.codex/goals_1.sqlite-wal")).unwrap(),
+        b"orphan wal\n"
+    );
+    assert_eq!(
+        std::fs::read(before_root.join("extras/.codex/state_5.sqlite")).unwrap(),
+        b"new database\0"
+    );
+    assert_eq!(
+        std::fs::metadata(&database).unwrap().len(),
+        db_bytes.len() as u64
+    );
+}
+
+#[tokio::test]
+async fn selected_sessions_and_logins_are_blocked_while_agent_runs_but_deployment_only_is_allowed()
+{
+    if !python3_available() {
+        return;
+    }
+    let world = codex_with_memories(true).await;
+    let root = world.home.join(".codex");
+    write(root.join("sessions/session.jsonl"), "session\n");
+    write(root.join("auth.json"), "login\n");
+
+    let plan = plan_cleanup(&world.store, ToolKind::Codex, &world.opts)
+        .await
+        .unwrap();
+
+    let sessions = confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection {
+            deployment: false,
+            memory: false,
+            memories: false,
+            setup: false,
+            sessions: true,
+            login_and_cache: false,
+        },
+        &world.opts,
+    )
+    .await
+    .unwrap_err();
+    assert!(sessions.to_string().contains("close the agent first"));
+
+    let plan = plan_cleanup(&world.store, ToolKind::Codex, &world.opts)
+        .await
+        .unwrap();
+    let memories = confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection {
+            deployment: false,
+            memory: false,
+            memories: true,
+            setup: false,
+            sessions: false,
+            login_and_cache: false,
+        },
+        &world.opts,
+    )
+    .await
+    .unwrap_err();
+    assert!(memories.to_string().contains("close the agent first"));
+
+    let plan = plan_cleanup(&world.store, ToolKind::Codex, &world.opts)
+        .await
+        .unwrap();
+    let login = confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection {
+            deployment: false,
+            memory: false,
+            memories: false,
+            setup: false,
+            sessions: false,
+            login_and_cache: true,
+        },
+        &world.opts,
+    )
+    .await
+    .unwrap_err();
+    assert!(login.to_string().contains("close the agent first"));
+
+    let plan = plan_cleanup(&world.store, ToolKind::Codex, &world.opts)
+        .await
+        .unwrap();
+    let deployment = confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection::default_safe(),
+        &world.opts,
+    )
+    .await
+    .unwrap();
+    assert!(deployment.deactivated);
+    assert!(root.join("sessions/session.jsonl").exists());
+    assert!(root.join("auth.json").exists());
+    assert_eq!(memories_text(&world).0, "remember this\n");
+}
+
+#[tokio::test]
+async fn running_agent_blocks_rollback_of_session_snapshot() {
+    if !python3_available() {
+        return;
+    }
+    let (world, _) = claude_with_notes().await;
+    write(
+        world.home.join(".claude/projects/p/session.jsonl"),
+        "original session\n",
+    );
+    let plan = plan_cleanup(&world.store, ToolKind::Claude, &world.opts)
+        .await
+        .unwrap();
+    let cleaned = confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection {
+            deployment: false,
+            memory: false,
+            memories: false,
+            setup: false,
+            sessions: true,
+            login_and_cache: false,
+        },
+        &world.opts,
+    )
+    .await
+    .unwrap();
+
+    let mut running_opts = world.opts.clone();
+    running_opts
+        .extra_env
+        .insert(CODEX_RUNNING_KEY.into(), "1".into());
+    let rollback = plan_rollback(
+        &world.store,
+        cleaned.snapshot_id.as_deref().unwrap(),
+        &running_opts,
+    )
+    .await
+    .unwrap();
+    assert!(rollback.agent_running);
+    let result = confirm_rollback(&world.store, &rollback.operation_id, &running_opts).await;
+    assert!(result.is_err());
+    assert!(!world.home.join(".claude/projects/p/session.jsonl").exists());
+}
+
+#[tokio::test]
+async fn deployment_only_cleanup_keeps_input_rewrite_connected() {
+    if !python3_available() {
+        return;
+    }
+    let (world, _) = claude_with_notes().await;
+    let claude_dir = world.home.join(".claude");
+    let record = keysmith_switch_lib::rewrite::claude::link(
+        &claude_dir,
+        None,
+        "http://127.0.0.1:4000/t/token/claude/anthropic",
+    )
+    .unwrap();
+    let rewrite_dir = world.store.paths().home.join("input-rewrite");
+    std::fs::create_dir_all(&rewrite_dir).unwrap();
+    std::fs::write(
+        rewrite_dir.join("claude-link.json"),
+        serde_json::to_vec(&record).unwrap(),
+    )
+    .unwrap();
+
+    let plan = plan_cleanup(&world.store, ToolKind::Claude, &world.opts)
+        .await
+        .unwrap();
+    let result = confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection::default_safe(),
+        &world.opts,
+    )
+    .await
+    .unwrap();
+    assert!(!result.rewrite_disconnected);
+    assert!(keysmith_switch_lib::rewrite::read_claude_record(world.store.paths()).is_some());
+}
+
+#[tokio::test]
+async fn cleanup_rejects_an_empty_selection() {
+    if !python3_available() {
+        return;
+    }
+    let world = world("claude/claude-instruct.py");
+    let plan = plan_cleanup(&world.store, ToolKind::Claude, &world.opts)
+        .await
+        .unwrap();
+    let result = confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection {
+            deployment: false,
+            memory: false,
+            memories: false,
+            setup: false,
+            sessions: false,
+            login_and_cache: false,
+        },
+        &world.opts,
+    )
+    .await;
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("nothing selected to clean"));
+}
+
+#[tokio::test]
+async fn login_only_cleanup_erases_credentials_without_snapshot_and_keeps_sessions() {
+    if !python3_available() {
+        return;
+    }
+    let world = codex_world(false);
+    let root = world.home.join(".codex");
+    write(root.join("auth.json"), "login data\n");
+    write(root.join("cache/data"), "cache data\n");
+    write(root.join("sessions/session.jsonl"), "history\n");
+    let plan = plan_cleanup(&world.store, ToolKind::Codex, &world.opts)
+        .await
+        .unwrap();
+    let done = confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection {
+            deployment: false,
+            memory: false,
+            memories: false,
+            setup: false,
+            sessions: false,
+            login_and_cache: true,
+        },
+        &world.opts,
+    )
+    .await
+    .unwrap();
+    assert_eq!(done.erased, 2);
+    assert!(!root.join("auth.json").exists());
+    assert!(!root.join("cache").exists());
+    assert_eq!(
+        std::fs::read_to_string(root.join("sessions/session.jsonl")).unwrap(),
+        "history\n"
+    );
+    assert!(done.snapshot_id.is_none());
+}
+
+#[tokio::test]
+async fn legacy_snapshot_extra_without_category_deserializes_and_rolls_back() {
+    if !python3_available() {
+        return;
+    }
+    let world = world("claude/claude-instruct.py");
+    let root = world.store.paths().home.join("snapshots");
+    let id = "20261127T000000Z-claude-abc123";
+    let snapshot = root.join(id);
+    write(snapshot.join("extras/.claude/rules/rule.md"), "rule\n");
+    let meta = serde_json::json!({
+        "id": id,
+        "createdAt": "2026-11-27T00:00:00Z",
+        "tool": "claude",
+        "kind": "cleanup",
+        "deployment": {"present": false, "title": null, "restorable": false},
+        "memory": null,
+        "memories": null,
+        "extras": [{"name":".claude/rules","path":"/tmp/home/.claude/rules","files":1,"bytes":5,"kind":"saved"}]
+    });
+    std::fs::write(
+        snapshot.join("meta.json"),
+        serde_json::to_vec(&meta).unwrap(),
+    )
+    .unwrap();
+    let loaded = list_snapshots(&world.store).into_iter().next().unwrap();
+    assert_eq!(loaded.extras[0].category, CleanupCategory::Setup);
+    let rollback = plan_rollback(&world.store, id, &world.opts).await.unwrap();
+    confirm_rollback(&world.store, &rollback.operation_id, &world.opts)
+        .await
+        .unwrap();
+    assert_eq!(
+        std::fs::read_to_string(world.home.join(".claude/rules/rule.md")).unwrap(),
+        "rule\n"
+    );
+}
+
+#[tokio::test]
+async fn zcode_login_cleanup_is_refused_while_patched_without_deployment_selection() {
+    if !python3_available() {
+        return;
+    }
+    let world = zcode_world();
+    write(
+        world.home.join(".zcode-keysmith/config.json"),
+        r#"{"app_bundle_modified":true}"#,
+    );
+    write(
+        world.home.join(".zcode-keysmith/backups/original"),
+        "original\n",
+    );
+    write(
+        world.home.join(".zcode/v2/credentials.json"),
+        "credential\n",
+    );
+    let plan = plan_cleanup(&world.store, ToolKind::Zcode, &world.opts)
+        .await
+        .unwrap();
+    let result = confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection {
+            deployment: false,
+            memory: false,
+            memories: false,
+            setup: false,
+            sessions: false,
+            login_and_cache: true,
+        },
+        &world.opts,
+    )
+    .await;
+    assert!(result.unwrap_err().to_string().contains("still patched"));
+    assert!(world.home.join(".zcode-keysmith/config.json").exists());
+    assert!(world.home.join(".zcode-keysmith/backups/original").exists());
+    assert!(world.home.join(".zcode/v2/credentials.json").exists());
+}
+
+#[tokio::test]
+async fn zcode_keeps_backups_if_uninstall_leaves_the_runtime_patched() {
+    if !python3_available() {
+        return;
+    }
+    let mut world = zcode_world();
+    let adapter = world.home.join("zcode-adapter.py");
+    write(
+        adapter.clone(),
+        r#"import json, sys
+from pathlib import Path
+
+managed = Path(sys.argv[sys.argv.index('--managed-dir') + 1])
+config = managed / 'config.json'
+system = managed / 'system-role.md'
+if sys.argv[1] == 'doctor':
+    print('zcode-keysmith doctor')
+    print(f'system_file_exists: {str(system.exists()).lower()}')
+    print('zcode_runtime_patched: true')
+else:
+    execute = '--yes' in sys.argv
+    if execute:
+        config.rename(managed / 'config.json.bak')
+        system.unlink()
+    print(json.dumps({'schema': 'zcode-keysmith/v1', 'operation': 'uninstall',
+                      'mode': 'execute' if execute else 'preview', 'ok': True}))
+"#,
+    );
+    world.opts.cli_override = Some(adapter);
+    let managed = world.home.join(".zcode-keysmith");
+    write(
+        managed.join("config.json"),
+        r#"{"app_bundle_modified":true}"#,
+    );
+    write(managed.join("system-role.md"), "managed prompt\n");
+    let backup = managed.join("backups/original");
+    let credentials = world.home.join(".zcode/v2/credentials.json");
+    write(backup.clone(), "original\n");
+    write(credentials.clone(), "login\n");
+
+    let preview = plan_cleanup(&world.store, ToolKind::Zcode, &world.opts)
+        .await
+        .unwrap();
+    assert!(preview.deployment.present);
+    let result = confirm_cleanup(
+        &world.store,
+        &preview.operation_id,
+        CleanupSelection {
+            login_and_cache: true,
+            ..CleanupSelection::default_safe()
+        },
+        &world.opts,
+    )
+    .await;
+    assert!(result.unwrap_err().to_string().contains("still patched"));
+    assert!(managed.join("config.json.bak").exists());
+    assert_eq!(std::fs::read(backup).unwrap(), b"original\n");
+    assert_eq!(std::fs::read(credentials).unwrap(), b"login\n");
 }
 
 #[tokio::test]
@@ -569,9 +1317,14 @@ async fn cleaning_codex_leaves_config_toml_alone_so_it_can_be_deployed_again() {
         "config.toml is not part of the cleanup: {:?}",
         plan.extras
     );
-    confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
-        .await
-        .unwrap();
+    confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection::all(),
+        &world.opts,
+    )
+    .await
+    .unwrap();
     assert!(
         root.join("config.toml").is_file(),
         "the cleanup does not take config.toml away"
@@ -631,19 +1384,21 @@ async fn clearing_the_codex_memories_folder_moves_it_into_the_snapshot_and_rollb
     let plan = plan_cleanup(&world.store, ToolKind::Codex, &world.opts)
         .await
         .unwrap();
-    let done = confirm_cleanup(&world.store, &plan.operation_id, true, &world.opts)
-        .await
-        .unwrap();
+    let done = confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection::all(),
+        &world.opts,
+    )
+    .await
+    .unwrap();
     assert!(done.memories_cleared && done.memory_cleared);
     let id = done.snapshot_id.unwrap();
 
     let folder = root.join("memories");
     assert!(folder.is_dir(), "the folder is put back, empty");
     assert_eq!(std::fs::read_dir(&folder).unwrap().count(), 0);
-    assert!(
-        !root.join("memories_1.sqlite").exists(),
-        "Codex's own database is session history: it is erased, not saved"
-    );
+    assert!(!root.join("memories_1.sqlite").exists());
     let saved = list_snapshots(&world.store)
         .into_iter()
         .find(|snapshot| snapshot.id == id)
@@ -676,6 +1431,7 @@ async fn clearing_the_codex_memories_folder_moves_it_into_the_snapshot_and_rollb
     assert!(all
         .iter()
         .any(|snapshot| snapshot.id == id && snapshot.memories.is_some()));
+    assert!(root.join("memories_1.sqlite").is_file());
 }
 
 #[tokio::test]
@@ -688,7 +1444,13 @@ async fn the_codex_memories_folder_is_not_touched_while_codex_runs_or_when_it_ch
         .await
         .unwrap();
     assert!(plan.agent_running);
-    let refused = confirm_cleanup(&world.store, &plan.operation_id, true, &world.opts).await;
+    let refused = confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection::all(),
+        &world.opts,
+    )
+    .await;
     assert!(refused.is_err(), "{refused:?}");
     assert_eq!(
         memories_text(&world),
@@ -710,7 +1472,13 @@ async fn the_codex_memories_folder_is_not_touched_while_codex_runs_or_when_it_ch
         .await
         .unwrap();
     std::fs::write(world.home.join(".codex/memories/late.md"), "late").unwrap();
-    let stale = confirm_cleanup(&world.store, &plan.operation_id, true, &world.opts).await;
+    let stale = confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection::all(),
+        &world.opts,
+    )
+    .await;
     assert!(stale.is_err(), "{stale:?}");
     assert!(world.home.join(".codex/memories/late.md").exists());
     assert!(list_snapshots(&world.store).is_empty());
@@ -802,27 +1570,29 @@ async fn a_full_cleanup_returns_claude_to_a_fresh_install_and_keeps_no_login_in_
         .extras
         .iter()
         .any(|e| e.name == ".claude/settings.json" && e.kind == "saved-without-login"));
-    assert!(plan
-        .extras
-        .iter()
-        .any(|e| e.name == ".claude/projects" && e.kind == "erased"));
+    assert!(plan.extras.iter().any(|e| e.name == ".claude/projects"
+        && e.kind == "saved"
+        && e.category == CleanupCategory::Sessions));
     assert!(
         !plan.login_in_keychain,
         "a test home never reaches the real keychain"
     );
 
-    let done = confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
-        .await
-        .unwrap();
-    assert!(done.erased >= 4 && done.extras_cleared >= 3, "{done:?}");
+    let done = confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection::all(),
+        &world.opts,
+    )
+    .await
+    .unwrap();
+    assert!(done.erased >= 2 && done.extras_cleared >= 3, "{done:?}");
 
     for gone in [
         ".claude/settings.json",
         ".claude.json",
         ".claude/rules",
         ".claude/skills",
-        ".claude/history.jsonl",
-        ".claude/projects",
         ".claude/plugins",
         ".claude/settings.json.bak_1",
     ] {
@@ -847,10 +1617,7 @@ async fn a_full_cleanup_returns_claude_to_a_fresh_install_and_keeps_no_login_in_
         kept.contains("opus") && kept.contains("mcpServers"),
         "settings are kept"
     );
-    assert!(
-        !kept.contains("conversation"),
-        "history is erased, not saved"
-    );
+    assert!(kept.contains("conversation"), "session data is snapshotted");
 
     // Rolling back brings the setup back, without a login.
     let id = done.snapshot_id.unwrap();
@@ -868,8 +1635,8 @@ async fn a_full_cleanup_returns_claude_to_a_fresh_install_and_keeps_no_login_in_
         "{settings}"
     );
     assert!(
-        !home.join(".claude/history.jsonl").exists(),
-        "history is not restored"
+        home.join(".claude/history.jsonl").is_file(),
+        "history is restored"
     );
 }
 
@@ -884,9 +1651,14 @@ async fn a_saved_folder_holding_a_git_project_is_left_where_it_is() {
     let plan = plan_cleanup(&world.store, ToolKind::Claude, &world.opts)
         .await
         .unwrap();
-    confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
-        .await
-        .unwrap();
+    confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection::all(),
+        &world.opts,
+    )
+    .await
+    .unwrap();
     assert!(world.home.join(".claude/agents/repo/.git/HEAD").exists());
 }
 
@@ -925,10 +1697,15 @@ async fn a_full_cleanup_returns_grok_to_a_fresh_install_and_keeps_its_program_an
         .await
         .unwrap();
     assert!(!plan.nothing_to_do, "{plan:?}");
-    let done = confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
-        .await
-        .unwrap();
-    assert!(done.erased >= 2, "{done:?}");
+    let done = confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection::all(),
+        &world.opts,
+    )
+    .await
+    .unwrap();
+    assert!(done.erased >= 1, "{done:?}");
 
     assert!(!home.join(".grok/auth.json").exists() && !home.join(".grok/sessions").exists());
     assert!(!home.join(".grok/config.toml").exists() && !home.join(".grok/rules").exists());
@@ -940,8 +1717,8 @@ async fn a_full_cleanup_returns_grok_to_a_fresh_install_and_keeps_its_program_an
 
     let kept = tree_text(&world.store.paths().home.join("snapshots"));
     assert!(
-        !kept.contains(SECRET) && !kept.contains("conversation"),
-        "no login or history in a snapshot"
+        !kept.contains(SECRET) && kept.contains("conversation"),
+        "login is excluded and session history is saved"
     );
     assert!(kept.contains("my rule") && kept.contains("compat.claude"));
 
@@ -959,6 +1736,7 @@ async fn a_full_cleanup_returns_grok_to_a_fresh_install_and_keeps_its_program_an
         config.contains("theme") && !config.contains(SECRET),
         "{config}"
     );
+    assert!(home.join(".grok/sessions/s/session.jsonl").is_file());
 }
 
 #[tokio::test]
@@ -966,7 +1744,7 @@ async fn a_full_cleanup_of_zcode_leaves_its_workspace_and_projects_alone() {
     if !python3_available() {
         return;
     }
-    let world = world("zcode/zcode-keysmith.py");
+    let world = zcode_world();
     let home = world.home.clone();
     write(
         home.join(".zcode/v2/config.json"),
@@ -1010,15 +1788,18 @@ async fn a_full_cleanup_of_zcode_leaves_its_workspace_and_projects_alone() {
             .any(|e| e.name.starts_with(".zcode/workspace")),
         "the workspace is never named"
     );
-    let done = confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
-        .await
-        .unwrap();
-    assert!(done.erased >= 3, "{done:?}");
+    let done = confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection::all(),
+        &world.opts,
+    )
+    .await
+    .unwrap();
+    assert!(done.erased >= 2, "{done:?}");
 
-    assert!(
-        !home.join(".zcode/v2/credentials.json").exists()
-            && !home.join(".zcode/cli/rollout").exists()
-    );
+    assert!(!home.join(".zcode/v2/credentials.json").exists());
+    assert!(!home.join(".zcode/cli/rollout").exists());
     assert!(!home.join(".zcode/v2/config.json").exists() && !home.join(".zcode/commands").exists());
     assert!(!home
         .join("Library/Application Support/ZCode/session")
@@ -1031,9 +1812,8 @@ async fn a_full_cleanup_of_zcode_leaves_its_workspace_and_projects_alone() {
     assert!(home.join(".zcode/workspace/default/repo/a.md").exists());
 
     let kept = tree_text(&world.store.paths().home.join("snapshots"));
-    assert!(
-        !kept.contains(SECRET) && !kept.contains("conversation") && !kept.contains("runtime\n")
-    );
+    assert!(!kept.contains(SECRET) && !kept.contains("runtime\n"));
+    assert!(kept.contains("conversation"));
     assert!(kept.contains("command") && kept.contains("role"));
 }
 
@@ -1042,7 +1822,7 @@ async fn zcode_is_not_cleaned_while_its_app_is_still_patched_and_not_deployed() 
     if !python3_available() {
         return;
     }
-    let world = world("zcode/zcode-keysmith.py");
+    let world = zcode_world();
     let home = world.home.clone();
     write(
         home.join(".zcode-keysmith/config.json"),
@@ -1058,7 +1838,13 @@ async fn zcode_is_not_cleaned_while_its_app_is_still_patched_and_not_deployed() 
         .await
         .unwrap();
     assert!(!plan.blockers.is_empty(), "{plan:?}");
-    let refused = confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts).await;
+    let refused = confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection::all(),
+        &world.opts,
+    )
+    .await;
     assert!(refused.is_err(), "{refused:?}");
     assert!(
         home.join(".zcode-keysmith/backups/zcode.cjs.1.original")
@@ -1109,9 +1895,14 @@ async fn cleaning_claude_disconnects_input_rewrite_before_saving_its_settings() 
     let plan = plan_cleanup(&world.store, ToolKind::Claude, &world.opts)
         .await
         .unwrap();
-    let done = confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
-        .await
-        .unwrap();
+    let done = confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection::all(),
+        &world.opts,
+    )
+    .await
+    .unwrap();
     assert!(done.rewrite_disconnected);
     assert!(keysmith_switch_lib::rewrite::read_claude_record(world.store.paths()).is_none());
 
@@ -1241,9 +2032,14 @@ async fn cleanup_keeps_grok_keysmiths_own_config_backup() {
     let plan = plan_cleanup(&world.store, ToolKind::Grok, &world.opts)
         .await
         .unwrap();
-    confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
-        .await
-        .unwrap();
+    confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection::all(),
+        &world.opts,
+    )
+    .await
+    .unwrap();
     assert!(grok
         .join("config.toml.keysmith-backup-20260101T000000-abcdef0123")
         .exists());
@@ -1310,9 +2106,14 @@ async fn cleaning_a_drifted_grok_deployment_leaves_no_live_record() {
         .await
         .unwrap();
     assert!(plan.config_drifted && plan.blockers.is_empty(), "{plan:?}");
-    let done = confirm_cleanup(&world.store, &plan.operation_id, false, &world.opts)
-        .await
-        .unwrap();
+    let done = confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection::all(),
+        &world.opts,
+    )
+    .await
+    .unwrap();
     assert!(!done.deactivated, "{done:?}");
 
     assert!(!grok_record_active(&world));
@@ -1431,9 +2232,14 @@ async fn cleaning_codex_takes_its_shared_skills_and_rolling_back_restores_them()
         .extras
         .iter()
         .any(|e| e.name.contains("someone-else")));
-    let done = confirm_cleanup(&world.store, &cleanup.operation_id, false, &world.opts)
-        .await
-        .unwrap();
+    let done = confirm_cleanup(
+        &world.store,
+        &cleanup.operation_id,
+        CleanupSelection::all(),
+        &world.opts,
+    )
+    .await
+    .unwrap();
     assert!(!skill.exists());
     assert!(home.join(".agents/skills/someone-else/SKILL.md").exists());
     assert_eq!(components::installed(&world.store)["jia.kit"].missing, 1);
