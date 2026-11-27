@@ -416,6 +416,27 @@ fn table(tool: ToolKind) -> Option<&'static Table> {
     }
 }
 
+fn legacy_extra_category(tool: ToolKind, name: &str, kind: &str) -> CleanupCategory {
+    if let Some(table) = table(tool) {
+        if let Some(entry) = table.entries.iter().find(|entry| entry.name == name) {
+            return entry.category;
+        }
+        let (folder, file) = name.rsplit_once('/').unwrap_or(("", name));
+        if let Some(prefix) = table.prefixes.iter().find(|prefix| {
+            prefix.folder == folder
+                && file.starts_with(prefix.prefix)
+                && file.len() > prefix.prefix.len()
+        }) {
+            return prefix.category;
+        }
+    }
+    if kind == "erased" {
+        LoginAndCache
+    } else {
+        Setup
+    }
+}
+
 /// Login and credential files. A saved folder holding one is left where it is.
 const SECRET_NAMES: [&str; 5] = [
     "auth.json",
@@ -637,8 +658,31 @@ fn read_snapshot(store: &Store, id: &str) -> Result<SnapshotMeta> {
     let path = snapshot_path(store, id)?.join("meta.json");
     require_contained(&store.paths().home, &path)?;
     let bytes = std::fs::read(path).map_err(|_| Error::invalid("snapshot not found"))?;
-    let meta: SnapshotMeta =
-        serde_json::from_slice(&bytes).map_err(|_| Error::invalid("snapshot is damaged"))?;
+    let damaged = |_| Error::invalid("snapshot is damaged");
+    let mut value: serde_json::Value = serde_json::from_slice(&bytes).map_err(damaged)?;
+    let tool = serde_json::from_value::<ToolKind>(value["tool"].clone()).map_err(damaged)?;
+    if let Some(extras) = value["extras"].as_array_mut() {
+        for extra in extras
+            .iter_mut()
+            .filter_map(serde_json::Value::as_object_mut)
+        {
+            if !extra.contains_key("category") {
+                let name = extra
+                    .get("name")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default();
+                let kind = extra
+                    .get("kind")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("saved");
+                extra.insert(
+                    "category".into(),
+                    json!(legacy_extra_category(tool, name, kind)),
+                );
+            }
+        }
+    }
+    let meta: SnapshotMeta = serde_json::from_value(value).map_err(damaged)?;
     if meta.id != id {
         return Err(Error::invalid("snapshot is damaged: its ID does not match"));
     }
@@ -3175,6 +3219,26 @@ mod tests {
             exists: true,
         });
         envelope
+    }
+
+    #[test]
+    fn legacy_categories_infer_exact_and_prefix_matches_before_falling_back() {
+        assert_eq!(
+            legacy_extra_category(ToolKind::Claude, ".claude.json", "saved-without-login"),
+            LoginAndCache
+        );
+        assert_eq!(
+            legacy_extra_category(ToolKind::Grok, ".grok/worktrees.db-journal", "saved"),
+            Sessions
+        );
+        assert_eq!(
+            legacy_extra_category(ToolKind::Grok, ".grok/custom", "erased"),
+            LoginAndCache
+        );
+        assert_eq!(
+            legacy_extra_category(ToolKind::Grok, ".grok/custom", "saved"),
+            Setup
+        );
     }
 
     #[test]

@@ -1614,6 +1614,55 @@ async fn login_only_cleanup_erases_credentials_without_snapshot_and_keeps_sessio
 }
 
 #[tokio::test]
+async fn legacy_grok_and_zcode_memories_require_an_idle_agent() {
+    for (world, tool, names) in [
+        (
+            world("grok/grok-keysmith.py"),
+            ToolKind::Grok,
+            &[".grok/memory", ".grok/memory-v2"][..],
+        ),
+        (zcode_world(), ToolKind::Zcode, &[".zcode/cli/memories"][..]),
+    ] {
+        let id = "legacy-memories";
+        let root = world.store.paths().home.join("snapshots").join(id);
+        let mut extras = Vec::new();
+        for name in names {
+            write(root.join("extras").join(name).join("note.md"), "note\n");
+            extras.push(serde_json::json!({
+                "name": name, "path": world.home.join(name), "files": 1, "bytes": 5
+            }));
+        }
+        let meta = serde_json::json!({
+            "id": id, "tool": tool, "createdAt": "2026-11-27T00:00:00Z", "kind": "cleanup",
+            "deployment": {"present": false, "title": null, "restorable": false},
+            "memory": null, "extras": extras
+        });
+        write(root.join("meta.json"), &meta.to_string());
+        let listed = list_snapshots(&world.store);
+        assert_eq!(listed[0].extras.len(), names.len());
+        assert!(listed[0]
+            .extras
+            .iter()
+            .all(|extra| extra.category == CleanupCategory::Memories));
+        let mut running = world.opts.clone();
+        running
+            .extra_env
+            .insert(CODEX_RUNNING_KEY.into(), "1".into());
+        let plan = plan_rollback(&world.store, id, &running).await.unwrap();
+        assert!(plan.agent_running);
+        assert_eq!(plan.snapshot, listed[0]);
+        let error = confirm_rollback(&world.store, &plan.operation_id, &running)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("close the agent first"));
+        for name in names {
+            assert!(!world.home.join(name).exists());
+            assert!(root.join("extras").join(name).join("note.md").exists());
+        }
+    }
+}
+
+#[tokio::test]
 async fn legacy_snapshot_extra_without_category_deserializes_and_rolls_back() {
     if !python3_available() {
         return;
