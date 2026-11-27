@@ -2530,56 +2530,69 @@ async fn run_cleanup(
         ));
     }
 
-    let rewrite_disconnected = if selection.login_and_cache {
-        crate::rewrite::disconnect_tool(store.paths(), tool)?
-    } else {
-        false
-    };
-
     let selected_deployment = selection.deployment && deployment.present;
     let selected_memory =
         selection.memory && memory.as_ref().is_some_and(|(info, _)| info.bytes > 0);
-    let snapshot = if selected_deployment
+    let needs_snapshot = selected_deployment
         || selected_memory
         || selection.memories && memories.is_some()
-        || !to_keep.is_empty()
-    {
+        || !to_keep.is_empty();
+
+    // Hold the home lock across preflight validation, optional input-rewrite disconnect and
+    // snapshot creation so a bad config, symlink escape, lock failure or freshly started agent
+    // stops cleanly before input rewrite is disconnected.
+    let (rewrite_disconnected, snapshot) = {
         let _lock = HomeLock::acquire(store.paths())?;
+        if touches_running_data && agent_running(tool, opts) {
+            return Err(Error::command_failed(
+                "close the agent first: its sessions, memories or login are in use",
+            ));
+        }
         if let Some(home) = agent_home(tool, opts)? {
             for extra in to_keep
                 .iter()
                 .filter(|extra| extra.kind == "saved-without-login")
             {
-                require_contained(&home, Path::new(&extra.path))?;
+                let path = Path::new(&extra.path);
+                require_contained(&home, path)?;
+                let _ = sanitized_copy(path, &extra.name)?;
             }
         }
-        Some(create_snapshot(
-            store,
-            tool,
-            "cleanup",
-            if selection.deployment {
-                deployment.clone()
-            } else {
-                DeploymentMeta {
-                    present: false,
-                    title: None,
-                    restorable: false,
-                }
-            },
-            if selection.deployment {
-                body.as_deref()
-            } else {
-                None
-            },
-            memory
-                .as_ref()
-                .filter(|(info, _)| info.bytes > 0)
-                .map(|(info, bytes)| (info.clone(), bytes.as_slice())),
-            memories.clone(),
-            to_keep.clone(),
-        )?)
-    } else {
-        None
+        let rewrite_disconnected = if selection.login_and_cache {
+            crate::rewrite::disconnect_tool(store.paths(), tool)?
+        } else {
+            false
+        };
+        let snapshot = if needs_snapshot {
+            Some(create_snapshot(
+                store,
+                tool,
+                "cleanup",
+                if selection.deployment {
+                    deployment.clone()
+                } else {
+                    DeploymentMeta {
+                        present: false,
+                        title: None,
+                        restorable: false,
+                    }
+                },
+                if selection.deployment {
+                    body.as_deref()
+                } else {
+                    None
+                },
+                memory
+                    .as_ref()
+                    .filter(|(info, _)| info.bytes > 0)
+                    .map(|(info, bytes)| (info.clone(), bytes.as_slice())),
+                memories.clone(),
+                to_keep.clone(),
+            )?)
+        } else {
+            None
+        };
+        (rewrite_disconnected, snapshot)
     };
     let discard = |why: Error| -> Error {
         if let Some(snapshot) = &snapshot {

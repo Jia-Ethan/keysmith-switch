@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import * as api from "../api";
 import type { ToastApi } from "../hooks/useToasts";
@@ -6,13 +6,49 @@ import { baseName, formatBytes } from "../lib/format";
 import { loadHarnessStatus } from "../lib/harnessState";
 import { readableError } from "../lib/planFailure";
 import type { PlanFailure } from "../lib/planFailure";
-import type { RollbackPlan, SnapshotMeta } from "../types";
+import type { CleanupCategory, ExtraMeta, RollbackPlan, SnapshotMeta } from "../types";
 import { ConfirmDialog } from "./ConfirmDialog";
 import { EmptyState } from "./EmptyState";
 import { Callout, PlanFailureNotice } from "./PlanPreview";
 import { IconAlert, IconCheck, IconHistory } from "./icons";
 import { ToolLogo } from "./ToolLogos";
 import { Button } from "./ui";
+
+function categoryOf(extra: ExtraMeta): CleanupCategory {
+  if (extra.category) return extra.category;
+  return extra.kind === "erased" ? "login-and-cache" : "setup";
+}
+
+function summarizeExtras(
+  extras: ExtraMeta[] | undefined,
+  absentCount: number,
+  t: ReturnType<typeof useTranslation>["t"],
+): string[] {
+  const saved = (extras ?? []).filter((e) => e.kind !== "erased");
+  const parts: string[] = [];
+  const sessions = saved.filter((e) => categoryOf(e) === "sessions");
+  const setup = saved.filter((e) => {
+    const cat = categoryOf(e);
+    return cat === "setup" || cat === "memory" || cat === "memories" || cat === "login-and-cache";
+  });
+  const deployExtras = saved.filter((e) => categoryOf(e) === "deployment");
+
+  if (sessions.length > 0) {
+    const bytes = sessions.reduce((sum, item) => sum + item.bytes, 0);
+    parts.push(t("versions.sessionsSummary", { count: sessions.length, size: formatBytes(bytes) }));
+  }
+  if (setup.length > 0) {
+    const bytes = setup.reduce((sum, item) => sum + item.bytes, 0);
+    parts.push(t("versions.setupSummary", { count: setup.length, size: formatBytes(bytes) }));
+  }
+  if (deployExtras.length > 0) {
+    parts.push(t("versions.deploymentExtrasSummary", { count: deployExtras.length }));
+  }
+  if (absentCount > 0) {
+    parts.push(t("versions.absentSummary", { count: absentCount }));
+  }
+  return parts;
+}
 
 /** The saved versions: made before a cleanup, or before a rollback overwrote something. */
 export function VersionsTab({ toast, onChanged }: { toast: ToastApi; onChanged?: () => void }) {
@@ -68,39 +104,47 @@ export function VersionsTab({ toast, onChanged }: { toast: ToastApi; onChanged?:
 
       {snapshots && snapshots.length > 0 ? (
         <ul className="space-y-2" data-testid="versions-list">
-          {snapshots.map((snapshot) => (
-            <li key={snapshot.id} className="surface-card flex flex-wrap items-center gap-3 p-3.5" data-testid={`version-${snapshot.id}`}>
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-card ring-1 ring-border">
-                <ToolLogo tool={snapshot.tool} size={22} />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="flex flex-wrap items-center gap-2 text-[14px] font-medium text-foreground">
-                  {t(`nav.${snapshot.tool}`)}
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-                    {snapshot.kind === "cleanup" ? t("versions.kindCleanup") : t("versions.kindBeforeRollback")}
-                  </span>
-                </p>
-                <p className="mt-0.5 text-[12.5px] text-muted-foreground">{when(snapshot.createdAt)}</p>
-                <p className="mt-0.5 truncate text-[12.5px] text-muted-foreground">
-                  {describe(snapshot, t)}
-                  {snapshot.memory && snapshot.memory.bytes > 0
-                    ? ` · ${t("versions.memory", { file: baseName(snapshot.memory.path), size: formatBytes(snapshot.memory.bytes) })}`
-                    : ""}
-                  {snapshot.memories && snapshot.memories.files > 0
-                    ? ` · ${t("versions.memories", { files: snapshot.memories.files, size: formatBytes(snapshot.memories.bytes) })}`
-                    : ""}
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-1.5">
-                <Button size="sm" variant="ghost" data-testid={`version-delete-${snapshot.id}`} onClick={() => setDeleting(snapshot)}>
-                  {t("versions.delete")}
-                </Button>
-                <Button size="sm" variant="primary" data-testid={`version-rollback-${snapshot.id}`} onClick={() => setRolling(snapshot)}>
-                  {t("versions.rollback")}
-                </Button>
-              </div>
-            </li>
-          ))}
+          {snapshots.map((snapshot) => {
+            const extraParts = summarizeExtras(snapshot.extras, snapshot.absentExtras?.length ?? 0, t);
+            return (
+              <li key={snapshot.id} className="surface-card flex flex-wrap items-center gap-3 p-3.5" data-testid={`version-${snapshot.id}`}>
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-card ring-1 ring-border">
+                  <ToolLogo tool={snapshot.tool} size={22} />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="flex flex-wrap items-center gap-2 text-[14px] font-medium text-foreground">
+                    {t(`nav.${snapshot.tool}`)}
+                    <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                      {snapshot.kind === "cleanup" ? t("versions.kindCleanup") : t("versions.kindBeforeRollback")}
+                    </span>
+                  </p>
+                  <p className="mt-0.5 text-[12.5px] text-muted-foreground">{when(snapshot.createdAt)}</p>
+                  <p className="mt-0.5 truncate text-[12.5px] text-muted-foreground">
+                    {[
+                      describe(snapshot, t),
+                      snapshot.memory && snapshot.memory.bytes > 0
+                        ? t("versions.memory", { file: baseName(snapshot.memory.path), size: formatBytes(snapshot.memory.bytes) })
+                        : null,
+                      snapshot.memories && snapshot.memories.files > 0
+                        ? t("versions.memories", { files: snapshot.memories.files, size: formatBytes(snapshot.memories.bytes) })
+                        : null,
+                      ...extraParts,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <Button size="sm" variant="ghost" data-testid={`version-delete-${snapshot.id}`} onClick={() => setDeleting(snapshot)}>
+                    {t("versions.delete")}
+                  </Button>
+                  <Button size="sm" variant="primary" data-testid={`version-rollback-${snapshot.id}`} onClick={() => setRolling(snapshot)}>
+                    {t("versions.rollback")}
+                  </Button>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       ) : null}
 
@@ -155,31 +199,46 @@ function RollbackDialog({
   const [loading, setLoading] = useState(false);
   const [working, setWorking] = useState(false);
   const [failure, setFailure] = useState<PlanFailure | null>(null);
+  const reqSeq = useRef(0);
 
   const load = useCallback(async () => {
-    if (!snapshot) return;
+    const seq = ++reqSeq.current;
+    if (!snapshot) {
+      setPlan(null);
+      setFailure(null);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setFailure(null);
     setPlan(null);
     try {
-      setPlan(await api.planRollback(snapshot.id));
+      const next = await api.planRollback(snapshot.id);
+      if (seq !== reqSeq.current) return;
+      setPlan(next);
     } catch (reason) {
+      if (seq !== reqSeq.current) return;
       setFailure({ message: readableError(reason, t), detail: null });
     } finally {
-      setLoading(false);
+      if (seq === reqSeq.current) setLoading(false);
     }
   }, [snapshot, t]);
 
   useEffect(() => {
     void load();
+    return () => {
+      reqSeq.current += 1;
+    };
   }, [load]);
 
+  const activePlan = plan && snapshot && plan.snapshot.id === snapshot.id ? plan : null;
+
   const confirm = async () => {
-    if (!plan || !snapshot || working) return;
+    if (!activePlan || !snapshot || working) return;
     setWorking(true);
     setFailure(null);
     try {
-      const done = await api.confirmRollback(plan.operationId);
+      const done = await api.confirmRollback(activePlan.operationId);
       await onDone(snapshot, Boolean(done.savedSnapshotId));
       onClose();
     } catch (reason) {
@@ -189,18 +248,29 @@ function RollbackDialog({
     }
   };
 
-  const restoresMemories = Boolean(plan?.memories && plan.memories.restoreFiles > 0);
-  const restoresExtras = (plan?.snapshot.extras ?? []).filter((e) => e.kind !== "erased");
+  const restoresMemories = Boolean(activePlan?.memories && activePlan.memories.restoreFiles > 0);
+  const restoresExtras = (activePlan?.snapshot.extras ?? []).filter((e) => e.kind !== "erased");
+  const absentExtras = activePlan?.snapshot.absentExtras ?? [];
+  const sessionExtras = restoresExtras.filter((e) => categoryOf(e) === "sessions");
+  const otherExtras = restoresExtras.filter((e) => categoryOf(e) !== "sessions");
+  const restoresSessions = sessionExtras.length > 0;
+  // Backend computes `agentRunning` authoritatively (including legacy snapshots & absentExtras).
+  const needsAgentStopped = Boolean(activePlan?.agentRunning);
   const restoresSomething = Boolean(
-    plan &&
-      (plan.snapshot.deployment.restorable ||
-        (plan.memory && plan.memory.restoreBytes > 0) ||
+    activePlan &&
+      (activePlan.snapshot.deployment.restorable ||
+        (activePlan.memory && activePlan.memory.restoreBytes > 0) ||
         restoresMemories ||
-        restoresExtras.length > 0),
+        restoresExtras.length > 0 ||
+        absentExtras.length > 0),
   );
-  const memoryFile = plan?.snapshot.memory ? baseName(plan.snapshot.memory.path) : "";
-  const title = plan?.snapshot.deployment.title ? `「${plan.snapshot.deployment.title}」` : "";
-  const currentTitle = plan?.currentTitle ? `「${plan.currentTitle}」` : "";
+  const memoryFile = activePlan?.snapshot.memory ? baseName(activePlan.snapshot.memory.path) : "";
+  const title = activePlan?.snapshot.deployment.title ? `「${activePlan.snapshot.deployment.title}」` : "";
+  const currentTitle = activePlan?.currentTitle ? `「${activePlan.currentTitle}」` : "";
+  const toolName = snapshot ? t(`nav.${snapshot.tool}`) : "";
+  const sessionFiles = sessionExtras.reduce((sum, e) => sum + e.files, 0);
+  const sessionBytes = sessionExtras.reduce((sum, e) => sum + e.bytes, 0);
+  const hasStrippedConfig = restoresExtras.some((e) => e.kind === "saved-without-login");
 
   return (
     <ConfirmDialog
@@ -208,13 +278,18 @@ function RollbackDialog({
       wide
       icon={snapshot ? <ToolLogo tool={snapshot.tool} size={22} /> : undefined}
       title={t("versions.rollbackTitle")}
-      description={snapshot ? t(`nav.${snapshot.tool}`) : undefined}
+      description={snapshot ? toolName : undefined}
       confirmLabel={t("versions.confirmRollback")}
       cancelLabel={t("common.cancel")}
       closeLabel={t("common.close")}
       busy={working}
       confirmDisabled={
-        loading || !plan || plan.blockers.length > 0 || !restoresSomething || Boolean(failure) || (restoresMemories && plan?.agentRunning === true)
+        loading ||
+        !activePlan ||
+        activePlan.blockers.length > 0 ||
+        !restoresSomething ||
+        Boolean(failure) ||
+        needsAgentStopped
       }
       confirmTestId="rollback-confirm"
       onClose={() => {
@@ -223,16 +298,16 @@ function RollbackDialog({
       onConfirm={() => void confirm()}
     >
       {loading ? <p className="text-[13.5px] text-muted-foreground">{t("versions.checking")}</p> : null}
-      {plan ? (
+      {activePlan ? (
         <div className="space-y-3" data-testid="rollback-plan">
           {restoresSomething ? (
             <ul className="space-y-2 text-[13.5px] text-foreground">
-              {plan.snapshot.deployment.restorable ? (
+              {activePlan.snapshot.deployment.restorable ? (
                 <li className="flex items-start gap-2" data-testid="rollback-deploy">
                   <Tick />
                   <span>
                     {t("versions.willDeploy", { title: title || t("versions.untitled") })}
-                    {plan.replacesDeployment ? (
+                    {activePlan.replacesDeployment ? (
                       <span className="mt-0.5 block text-[12.5px] text-muted-foreground">
                         {t("versions.willReplace", { title: currentTitle })}
                       </span>
@@ -240,38 +315,48 @@ function RollbackDialog({
                   </span>
                 </li>
               ) : null}
-              {plan.memory && plan.memory.restoreBytes > 0 ? (
+              {activePlan.memory && activePlan.memory.restoreBytes > 0 ? (
                 <li className="flex items-start gap-2" data-testid="rollback-memory">
                   <Tick />
                   <span>
-                    {t("versions.willRestoreMemory", { file: memoryFile, size: formatBytes(plan.memory.restoreBytes) })}
-                    {plan.memory.currentDiffers && plan.memory.currentBytes > 0 ? (
+                    {t("versions.willRestoreMemory", { file: memoryFile, size: formatBytes(activePlan.memory.restoreBytes) })}
+                    {activePlan.memory.currentDiffers && activePlan.memory.currentBytes > 0 ? (
                       <span className="mt-0.5 block text-[12.5px] text-warning">
-                        {t("versions.currentMemory", { file: memoryFile, size: formatBytes(plan.memory.currentBytes) })}
+                        {t("versions.currentMemory", { file: memoryFile, size: formatBytes(activePlan.memory.currentBytes) })}
                       </span>
                     ) : null}
                   </span>
                 </li>
               ) : null}
-              {plan.memories && restoresMemories ? (
+              {activePlan.memories && restoresMemories ? (
                 <li className="flex items-start gap-2" data-testid="rollback-memories">
                   <Tick />
                   <span>
-                    {t("versions.willRestoreMemories", { files: plan.memories.restoreFiles, size: formatBytes(plan.memories.restoreBytes) })}
-                    {plan.memories.currentFiles > 0 ? (
+                    {t("versions.willRestoreMemories", { files: activePlan.memories.restoreFiles, size: formatBytes(activePlan.memories.restoreBytes) })}
+                    {activePlan.memories.currentFiles > 0 ? (
                       <span className="mt-0.5 block text-[12.5px] text-warning">
-                        {t("versions.currentMemories", { files: plan.memories.currentFiles })}
-                      </span>
-                    ) : null}
-                    {plan.agentRunning ? (
-                      <span className="mt-0.5 block text-[12.5px] text-warning" data-testid="rollback-memories-running">
-                        {t("versions.memoriesRunning")}
+                        {t("versions.currentMemories", { files: activePlan.memories.currentFiles })}
                       </span>
                     ) : null}
                   </span>
                 </li>
               ) : null}
-              {restoresExtras.map((extra) => (
+              {restoresSessions ? (
+                <li className="flex items-start gap-2" data-testid="rollback-sessions">
+                  <Tick />
+                  <span>
+                    {t("versions.willRestoreSessions", {
+                      count: sessionExtras.length,
+                      files: sessionFiles,
+                      size: formatBytes(sessionBytes),
+                    })}
+                    <span className="mt-0.5 block text-[12px] text-muted-foreground">
+                      {sessionExtras.map((e) => e.name).join(" · ")}
+                    </span>
+                  </span>
+                </li>
+              ) : null}
+              {otherExtras.map((extra) => (
                 <li className="flex items-start gap-2" key={extra.name} data-testid="rollback-extra">
                   <Tick />
                   <span>
@@ -281,20 +366,31 @@ function RollbackDialog({
                   </span>
                 </li>
               ))}
+              {absentExtras.map((item) => (
+                <li className="flex items-start gap-2" key={`absent:${item.name}`} data-testid="rollback-absent">
+                  <Tick />
+                  <span>{t("versions.willMoveAsideAbsent", { name: item.name })}</span>
+                </li>
+              ))}
             </ul>
           ) : (
             <p className="text-[13.5px] text-muted-foreground">{t("versions.nothingToRestore")}</p>
           )}
-          {restoresExtras.length > 0 ? (
+          {needsAgentStopped ? (
+            <Callout tone="warn" icon={<IconAlert size={14} />}>
+              <span data-testid="rollback-memories-running">{t("versions.memoriesRunning", { tool: toolName })}</span>
+            </Callout>
+          ) : null}
+          {hasStrippedConfig || restoresSessions ? (
             <p className="text-[12.5px] text-warning" data-testid="rollback-no-login">
               {t("versions.noLoginBack")}
             </p>
           ) : null}
-          {!plan.snapshot.deployment.restorable && plan.snapshot.deployment.present ? (
+          {!activePlan.snapshot.deployment.restorable && activePlan.snapshot.deployment.present ? (
             <p className="text-[12.5px] text-warning">{t("versions.cannotRedeploy")}</p>
           ) : null}
-          {plan.savesCurrent ? <p className="text-[12.5px] text-muted-foreground">{t("versions.savesCurrent")}</p> : null}
-          {plan.blockers.length > 0 ? (
+          {activePlan.savesCurrent ? <p className="text-[12.5px] text-muted-foreground">{t("versions.savesCurrent")}</p> : null}
+          {activePlan.blockers.length > 0 ? (
             <Callout tone="danger" icon={<IconAlert size={14} />}>
               {t("cleanup.repair")}
             </Callout>

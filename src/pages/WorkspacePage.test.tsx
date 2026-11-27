@@ -569,7 +569,14 @@ describe("Workspace: prompt library", () => {
     expect(planCleanup).toHaveBeenCalledWith("codex");
     fireEvent.click(screen.getByTestId("cleanup-confirm"));
     await screen.findByTestId("cleanup-done");
-    expect(confirmCleanup).toHaveBeenCalledWith("op-c", false);
+    expect(confirmCleanup).toHaveBeenCalledWith("op-c", {
+      deployment: true,
+      memory: false,
+      memories: false,
+      setup: false,
+      sessions: false,
+      loginAndCache: false,
+    });
     expect(toast.ok).toHaveBeenCalled();
     fireEvent.click(screen.getByTestId("cleanup-open-versions"));
     expect(onNavigate).toHaveBeenCalledWith({ kind: "settings", tab: "versions" });

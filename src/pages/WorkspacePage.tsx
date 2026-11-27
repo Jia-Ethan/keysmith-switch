@@ -920,7 +920,22 @@ export function WorkspacePage({
           if (result.deactivated) applyHarnessOutcome(tool, "remove");
           void loadHarnessStatus(tool, true);
           setLocalEpoch((value) => value + 1);
-          toast?.ok(result.snapshotId ? t("cleanup.done") : t("cleanup.doneNothing"));
+          const cleanedAnything = Boolean(
+            result.snapshotId ||
+              result.deactivated ||
+              result.memoryCleared ||
+              result.memoriesCleared ||
+              (result.extrasCleared ?? 0) > 0 ||
+              (result.erased ?? 0) > 0 ||
+              result.keychainCleared,
+          );
+          toast?.ok(
+            result.snapshotId
+              ? t("cleanup.done")
+              : cleanedAnything
+                ? t("cleanup.doneErasedOnly")
+                : t("cleanup.doneNothing"),
+          );
         }}
         onOpenVersions={() => {
           setCleanupOpen(false);

@@ -106,17 +106,111 @@ describe("VersionsTab", () => {
       deployment: { present: false, title: null, restorable: false },
       memory: null,
       extras: [
-        { name: ".claude/rules", path: "/h/.claude/rules", files: 2, bytes: 10, kind: "saved" as const },
-        { name: ".claude/settings.json", path: "/h/.claude/settings.json", files: 1, bytes: 40, kind: "saved-without-login" as const },
+        { name: ".claude/rules", path: "/h/.claude/rules", files: 2, bytes: 10, kind: "saved" as const, category: "setup" as const },
+        { name: ".claude/settings.json", path: "/h/.claude/settings.json", files: 1, bytes: 40, kind: "saved-without-login" as const, category: "login-and-cache" as const },
       ],
     };
+    listSnapshots.mockResolvedValue([withSetup]);
     planRollback.mockResolvedValue(rollbackPlan({ snapshot: withSetup, memory: null }));
     render(<VersionsTab toast={toast} />);
-    fireEvent.click(await screen.findByTestId(`version-rollback-${snapshot.id}`));
+    const row = await screen.findByTestId(`version-${snapshot.id}`);
+    expect(row).toHaveTextContent("2");
+    fireEvent.click(screen.getByTestId(`version-rollback-${snapshot.id}`));
     await screen.findByTestId("rollback-plan");
     expect(screen.getAllByTestId("rollback-extra")).toHaveLength(2);
     expect(screen.getByTestId("rollback-no-login")).toBeInTheDocument();
     expect(screen.getByTestId("rollback-confirm")).toBeEnabled();
+  });
+
+  it("ignores a late rollback preview response after switching to another snapshot", async () => {
+    const snapA: SnapshotMeta = { ...snapshot, id: "snap-a", tool: "claude" };
+    const snapB: SnapshotMeta = { ...snapshot, id: "snap-b", tool: "codex" };
+    listSnapshots.mockResolvedValue([snapA, snapB]);
+
+    let resolveA!: (value: RollbackPlan) => void;
+    planRollback.mockImplementation((id: string) => {
+      if (id === "snap-a") {
+        return new Promise<RollbackPlan>((resolve) => {
+          resolveA = resolve;
+        });
+      }
+      return Promise.resolve(rollbackPlan({ operationId: "op-b", snapshot: snapB }));
+    });
+    confirmRollback.mockResolvedValue({ savedSnapshotId: null, redeployed: true, memoryRestored: false });
+
+    render(<VersionsTab toast={toast} />);
+    fireEvent.click(await screen.findByTestId("version-rollback-snap-a"));
+    // Close A while its planRollback is still in flight, then open B.
+    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.click(screen.getByTestId("version-rollback-snap-b"));
+    await screen.findByTestId("rollback-plan");
+
+    // Now A's stale response arrives late: it must NOT overwrite B's plan.
+    resolveA(rollbackPlan({ operationId: "op-a", snapshot: snapA }));
+    await Promise.resolve();
+
+    fireEvent.click(screen.getByTestId("rollback-confirm"));
+    await waitFor(() => expect(confirmRollback).toHaveBeenCalledWith("op-b"));
+    expect(confirmRollback).not.toHaveBeenCalledWith("op-a");
+  });
+
+  it("honors backend agentRunning even for legacy snapshots without category metadata", async () => {
+    const legacyGrok: SnapshotMeta = {
+      ...snapshot,
+      id: "legacy-grok",
+      tool: "grok",
+      deployment: { present: false, title: null, restorable: false },
+      memory: null,
+      extras: [{ name: ".grok/memory", path: "/h/.grok/memory", files: 3, bytes: 120, kind: "saved" }],
+    };
+    listSnapshots.mockResolvedValue([legacyGrok]);
+    planRollback.mockResolvedValue(rollbackPlan({ snapshot: legacyGrok, memory: null, agentRunning: true }));
+    render(<VersionsTab toast={toast} />);
+    fireEvent.click(await screen.findByTestId("version-rollback-legacy-grok"));
+    await screen.findByTestId("rollback-memories-running");
+    expect(screen.getByTestId("rollback-confirm")).toBeDisabled();
+  });
+
+  it("previews absentExtras when undoing a rollback that added new paths", async () => {
+    const beforeRollback: SnapshotMeta = {
+      ...snapshot,
+      id: "before-rb-1",
+      kind: "before-rollback",
+      deployment: { present: false, title: null, restorable: false },
+      memory: null,
+      extras: [],
+      absentExtras: [{ name: ".claude/history.jsonl", category: "sessions" }],
+    };
+    listSnapshots.mockResolvedValue([beforeRollback]);
+    planRollback.mockResolvedValue(rollbackPlan({ snapshot: beforeRollback, memory: null, savesCurrent: true }));
+    render(<VersionsTab toast={toast} />);
+    const row = await screen.findByTestId("version-before-rb-1");
+    expect(row).toHaveTextContent("1");
+    fireEvent.click(screen.getByTestId("version-rollback-before-rb-1"));
+    const item = await screen.findByTestId("rollback-absent");
+    expect(item).toHaveTextContent(".claude/history.jsonl");
+    expect(screen.getByTestId("rollback-confirm")).toBeEnabled();
+  });
+
+  it("shows saved session history in the version list and blocks rollback while the agent is running", async () => {
+    const withSessions: SnapshotMeta = {
+      ...snapshot,
+      deployment: { present: false, title: null, restorable: false },
+      memory: null,
+      extras: [
+        { name: ".claude/projects", path: "/h/.claude/projects", files: 42, bytes: 524288, kind: "saved", category: "sessions" },
+      ],
+    };
+    listSnapshots.mockResolvedValue([withSessions]);
+    planRollback.mockResolvedValue(rollbackPlan({ snapshot: withSessions, memory: null, agentRunning: true }));
+    render(<VersionsTab toast={toast} />);
+    const row = await screen.findByTestId(`version-${snapshot.id}`);
+    expect(row).toHaveTextContent("512");
+    fireEvent.click(screen.getByTestId(`version-rollback-${snapshot.id}`));
+    await screen.findByTestId("rollback-sessions");
+    expect(screen.getByTestId("rollback-sessions")).toHaveTextContent(".claude/projects");
+    expect(screen.getByTestId("rollback-memories-running")).toHaveTextContent("Claude Code");
+    expect(screen.getByTestId("rollback-confirm")).toBeDisabled();
   });
 
   it("does not report success when the rollback fails", async () => {
