@@ -591,19 +591,23 @@ fn snapshot_path(store: &Store, id: &str) -> Result<PathBuf> {
     if !valid_id(id) {
         return Err(Error::invalid("invalid snapshot id"));
     }
-    Ok(snapshots_dir(store).join(id))
+    let path = snapshots_dir(store).join(id);
+    require_contained(&store.paths().home, &path)?;
+    Ok(path)
 }
 
 /// Every complete snapshot, newest first. A folder without its `meta.json` is a write that
 /// never finished and is not listed.
 pub fn list_snapshots(store: &Store) -> Vec<SnapshotMeta> {
-    let mut found: Vec<SnapshotMeta> = std::fs::read_dir(snapshots_dir(store))
+    let root = snapshots_dir(store);
+    if require_contained(&store.paths().home, &root).is_err() {
+        return Vec::new();
+    }
+    let mut found: Vec<SnapshotMeta> = std::fs::read_dir(root)
         .into_iter()
         .flatten()
         .flatten()
-        .filter_map(|entry| std::fs::read(entry.path().join("meta.json")).ok())
-        .filter_map(|bytes| serde_json::from_slice::<SnapshotMeta>(&bytes).ok())
-        .filter(|meta| valid_id(&meta.id))
+        .filter_map(|entry| read_snapshot(store, entry.file_name().to_str()?).ok())
         .collect();
     found.sort_by(|left, right| right.id.cmp(&left.id));
     found
@@ -618,17 +622,24 @@ pub fn delete_snapshot(store: &Store, id: &str) -> Result<()> {
 }
 
 fn read_snapshot(store: &Store, id: &str) -> Result<SnapshotMeta> {
-    let path = snapshot_path(store, id)?;
-    let bytes =
-        std::fs::read(path.join("meta.json")).map_err(|_| Error::invalid("snapshot not found"))?;
-    serde_json::from_slice(&bytes).map_err(|_| Error::invalid("snapshot is damaged"))
+    let path = snapshot_path(store, id)?.join("meta.json");
+    require_contained(&store.paths().home, &path)?;
+    let bytes = std::fs::read(path).map_err(|_| Error::invalid("snapshot not found"))?;
+    let meta: SnapshotMeta =
+        serde_json::from_slice(&bytes).map_err(|_| Error::invalid("snapshot is damaged"))?;
+    if meta.id != id {
+        return Err(Error::invalid("snapshot is damaged: its ID does not match"));
+    }
+    Ok(meta)
 }
 
 fn snapshot_prompt(store: &Store, meta: &SnapshotMeta) -> Result<Option<String>> {
     if !meta.deployment.restorable {
         return Ok(None);
     }
-    let bytes = std::fs::read(snapshot_path(store, &meta.id)?.join("prompt.md"))
+    let path = snapshot_path(store, &meta.id)?.join("prompt.md");
+    require_contained(&store.paths().home, &path)?;
+    let bytes = std::fs::read(path)
         .map_err(|_| Error::invalid("snapshot is damaged: its prompt is missing"))?;
     String::from_utf8(bytes)
         .map(Some)
@@ -639,7 +650,9 @@ fn snapshot_memory(store: &Store, meta: &SnapshotMeta) -> Result<Option<Vec<u8>>
     let Some(memory) = &meta.memory else {
         return Ok(None);
     };
-    let bytes = std::fs::read(snapshot_path(store, &meta.id)?.join("memory.bin"))
+    let path = snapshot_path(store, &meta.id)?.join("memory.bin");
+    require_contained(&store.paths().home, &path)?;
+    let bytes = std::fs::read(path)
         .map_err(|_| Error::invalid("snapshot is damaged: its memory copy is missing"))?;
     if sha_hex(&bytes) != memory.sha256 {
         return Err(Error::invalid(
@@ -695,6 +708,7 @@ fn memory_file(
         return Ok(None);
     };
     if tool == ToolKind::Codex {
+        require_contained(&home_dir(opts)?, &expected)?;
         return match std::fs::symlink_metadata(&expected) {
             Ok(meta) if meta.is_file() => Ok(Some(expected)),
             Ok(_) => Err(Error::invalid("the memory file is not an ordinary file")),
@@ -709,25 +723,24 @@ fn memory_file(
     else {
         return Ok(None);
     };
-    let path = PathBuf::from(&target.path);
-    let meta =
-        std::fs::symlink_metadata(&path).map_err(|_| Error::invalid("the memory file is gone"))?;
-    if !meta.is_file() {
-        return Err(Error::invalid("the memory file is not an ordinary file"));
-    }
-    let same = match (
-        std::fs::canonicalize(&path),
-        std::fs::canonicalize(&expected),
-    ) {
-        (Ok(left), Ok(right)) => left == right,
-        _ => false,
-    };
-    if !same {
+    let home = home_dir(opts)?;
+    let path = Path::new(&target.path);
+    // The adapter can resolve aliases above the user's home when reporting the path.
+    let canonical_expected = std::fs::canonicalize(&home)
+        .ok()
+        .map(|root| root.join(".claude/CLAUDE.md"));
+    if path != expected && canonical_expected.as_deref() != Some(path) {
         return Err(Error::invalid(
             "the memory file is not the user-level CLAUDE.md; nothing was changed",
         ));
     }
-    Ok(Some(path))
+    require_contained(&home, &expected)?;
+    let meta = std::fs::symlink_metadata(&expected)
+        .map_err(|_| Error::invalid("the memory file is gone"))?;
+    if !meta.is_file() {
+        return Err(Error::invalid("the memory file is not an ordinary file"));
+    }
+    Ok(Some(expected))
 }
 
 /// Codex's own memory folder, when it has one. A link, or anything that is not a folder, is
@@ -736,7 +749,9 @@ fn memories_dir(tool: ToolKind, opts: &AdapterOptions) -> Result<Option<PathBuf>
     if tool != ToolKind::Codex {
         return Ok(None);
     }
-    let path = home_dir(opts)?.join(".codex").join("memories");
+    let home = home_dir(opts)?;
+    let path = home.join(".codex").join("memories");
+    require_contained(&home, &path)?;
     match std::fs::symlink_metadata(&path) {
         Ok(meta) if meta.is_dir() => Ok(Some(path)),
         Ok(_) => Err(Error::invalid(
@@ -755,7 +770,7 @@ fn dir_stats(root: &Path) -> Result<(u64, u64)> {
         for entry in std::fs::read_dir(&dir)? {
             let entry = entry?;
             let meta = std::fs::symlink_metadata(entry.path())?;
-            if meta.is_dir() {
+            if !is_link(&meta) && meta.is_dir() {
                 pending.push(entry.path());
             } else {
                 files += 1;
@@ -835,7 +850,9 @@ fn agent_running(tool: ToolKind, opts: &AdapterOptions) -> bool {
 }
 
 fn memories_in_snapshot(store: &Store, id: &str) -> Result<PathBuf> {
-    Ok(snapshot_path(store, id)?.join("memories"))
+    let path = snapshot_path(store, id)?.join("memories");
+    require_contained(&store.paths().home, &path)?;
+    Ok(path)
 }
 
 /// The agent's setup lives in the user's home folder; every piece is named from there.
@@ -855,6 +872,55 @@ fn valid_extra_name(name: &str) -> bool {
             .all(|part| matches!(part, std::path::Component::Normal(_)))
 }
 
+fn is_link(meta: &std::fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
+        meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+    }
+    #[cfg(not(windows))]
+    meta.file_type().is_symlink()
+}
+
+/// Check each existing component below the trusted root before descending into it.
+fn is_contained(root: &Path, path: &Path) -> Result<bool> {
+    use std::path::Component;
+
+    let Ok(relative) = path.strip_prefix(root) else {
+        return Ok(false);
+    };
+    if !relative
+        .components()
+        .all(|part| matches!(part, Component::Normal(_)))
+    {
+        return Ok(false);
+    }
+    let mut current = root.to_path_buf();
+    let mut parts = relative.components().peekable();
+    while let Some(part) = parts.next() {
+        current.push(part);
+        match std::fs::symlink_metadata(&current) {
+            Ok(meta) if is_link(&meta) || (parts.peek().is_some() && !meta.is_dir()) => {
+                return Ok(false);
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Ok(true)
+}
+
+fn require_contained(root: &Path, path: &Path) -> Result<()> {
+    if !is_contained(root, path)? {
+        return Err(Error::invalid(
+            "a cleanup path crosses a link or invalid ancestor",
+        ));
+    }
+    Ok(())
+}
+
 fn is_secret_name(name: &std::ffi::OsStr) -> bool {
     let name = name.to_string_lossy();
     SECRET_NAMES.iter().any(|secret| {
@@ -867,12 +933,15 @@ fn is_secret_name(name: &std::ffi::OsStr) -> bool {
 type Entry = (String, String, CleanupCategory);
 
 /// Files in `folder` (under home) whose names start with `prefix`, as places under home.
-fn prefixed(home: &Path, folder: &str, prefix: &str) -> Vec<String> {
+fn prefixed(home: &Path, folder: &str, prefix: &str) -> Result<Vec<String>> {
     let dir = if folder.is_empty() {
         home.to_path_buf()
     } else {
         home.join(folder)
     };
+    if !is_contained(home, &dir)? {
+        return Ok(Vec::new());
+    }
     let mut found: Vec<String> = std::fs::read_dir(dir)
         .into_iter()
         .flatten()
@@ -888,7 +957,7 @@ fn prefixed(home: &Path, folder: &str, prefix: &str) -> Vec<String> {
         })
         .collect();
     found.sort();
-    found
+    Ok(found)
 }
 
 /// Which pieces to look at, in a fixed order: the agent's tables, the old copies of its config
@@ -916,7 +985,7 @@ fn extra_entries(
         if !category_selected(&selection, item.category) {
             continue;
         }
-        for name in prefixed(&home, item.folder, item.prefix) {
+        for name in prefixed(&home, item.folder, item.prefix)? {
             let owned = item.kind == "erased"
                 && table
                     .adapter_owned
@@ -969,7 +1038,8 @@ fn holds_project_or_secret(root: &Path) -> Result<bool> {
             if name == ".git" || is_secret_name(&name) {
                 return Ok(true);
             }
-            if std::fs::symlink_metadata(entry.path())?.is_dir() {
+            let meta = std::fs::symlink_metadata(entry.path())?;
+            if !is_link(&meta) && meta.is_dir() {
                 pending.push(entry.path());
             }
         }
@@ -980,6 +1050,11 @@ fn holds_project_or_secret(root: &Path) -> Result<bool> {
 /// How many files and bytes a file or folder holds.
 fn path_stats(path: &Path) -> Result<(u64, u64)> {
     let meta = std::fs::symlink_metadata(path)?;
+    if is_link(&meta) || (!meta.is_dir() && !meta.is_file()) {
+        return Err(Error::invalid(
+            "a cleanup path is not an ordinary file or folder",
+        ));
+    }
     if meta.is_dir() {
         dir_stats(path)
     } else {
@@ -1000,12 +1075,15 @@ fn extra_info(
         return Ok(None);
     }
     let path = home.join(name);
+    if !is_contained(home, &path)? {
+        return Ok(None);
+    }
     let meta = match std::fs::symlink_metadata(&path) {
         Ok(meta) => meta,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(error.into()),
     };
-    if meta.file_type().is_symlink() || (!meta.is_dir() && !meta.is_file()) {
+    if is_link(&meta) || (!meta.is_dir() && !meta.is_file()) {
         return Ok(None);
     }
     match kind {
@@ -1084,7 +1162,11 @@ fn current_rollback_pieces(
                 .name
                 .rsplit_once('/')
                 .unwrap_or(("", extra.name.as_str()));
-            let siblings = match std::fs::read_dir(home.join(folder)) {
+            let directory = home.join(folder);
+            if !is_contained(&home, &directory)? {
+                continue;
+            }
+            let siblings = match std::fs::read_dir(directory) {
                 Ok(siblings) => siblings,
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
                 Err(error) => return Err(error.into()),
@@ -1157,7 +1239,9 @@ fn extra_in_snapshot(store: &Store, id: &str, name: &str) -> Result<PathBuf> {
             "snapshot is damaged: a saved piece has a bad name",
         ));
     }
-    Ok(snapshot_path(store, id)?.join("extras").join(name))
+    let path = snapshot_path(store, id)?.join("extras").join(name);
+    require_contained(&store.paths().home, &path)?;
+    Ok(path)
 }
 
 /// The pieces of setup kept in a snapshot. A saved piece is checked against what the snapshot
@@ -1192,7 +1276,7 @@ fn check_extras_volume(store: &Store, extras: &[ExtraMeta]) -> Result<()> {
     if moved.is_empty() {
         return Ok(());
     }
-    std::fs::create_dir_all(snapshots_dir(store))?;
+    prepare_snapshots_dir(store)?;
     if let Some(extra) = moved
         .iter()
         .find(|e| !same_volume(Path::new(&e.path), &snapshots_dir(store)))
@@ -1352,13 +1436,19 @@ fn copy_dir(from: &Path, to: &Path) -> Result<()> {
         let source = entry.path();
         let target = to.join(entry.file_name());
         let meta = std::fs::symlink_metadata(&source)?;
-        if meta.is_dir() {
-            copy_dir(&source, &target)?;
-        } else if meta.file_type().is_symlink() {
+        if is_link(&meta) {
             #[cfg(unix)]
             std::os::unix::fs::symlink(std::fs::read_link(&source)?, &target)?;
-        } else {
+            #[cfg(not(unix))]
+            return Err(Error::invalid("a saved folder contains a reparse point"));
+        } else if meta.is_dir() {
+            copy_dir(&source, &target)?;
+        } else if meta.is_file() {
             std::fs::copy(&source, &target)?;
+        } else {
+            return Err(Error::invalid(
+                "a saved folder contains an unsupported file",
+            ));
         }
     }
     Ok(())
@@ -1455,6 +1545,13 @@ fn memory_info(path: &Path) -> Result<(MemoryMeta, Vec<u8>)> {
     ))
 }
 
+fn prepare_snapshots_dir(store: &Store) -> Result<PathBuf> {
+    let root = snapshots_dir(store);
+    require_contained(&store.paths().home, &root)?;
+    std::fs::create_dir_all(&root)?;
+    Ok(root)
+}
+
 /// Write a snapshot, check what was written, and only then make it visible.
 #[allow(clippy::too_many_arguments)]
 fn create_snapshot(
@@ -1483,9 +1580,9 @@ fn create_snapshot(
         memories,
         extras,
     };
-    let root = snapshots_dir(store);
+    let root = prepare_snapshots_dir(store)?;
     let staging = root.join(format!(".{id}.writing"));
-    std::fs::create_dir_all(&staging)?;
+    std::fs::create_dir(&staging)?;
     let written = (|| -> Result<()> {
         if let Some(prompt) = prompt {
             std::fs::write(staging.join("prompt.md"), prompt)?;
@@ -1528,7 +1625,8 @@ fn create_snapshot(
     Ok(meta)
 }
 
-fn truncate_file(path: &Path) -> Result<()> {
+fn truncate_file(root: &Path, path: &Path) -> Result<()> {
+    require_contained(root, path)?;
     let meta = std::fs::symlink_metadata(path)?;
     if !meta.is_file() {
         return Err(Error::invalid("the memory file is not an ordinary file"));
@@ -1543,7 +1641,13 @@ fn truncate_file(path: &Path) -> Result<()> {
 /// Move the agent's memory folder into the snapshot that was made for it. Nothing is copied or
 /// deleted: the folder is renamed, so it is either where it was or all inside the snapshot. When
 /// it cannot be moved the snapshot is rewritten to say it holds no folder.
-fn move_memories_into(store: &Store, snapshot: &SnapshotMeta, from: &Path) -> Result<()> {
+fn move_memories_into(
+    store: &Store,
+    snapshot: &SnapshotMeta,
+    root: &Path,
+    from: &Path,
+) -> Result<()> {
+    require_contained(root, from)?;
     let to = memories_in_snapshot(store, &snapshot.id)?;
     if let Err(error) = std::fs::rename(from, &to) {
         rewrite_meta(store, snapshot, |meta| meta.memories = None);
@@ -1562,7 +1666,10 @@ fn rewrite_meta(store: &Store, snapshot: &SnapshotMeta, change: impl FnOnce(&mut
         snapshot_path(store, &snapshot.id),
         serde_json::to_vec_pretty(&meta),
     ) {
-        let _ = std::fs::write(path.join("meta.json"), bytes);
+        let path = path.join("meta.json");
+        if require_contained(&store.paths().home, &path).is_ok() {
+            let _ = std::fs::write(path, bytes);
+        }
     }
 }
 
@@ -1580,6 +1687,7 @@ fn move_extras_into(store: &Store, snapshot: &SnapshotMeta, root: &Path) -> Resu
                 return Ok(None);
             };
             let to = extra_in_snapshot(store, &snapshot.id, &extra.name)?;
+            require_contained(root, &from)?;
             if extra.kind == "saved-without-login" {
                 std::fs::symlink_metadata(&to)?;
                 std::fs::remove_file(&from)?;
@@ -1630,11 +1738,14 @@ fn erase_extras(home: &Path, erased: &[ExtraMeta]) -> Result<u64> {
             continue;
         }
         let path = home.join(&extra.name);
+        if !is_contained(home, &path)? {
+            continue;
+        }
         let meta = match std::fs::symlink_metadata(&path) {
             Ok(meta) => meta,
             Err(_) => continue,
         };
-        if meta.file_type().is_symlink() {
+        if is_link(&meta) || (!meta.is_dir() && !meta.is_file()) {
             continue;
         }
         let removed = if meta.is_dir() {
@@ -1726,7 +1837,8 @@ fn erase_keychain(services: &[&str]) -> Result<bool> {
 }
 
 /// Replace a file's bytes through a temporary file beside it, keeping its permissions.
-fn restore_file(path: &Path, bytes: &[u8], mode: Option<u32>) -> Result<()> {
+fn restore_file(root: &Path, path: &Path, bytes: &[u8], mode: Option<u32>) -> Result<()> {
+    require_contained(root, path)?;
     let name = path
         .file_name()
         .map(|part| part.to_string_lossy().into_owned())
@@ -2009,8 +2121,7 @@ async fn run_cleanup(
             ));
         }
         if let Some(info) = &now {
-            std::fs::create_dir_all(snapshots_dir(store))?;
-            if !same_volume(Path::new(&info.path), &snapshots_dir(store)) {
+            if !same_volume(Path::new(&info.path), &prepare_snapshots_dir(store)?) {
                 return Err(Error::command_failed(
                     "the memories folder is on another disk than the snapshots, so it cannot be moved safely",
                 ));
@@ -2079,6 +2190,14 @@ async fn run_cleanup(
         || !to_keep.is_empty()
     {
         let _lock = HomeLock::acquire(store.paths())?;
+        if let Some(home) = agent_home(tool, opts)? {
+            for extra in to_keep
+                .iter()
+                .filter(|extra| extra.kind == "saved-without-login")
+            {
+                require_contained(&home, Path::new(&extra.path))?;
+            }
+        }
         Some(create_snapshot(
             store,
             tool,
@@ -2160,7 +2279,7 @@ async fn run_cleanup(
 
     let memory_cleared = if let Some((info, _)) = memory.filter(|(info, _)| info.bytes > 0) {
         let _lock = HomeLock::acquire(store.paths())?;
-        truncate_file(Path::new(&info.path))?;
+        truncate_file(&home_dir(opts)?, Path::new(&info.path))?;
         true
     } else {
         false
@@ -2171,7 +2290,7 @@ async fn run_cleanup(
     if let (Some(info), Some(snapshot)) = (&memories, &snapshot) {
         let _lock = HomeLock::acquire(store.paths())?;
         let from = Path::new(&info.path);
-        move_memories_into(store, snapshot, from)?;
+        move_memories_into(store, snapshot, &home_dir(opts)?, from)?;
         std::fs::create_dir(from)?;
         memories_cleared = true;
     }
@@ -2347,8 +2466,7 @@ async fn run_rollback(store: &Store, id: &str, opts: &AdapterOptions) -> Result<
         None => None,
     };
     if let Some(info) = &current_folder {
-        std::fs::create_dir_all(snapshots_dir(store))?;
-        if !same_volume(Path::new(&info.path), &snapshots_dir(store)) {
+        if !same_volume(Path::new(&info.path), &prepare_snapshots_dir(store)?) {
             return Err(Error::command_failed(
                 "the memories folder is on another disk than the snapshots, so it cannot be moved safely",
             ));
@@ -2394,6 +2512,7 @@ async fn run_rollback(store: &Store, id: &str, opts: &AdapterOptions) -> Result<
             }
         }
         for (saved, source) in &saved_extras {
+            require_contained(&root, &root.join(&saved.name))?;
             // A config file saved without its login is put back only where there is none now:
             // one the agent wrote since (a new login) is never replaced by the stripped copy.
             if saved.kind == "saved-without-login"
@@ -2470,7 +2589,7 @@ async fn run_rollback(store: &Store, id: &str, opts: &AdapterOptions) -> Result<
             })
             .ok_or_else(|| Error::invalid("the memory file could not be found"))?;
         let _lock = HomeLock::acquire(store.paths())?;
-        restore_file(&path, bytes, saved.mode)?;
+        restore_file(&home_dir(opts)?, &path, bytes, saved.mode)?;
         memory_restored = true;
     }
 
@@ -2478,12 +2597,14 @@ async fn run_rollback(store: &Store, id: &str, opts: &AdapterOptions) -> Result<
     if let (Some(saved), Some(source)) = (&snapshot.memories, &saved_memories) {
         let _lock = HomeLock::acquire(store.paths())?;
         let target = PathBuf::from(&saved.path);
-        let expected = home_dir(opts)?.join(".codex").join("memories");
+        let home = home_dir(opts)?;
+        let expected = home.join(".codex").join("memories");
         if tool != ToolKind::Codex || target != expected {
             return Err(Error::invalid(
                 "the memories folder is not the one in the user's home; nothing was changed",
             ));
         }
+        require_contained(&home, &expected)?;
         let parent = expected
             .parent()
             .ok_or_else(|| Error::invalid("the memories folder has no parent"))?;
@@ -2510,7 +2631,7 @@ async fn run_rollback(store: &Store, id: &str, opts: &AdapterOptions) -> Result<
         // Whatever the folder holds now goes into the snapshot made above.
         let moved_away = match (&current_memories(tool, opts)?, &saved_snapshot) {
             (Some(_), Some(snapshot)) => {
-                if let Err(error) = move_memories_into(store, snapshot, &expected) {
+                if let Err(error) = move_memories_into(store, snapshot, &home, &expected) {
                     let _ = std::fs::remove_dir_all(&staging);
                     return Err(error);
                 }
@@ -2556,6 +2677,7 @@ async fn run_rollback(store: &Store, id: &str, opts: &AdapterOptions) -> Result<
 /// an empty folder may be in the way; anything else there is left alone and the piece is refused.
 fn restore_extra(root: &Path, saved: &ExtraMeta, source: &Path) -> Result<bool> {
     let target = root.join(&saved.name);
+    require_contained(root, &target)?;
     if let Ok(meta) = std::fs::symlink_metadata(&target) {
         let empty_dir = meta.is_dir() && std::fs::read_dir(&target)?.next().is_none();
         if !empty_dir {
@@ -2708,6 +2830,23 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn containment_allows_a_link_above_the_root_but_refuses_links_below_it() {
+        use std::os::unix::fs::symlink;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let real = tmp.path().join("real");
+        std::fs::create_dir_all(real.join("home")).unwrap();
+        let alias = tmp.path().join("alias");
+        symlink(&real, &alias).unwrap();
+        let home = alias.join("home");
+        let path = home.join("new/subdir/file");
+        assert!(is_contained(&home, &path).unwrap());
+        symlink(&real, home.join("new")).unwrap();
+        assert!(!is_contained(&home, &path).unwrap());
     }
 
     #[test]

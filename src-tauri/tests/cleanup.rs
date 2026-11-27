@@ -1339,6 +1339,84 @@ async fn legacy_snapshot_extra_without_category_deserializes_and_rolls_back() {
 }
 
 #[tokio::test]
+#[cfg(unix)]
+async fn cleanup_and_rollback_do_not_follow_a_symlinked_zcode_ancestor() {
+    use std::os::unix::fs::symlink;
+
+    let world = zcode_world();
+    let v2 = world.home.join(".zcode/v2");
+    let database = "tasks-index.sqlite";
+    write(v2.join(database), "saved session database");
+    let plan = plan_cleanup(&world.store, ToolKind::Zcode, &world.opts)
+        .await
+        .unwrap();
+    let result = confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection {
+            deployment: false,
+            sessions: true,
+            ..CleanupSelection::default_safe()
+        },
+        &world.opts,
+    )
+    .await
+    .unwrap();
+    let snapshot_id = result.snapshot_id.unwrap();
+    std::fs::remove_dir(&v2).unwrap();
+
+    let outside = world._tmp.path().join("outside");
+    for name in [
+        "tasks-index.sqlite-wal",
+        "credentials.json",
+        "config.json.legacy",
+    ] {
+        write(outside.join(name), "outside");
+    }
+    symlink(&outside, &v2).unwrap();
+    let plan = plan_cleanup(&world.store, ToolKind::Zcode, &world.opts)
+        .await
+        .unwrap();
+    assert!(!plan
+        .extras
+        .iter()
+        .any(|extra| extra.name.starts_with(".zcode/v2/")));
+    let result = confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection {
+            deployment: false,
+            login_and_cache: true,
+            sessions: true,
+            ..CleanupSelection::default_safe()
+        },
+        &world.opts,
+    )
+    .await
+    .unwrap();
+    assert_eq!((result.extras_cleared, result.erased), (0, 0));
+
+    let rollback = plan_rollback(&world.store, &snapshot_id, &world.opts)
+        .await
+        .unwrap();
+    let error = confirm_rollback(&world.store, &rollback.operation_id, &world.opts)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("link or invalid ancestor"));
+    assert!(!outside.join(database).exists());
+    for name in [
+        "tasks-index.sqlite-wal",
+        "credentials.json",
+        "config.json.legacy",
+    ] {
+        assert_eq!(
+            std::fs::read_to_string(outside.join(name)).unwrap(),
+            "outside"
+        );
+    }
+}
+
+#[tokio::test]
 async fn zcode_login_cleanup_is_refused_while_patched_without_deployment_selection() {
     if !python3_available() {
         return;
