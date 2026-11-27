@@ -82,6 +82,15 @@ fn zcode_world() -> World {
     world
 }
 
+fn zcode_runtime(world: &World) -> PathBuf {
+    let app = world.home.join("ZCode-fixture");
+    if cfg!(windows) {
+        app.join("resources/glm/zcode.cjs")
+    } else {
+        app.join("Contents/Resources/glm/zcode.cjs")
+    }
+}
+
 fn memory_path(world: &World) -> PathBuf {
     world.home.join(".claude").join("CLAUDE.md")
 }
@@ -1502,6 +1511,69 @@ async fn cleanup_and_rollback_do_not_follow_a_symlinked_zcode_ancestor() {
 }
 
 #[tokio::test]
+async fn zcode_keeps_backups_for_legacy_and_unverified_runtimes() {
+    let world = zcode_world();
+    let managed = world.home.join(".zcode-keysmith");
+    let config = managed.join("config.json");
+    let backup = managed.join("backups/original");
+    let runtime = zcode_runtime(&world);
+    write(backup.clone(), "original app");
+    let selection = CleanupSelection {
+        deployment: false,
+        login_and_cache: true,
+        ..CleanupSelection::default_safe()
+    };
+    write(runtime.clone(), "process.env.ZCODE_KEYSMITH_SYSTEM_FILE");
+    assert!(!config.exists());
+    let status = tool_status(
+        &world.store,
+        ToolKind::Zcode,
+        Scope::User,
+        None,
+        &world.opts,
+    )
+    .await
+    .unwrap();
+    assert!(status.doctor.checks.iter().any(|check| {
+        check.name == "zcode_runtime_patched" && check.detail.as_deref() == Some("false")
+    }));
+
+    for case in [
+        "legacy patch",
+        "missing runtime",
+        "malformed config",
+        "unreadable config",
+    ] {
+        match case {
+            "missing runtime" => std::fs::remove_file(&runtime).unwrap(),
+            "malformed config" => {
+                write(runtime.clone(), "vendor runtime");
+                write(config.clone(), "invalid json");
+            }
+            "unreadable config" => {
+                std::fs::remove_file(&config).unwrap();
+                std::fs::create_dir(&config).unwrap();
+            }
+            _ => {}
+        }
+        let plan = plan_cleanup(&world.store, ToolKind::Zcode, &world.opts)
+            .await
+            .unwrap();
+        assert!(
+            plan.blockers
+                .iter()
+                .any(|blocker| blocker.contains("still patched")),
+            "{case}"
+        );
+        let error = confirm_cleanup(&world.store, &plan.operation_id, selection, &world.opts)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("still patched"), "{case}");
+        assert_eq!(std::fs::read_to_string(&backup).unwrap(), "original app");
+    }
+}
+
+#[tokio::test]
 async fn zcode_login_cleanup_is_refused_while_patched_without_deployment_selection() {
     if !python3_available() {
         return;
@@ -2049,6 +2121,7 @@ async fn a_full_cleanup_of_zcode_leaves_its_workspace_and_projects_alone() {
         return;
     }
     let world = zcode_world();
+    write(zcode_runtime(&world), "vendor runtime\n");
     let home = world.home.clone();
     write(
         home.join(".zcode/v2/config.json"),

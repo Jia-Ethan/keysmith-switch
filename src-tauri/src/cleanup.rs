@@ -1954,14 +1954,65 @@ fn zcode_app_patched(tool: ToolKind, opts: &AdapterOptions, envelope: &Envelope)
     }) {
         return Ok(true);
     }
-    let path = home_dir(opts)?.join(".zcode-keysmith").join("config.json");
-    let bytes = match std::fs::read(path) {
-        Ok(bytes) => bytes,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(error) => return Err(error.into()),
+    let home = home_dir(opts)?;
+    let managed = home.join(".zcode-keysmith");
+    let path = managed.join("config.json");
+    if !is_contained(&home, &path).unwrap_or(false) {
+        return Ok(true);
+    }
+    let config = match std::fs::symlink_metadata(&path) {
+        Ok(meta) if meta.is_file() => match std::fs::read(&path)
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        {
+            Some(config) if config.is_object() => config,
+            _ => return Ok(true),
+        },
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => serde_json::Value::Null,
+        _ => return Ok(true),
     };
-    let config: serde_json::Value = serde_json::from_slice(&bytes)?;
-    Ok(config["app_bundle_modified"].as_bool().unwrap_or(false))
+    if config
+        .get("app_bundle_modified")
+        .is_some_and(|value| value.as_bool() != Some(false))
+    {
+        return Ok(true);
+    }
+
+    const MARKER: &[u8] = b"ZCODE_KEYSMITH_SYSTEM_FILE";
+    let mut runtimes = envelope
+        .target_paths
+        .iter()
+        .filter(|target| target.role == "zcode_runtime")
+        .map(|target| target.path.as_str())
+        .chain(config["zcode_runtime"].as_str())
+        .collect::<Vec<_>>();
+    runtimes.sort_unstable();
+    runtimes.dedup();
+    let mut verified = !runtimes.is_empty();
+    for runtime in runtimes {
+        let path = Path::new(runtime);
+        if path.is_absolute() && path.is_file() {
+            if let Ok(bytes) = std::fs::read(path) {
+                if bytes.windows(MARKER.len()).any(|window| window == MARKER) {
+                    return Ok(true);
+                }
+                continue;
+            }
+        }
+        verified = false;
+    }
+    if verified {
+        return Ok(false);
+    }
+
+    let backups = managed.join("backups");
+    if !is_contained(&home, &backups).unwrap_or(false) {
+        return Ok(true);
+    }
+    Ok(match std::fs::read_dir(backups) {
+        Ok(mut entries) => entries.next().is_some(),
+        Err(error) => error.kind() != std::io::ErrorKind::NotFound,
+    })
 }
 
 const ZCODE_PATCHED: &str =
