@@ -2,9 +2,9 @@
 //!
 //! Deployment cleanup uses the adapter's uninstall and saves recoverable Keysmith leftovers.
 //! Opting into memory, setup or sessions saves the selected pieces in a local snapshot.
-//! Session data and memories folders move by rename while the agent is closed. Setup config
-//! copies are sanitized before their originals are removed. Login and cache cleanup erases
-//! its selected pieces and clears the agent's keychain entries.
+//! Session data and memories folders move by rename while the agent is closed. Login and cache
+//! cleanup saves sanitized config copies before removing their originals, erases the other
+//! selected pieces and clears the agent's keychain entries.
 //!
 //! Rollback saves the data it replaces, including any live SQLite sidecars, and verifies
 //! copies before putting them back. Saved extras skip links, git projects and login files.
@@ -156,9 +156,17 @@ const CLAUDE: Table = Table {
         entry(".claude/hooks", "saved", Setup),
         entry(".claude/skills", "saved", Setup),
         entry(".claude/output-styles", "saved", Setup),
-        entry(".claude/settings.json", "saved-without-login", Setup),
-        entry(".claude/settings.local.json", "saved-without-login", Setup),
-        entry(".claude.json", "saved-without-login", Setup),
+        entry(
+            ".claude/settings.json",
+            "saved-without-login",
+            LoginAndCache,
+        ),
+        entry(
+            ".claude/settings.local.json",
+            "saved-without-login",
+            LoginAndCache,
+        ),
+        entry(".claude.json", "saved-without-login", LoginAndCache),
         entry(".claude/projects", "saved", Sessions),
         entry(".claude/sessions", "saved", Sessions),
         entry(".claude/history.jsonl", "saved", Sessions),
@@ -259,7 +267,7 @@ const GROK: Table = Table {
         entry(".grok/agents", "saved", Setup),
         entry(".grok/skills", "saved", Setup),
         entry(".grok/commands", "saved", Setup),
-        entry(".grok/config.toml", "saved-without-login", Setup),
+        entry(".grok/config.toml", "saved-without-login", LoginAndCache),
         entry(".grok/AGENTS.md", "saved", Memory),
         entry(".grok/memory", "saved", Memories),
         entry(".grok/memory-v2", "saved", Memories),
@@ -301,15 +309,31 @@ const ZCODE: Table = Table {
         entry(".zcode/AGENTS.md", "saved", Memory),
         entry(".zcode/commands", "saved", Setup),
         entry(".zcode/skills", "saved", Setup),
-        entry(".zcode/v2/config.json", "saved-without-login", Setup),
-        entry(".zcode/v2/setting.json", "saved-without-login", Setup),
+        entry(
+            ".zcode/v2/config.json",
+            "saved-without-login",
+            LoginAndCache,
+        ),
+        entry(
+            ".zcode/v2/setting.json",
+            "saved-without-login",
+            LoginAndCache,
+        ),
         entry(
             ".zcode/v2/provider_config.json",
             "saved-without-login",
-            Setup,
+            LoginAndCache,
         ),
-        entry(".zcode/v2/bot-config.json", "saved-without-login", Setup),
-        entry(".zcode/v2/bot-config.v3.json", "saved-without-login", Setup),
+        entry(
+            ".zcode/v2/bot-config.json",
+            "saved-without-login",
+            LoginAndCache,
+        ),
+        entry(
+            ".zcode/v2/bot-config.v3.json",
+            "saved-without-login",
+            LoginAndCache,
+        ),
         entry(".zcode/cli/memories", "saved", Memories),
         entry(".zcode/v2/tasks-index.sqlite", "saved", Sessions),
         entry(".zcode/cli/db", "saved", Sessions),
@@ -2037,7 +2061,7 @@ async fn run_cleanup(
         ));
     }
 
-    let rewrite_disconnected = if selection.setup || selection.login_and_cache {
+    let rewrite_disconnected = if selection.login_and_cache {
         crate::rewrite::disconnect_tool(store.paths(), tool)?
     } else {
         false

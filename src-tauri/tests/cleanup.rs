@@ -761,6 +761,74 @@ async fn default_safe_claude_cleanup_leaves_memory_setup_sessions_login_and_rewr
     assert!(keysmith_switch_lib::rewrite::read_claude_record(world.store.paths()).is_some());
 }
 
+#[tokio::test]
+async fn setup_only_cleanup_preserves_embedded_logins_and_input_rewrite() {
+    let world = world("claude/claude-instruct.py");
+    let claude = world.home.join(".claude");
+    write(claude.join("rules/rule.md"), "rule\n");
+    write(claude.join("skills/skill.md"), "skill\n");
+    let account = world.home.join(".claude.json");
+    let settings = claude.join("settings.json");
+    write(account.clone(), r#"{"oauthAccount":{"id":"fixture"}}"#);
+    write(
+        settings.clone(),
+        r#"{"env":{"ANTHROPIC_AUTH_TOKEN":"fixture"}}"#,
+    );
+    let rewrite = keysmith_switch_lib::rewrite::claude::link(
+        &claude,
+        None,
+        "http://127.0.0.1:4000/t/fixture/claude/anthropic",
+    )
+    .unwrap();
+    let record = world
+        .store
+        .paths()
+        .home
+        .join("input-rewrite/claude-link.json");
+    write(record.clone(), &serde_json::to_string(&rewrite).unwrap());
+    let before = [&account, &settings, &record].map(|path| std::fs::read(path).unwrap());
+
+    let plan = plan_cleanup(&world.store, ToolKind::Claude, &world.opts)
+        .await
+        .unwrap();
+    for name in [".claude.json", ".claude/settings.json"] {
+        let extra = plan.extras.iter().find(|extra| extra.name == name).unwrap();
+        assert_eq!(extra.category, CleanupCategory::LoginAndCache);
+    }
+    let result = confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection {
+            deployment: false,
+            setup: true,
+            ..CleanupSelection::default_safe()
+        },
+        &world.opts,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(result.extras_cleared, 2);
+    assert!(!result.rewrite_disconnected);
+    assert_eq!(
+        [&account, &settings, &record].map(|path| std::fs::read(path).unwrap()),
+        before
+    );
+    let snapshot = world
+        .store
+        .paths()
+        .home
+        .join("snapshots")
+        .join(result.snapshot_id.unwrap());
+    for (name, contents) in [("rules/rule.md", "rule\n"), ("skills/skill.md", "skill\n")] {
+        assert!(!claude.join(name).exists());
+        assert_eq!(
+            std::fs::read_to_string(snapshot.join("extras/.claude").join(name)).unwrap(),
+            contents
+        );
+    }
+}
+
 fn create_wal_database(path: &Path, session: &str) {
     let conn = rusqlite::Connection::open(path).unwrap();
     conn.set_db_config(
