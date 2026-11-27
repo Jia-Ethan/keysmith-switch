@@ -280,6 +280,7 @@ impl FromStr for OperationKind {
 pub enum OperationStatus {
     Preview,
     Ready,
+    Running,
     Succeeded,
     Failed,
     Cancelled,
@@ -290,6 +291,7 @@ impl OperationStatus {
         match self {
             Self::Preview => "preview",
             Self::Ready => "ready",
+            Self::Running => "running",
             Self::Succeeded => "succeeded",
             Self::Failed => "failed",
             Self::Cancelled => "cancelled",
@@ -304,6 +306,7 @@ impl FromStr for OperationStatus {
         match value.trim() {
             "preview" => Ok(Self::Preview),
             "ready" => Ok(Self::Ready),
+            "running" => Ok(Self::Running),
             "succeeded" => Ok(Self::Succeeded),
             "failed" => Ok(Self::Failed),
             "cancelled" => Ok(Self::Cancelled),

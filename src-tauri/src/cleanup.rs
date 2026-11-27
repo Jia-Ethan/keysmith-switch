@@ -1927,9 +1927,12 @@ pub async fn confirm_cleanup(
     selection: CleanupSelection,
     opts: &AdapterOptions,
 ) -> Result<CleanupResult> {
-    let plan = ops::require_preview(store, operation_id, OperationKind::Cleanup)?;
-    let request: serde_json::Value = serde_json::from_str(&plan.request_json)?;
-    let result = run_cleanup(store, plan.tool, &request, selection, opts).await;
+    let plan = ops::claim_preview(store, operation_id, OperationKind::Cleanup)?;
+    let result = async {
+        let request = serde_json::from_str(&plan.request_json)?;
+        run_cleanup(store, plan.tool, &request, selection, opts).await
+    }
+    .await;
     match &result {
         Ok(_) => {
             store.update_operation(operation_id, OperationStatus::Succeeded, None, None)?;
@@ -2288,14 +2291,16 @@ pub async fn confirm_rollback(
     operation_id: &str,
     opts: &AdapterOptions,
 ) -> Result<RollbackResult> {
-    let plan = ops::require_preview(store, operation_id, OperationKind::Rollback)?;
-    let request: serde_json::Value = serde_json::from_str(&plan.request_json)?;
-    let id = request
-        .get("snapshotId")
-        .and_then(|value| value.as_str())
-        .ok_or_else(|| Error::user_cancel("plan not found"))?
-        .to_string();
-    let result = run_rollback(store, &id, opts).await;
+    let plan = ops::claim_preview(store, operation_id, OperationKind::Rollback)?;
+    let result = async {
+        let request: serde_json::Value = serde_json::from_str(&plan.request_json)?;
+        let id = request
+            .get("snapshotId")
+            .and_then(|value| value.as_str())
+            .ok_or_else(|| Error::user_cancel("plan not found"))?;
+        run_rollback(store, id, opts).await
+    }
+    .await;
     match &result {
         Ok(_) => {
             store.update_operation(operation_id, OperationStatus::Succeeded, None, None)?;

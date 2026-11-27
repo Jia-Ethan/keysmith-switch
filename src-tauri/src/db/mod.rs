@@ -595,6 +595,51 @@ impl Store {
 
     pub fn get_operation(&self, id: &str) -> Result<Option<Operation>> {
         let conn = self.conn()?;
+        Self::read_operation(&conn, id)
+    }
+
+    pub(crate) fn require_preview_operation(
+        &self,
+        id: &str,
+        kind: OperationKind,
+    ) -> Result<Operation> {
+        Self::validate_preview(self.get_operation(id)?, kind)
+    }
+
+    pub fn claim_preview_operation(&self, id: &str, kind: OperationKind) -> Result<Operation> {
+        let mut conn = self.conn()?;
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let updated = tx.execute(
+            "UPDATE operations SET status = 'running', updated_at = ?1
+             WHERE id = ?2 AND kind = ?3 AND preview = 1 AND status IN ('preview', 'ready')",
+            params![now_rfc3339(), id, kind.as_str()],
+        )?;
+        let operation = Self::read_operation(&tx, id)?;
+        if updated == 0 {
+            return Self::validate_preview(operation, kind);
+        }
+        tx.commit()?;
+        operation.ok_or_else(|| Error::user_cancel("plan not found"))
+    }
+
+    fn validate_preview(operation: Option<Operation>, kind: OperationKind) -> Result<Operation> {
+        let operation = operation.ok_or_else(|| Error::user_cancel("plan not found"))?;
+        if operation.kind != kind {
+            return Err(Error::user_cancel("plan is for a different action"));
+        }
+        if !matches!(
+            operation.status,
+            OperationStatus::Preview | OperationStatus::Ready
+        ) {
+            return Err(Error::user_cancel("plan already used"));
+        }
+        if !operation.preview {
+            return Err(Error::user_cancel("plan is not a preview"));
+        }
+        Ok(operation)
+    }
+
+    fn read_operation(conn: &Connection, id: &str) -> Result<Option<Operation>> {
         conn.query_row(
             "SELECT id, tool, kind, status, preview, prompt_id, scope, project_dir,
                     request_json, envelope_json, error, parent_id, created_at, updated_at

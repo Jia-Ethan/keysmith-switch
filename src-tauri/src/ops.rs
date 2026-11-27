@@ -854,24 +854,15 @@ pub(crate) fn require_preview(
     operation_id: &str,
     expected: OperationKind,
 ) -> Result<Operation> {
-    // Four different reasons, four different messages: "already used" is the one a person
-    // meets after a failed confirm, and it must not read like nothing was ever planned.
-    let operation = store
-        .get_operation(operation_id)?
-        .ok_or_else(|| Error::user_cancel("plan not found"))?;
-    if operation.kind != expected {
-        return Err(Error::user_cancel("plan is for a different action"));
-    }
-    if !matches!(
-        operation.status,
-        OperationStatus::Preview | OperationStatus::Ready
-    ) {
-        return Err(Error::user_cancel("plan already used"));
-    }
-    if !operation.preview {
-        return Err(Error::user_cancel("plan is not a preview"));
-    }
-    Ok(operation)
+    store.require_preview_operation(operation_id, expected)
+}
+
+pub(crate) fn claim_preview(
+    store: &Store,
+    operation_id: &str,
+    expected: OperationKind,
+) -> Result<Operation> {
+    store.claim_preview_operation(operation_id, expected)
 }
 
 pub(crate) fn store_preview(

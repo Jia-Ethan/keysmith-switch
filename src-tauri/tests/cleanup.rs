@@ -424,6 +424,51 @@ async fn a_plan_is_used_once_and_only_while_nothing_has_changed() {
 }
 
 #[tokio::test]
+async fn concurrent_confirms_claim_cleanup_and_rollback_only_once() {
+    let world = world("claude/claude-instruct.py");
+    let other_store = Store::open(world.store.paths()).unwrap();
+    let rules = world.home.join(".claude/rules/rule.md");
+    write(rules.clone(), "rule\n");
+    let cleanup = plan_cleanup(&world.store, ToolKind::Claude, &world.opts)
+        .await
+        .unwrap();
+    let selection = CleanupSelection {
+        deployment: false,
+        setup: true,
+        ..CleanupSelection::default_safe()
+    };
+    let (first, second) = tokio::join!(
+        confirm_cleanup(&world.store, &cleanup.operation_id, selection, &world.opts),
+        confirm_cleanup(&other_store, &cleanup.operation_id, selection, &world.opts),
+    );
+    let (winner, loser) = if first.is_ok() {
+        (first, second)
+    } else {
+        (second, first)
+    };
+    let snapshot_id = winner.unwrap().snapshot_id.unwrap();
+    assert!(loser.unwrap_err().to_string().contains("plan already used"));
+    assert!(!rules.exists());
+    assert_eq!(list_snapshots(&world.store).len(), 1);
+
+    let rollback = plan_rollback(&world.store, &snapshot_id, &world.opts)
+        .await
+        .unwrap();
+    let (first, second) = tokio::join!(
+        confirm_rollback(&world.store, &rollback.operation_id, &world.opts),
+        confirm_rollback(&other_store, &rollback.operation_id, &world.opts),
+    );
+    let (winner, loser) = if first.is_ok() {
+        (first, second)
+    } else {
+        (second, first)
+    };
+    assert_eq!(winner.unwrap().extras_restored, 1);
+    assert!(loser.unwrap_err().to_string().contains("plan already used"));
+    assert_eq!(std::fs::read_to_string(rules).unwrap(), "rule\n");
+}
+
+#[tokio::test]
 async fn cleaning_an_agent_with_nothing_to_clean_says_so_and_saves_nothing() {
     if !python3_available() {
         return;
