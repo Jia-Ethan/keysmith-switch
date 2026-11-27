@@ -2,16 +2,20 @@
 
 更新日期：2026-11-27（Asia/Shanghai）
 
-阶段：公开稳定版为 [`v0.9.0`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.9.0)，含 macOS Apple Silicon 与 Windows x64 安装包；下一版 `v0.9.1` 正在发布准备中。此文下方 `v0.1.3`／`v0.1.4` 的验证记录是历史记录。
+阶段：公开稳定版为 [`v0.9.1`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.9.1)，含 macOS Apple Silicon 与 Windows x64 安装包。此文下方 `v0.1.3`／`v0.1.4` 的验证记录是历史记录。
 
-## v0.9.1 发布准备
+## v0.9.1 发布记录
 
 - [#173](https://github.com/Jia-Ethan/keysmith-switch/pull/173) 已合并为 `fd03b9d`：将清理重构为 6 分类分项勾选模式（默认仅清 Keysmith 部署与残留），Claude / Codex / Grok / ZCode 的会话历史与 SQLite 数据库按同卷原子整组移入本地版本快照可一键回滚，含密钥配置文件归入独立红色高危区并强制二次确认；加固祖先目录符号链接/Windows junction 防护、fail-closed 运行中复检、SQLite 原子预览认领、ZCode 旧补丁备份保护、回滚新增路径追踪（`absentExtras`）与前端异步竞态防护。macOS 与 Windows 全部 5 项 CI 通过。
 - [#170](https://github.com/Jia-Ethan/keysmith-switch/pull/170) 已合并为 `5d5b6ab`：随包升级 `zcode-keysmith` 0.3.5，适配 ZCode 3.17–4.0 运行时注入锚点。
 - [#171](https://github.com/Jia-Ethan/keysmith-switch/pull/171) 已合并为 `74e904e`：CI 与发布流程 macOS runner 迁移至 `macos-15` 并更新 `tauri-build` 适配 Rust 1.100。
 - [#167](https://github.com/Jia-Ethan/keysmith-switch/pull/167) 已合并为 `4486ec2`：随包升级 `dsh-keysmith` 0.4.1，优先部署到 DSH Desktop 配置档（`profiles/desktop`）并对旧 `profiles/web` 部署提示重新部署。
 - [#166](https://github.com/Jia-Ethan/keysmith-switch/pull/166) 已合并为 `88026af`：低高度窗口下自动折叠侧栏 Agent 名称、保持「设置」可见并启用窗口 `preventOverflow`。
-- 七处版本声明已提升至 `0.9.1`，同步更新 `scripts/release-notes.md`、`scripts/updater-notes.md`、`README.md` 版本表与 `docs/RELEASE_GATES.md`。
+- 2026-11-27，发布准备 PR [#174](https://github.com/Jia-Ethan/keysmith-switch/pull/174) 合并为 `d146dbd426ecfb5b663d47dda91bdbe9e80a64b0`，main CI run [`45947986699`](https://github.com/Jia-Ethan/keysmith-switch/actions/runs/45947986699) 五项检查通过。GitHub-verified annotated tag [`v0.9.1`](https://github.com/Jia-Ethan/keysmith-switch/releases/tag/v0.9.1) 指向该提交。
+- Source release run [`45948971108`](https://github.com/Jia-Ethan/keysmith-switch/actions/runs/45948971108) 的 source-gates、macOS、Windows 和 metadata 均成功；公开发布 run [`45951619992`](https://github.com/Jia-Ethan/keysmith-switch-releases/actions/runs/45951619992) 经 `production` 审批后成功。
+- 独立下载验证了候选的 8 个发布文件、provenance、SHA-256、`latest.json`（size / sha256 / 签名与文件一致，updater 门槛 0.1.3）和签名 key ID `0D03A636FF048B9F`（与 v0.9.0 相同）。macOS updater 内 sidecar：ZCode 0.3.5、DSH 0.4.1，其余与 v0.9.0 相同；DMG 内 app 与 updater archive 逐文件一致且通过 `verify-bundle.sh`。
+- 公开 Release 为 stable、Latest、非 draft、immutable，8 个公开资产与候选一致，发布说明与 `scripts/release-notes.md` 一致；匿名 stable feed 与候选 `latest.json` 字节一致。
+- v0.9.0 → v0.9.1 真实应用内升级、Windows x64 实体机上的手动安装/卸载与分项清理/junction 校验，以及真实 ZCode 3.17–4.0 / DSH Desktop 实体机验收仍需独立验证。
 
 ## v0.9.0 发布记录
 
