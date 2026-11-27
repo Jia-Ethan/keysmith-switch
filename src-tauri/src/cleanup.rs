@@ -780,21 +780,31 @@ fn memory_file(
         return Ok(None);
     };
     let home = home_dir(opts)?;
+    require_contained(&home, &expected)?;
+    let expected_meta = std::fs::symlink_metadata(&expected)
+        .map_err(|_| Error::invalid("the memory file is gone"))?;
+    if !expected_meta.is_file() {
+        return Err(Error::invalid("the memory file is not an ordinary file"));
+    }
     let path = Path::new(&target.path);
-    // The adapter can resolve aliases above the user's home when reporting the path.
-    let canonical_expected = std::fs::canonicalize(&home)
-        .ok()
-        .map(|root| root.join(".claude/CLAUDE.md"));
-    if path != expected && canonical_expected.as_deref() != Some(path) {
+    let target_meta =
+        std::fs::symlink_metadata(path).map_err(|_| Error::invalid("the memory file is gone"))?;
+    if is_link(&target_meta) || !target_meta.is_file() {
+        return Err(Error::invalid("the memory file is not an ordinary file"));
+    }
+    // Canonicalize both sides so Windows 8.3 short paths (`RUNNER~1`), `\\?\` prefixes,
+    // path separators, and aliases above `$HOME` (e.g. macOS `/var` -> `/private/var`) match.
+    let same = match (
+        std::fs::canonicalize(path),
+        std::fs::canonicalize(&expected),
+    ) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => false,
+    };
+    if !same {
         return Err(Error::invalid(
             "the memory file is not the user-level CLAUDE.md; nothing was changed",
         ));
-    }
-    require_contained(&home, &expected)?;
-    let meta = std::fs::symlink_metadata(&expected)
-        .map_err(|_| Error::invalid("the memory file is gone"))?;
-    if !meta.is_file() {
-        return Err(Error::invalid("the memory file is not an ordinary file"));
     }
     Ok(Some(expected))
 }
