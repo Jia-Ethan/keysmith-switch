@@ -383,6 +383,47 @@ async fn zcode_fixture_contract() {
         .contains("recover"));
 }
 
+#[test]
+fn zcode_doctor_exposes_runtime_path_in_text_and_json() {
+    let runtime = "/example/ZCode/zcode.cjs";
+    for (stdout, exists) in [
+        (
+            format!("zcode-keysmith doctor\nzcode_runtime_exists: true\nzcode_runtime: {runtime}\nzcode_runtime_patched: false\n"),
+            true,
+        ),
+        (
+            serde_json::json!({
+                "schema": "zcode-keysmith/v1",
+                "operation": "doctor",
+                "ok": false,
+                "runtime": {"path": runtime, "exists": false, "patched": false}
+            })
+            .to_string(),
+            false,
+        ),
+    ] {
+        let captured = Captured {
+            argv: vec!["doctor".into()],
+            truncated: false,
+            stdout,
+            stderr: String::new(),
+            exit_code: i32::from(!exists),
+            timed_out: false,
+        };
+        let parsed = normalize(
+            ToolKind::Zcode,
+            &AdapterCommand::Doctor,
+            &captured,
+            Envelope::new(ToolKind::Zcode, "doctor"),
+        );
+        let path = parsed.target_paths.iter().find(|path| path.role == "zcode_runtime").unwrap();
+        assert_eq!((&*path.path, path.exists), (runtime, exists));
+        assert!(parsed.doctor.checks.iter().any(|check| {
+            check.name == "zcode_runtime_patched" && check.detail.as_deref() == Some("false")
+        }));
+    }
+}
+
 #[tokio::test]
 async fn zcode_032_json_uninstall_parses() {
     let command = AdapterCommand::PlanDeactivate {

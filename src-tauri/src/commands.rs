@@ -686,15 +686,18 @@ pub async fn plan_cleanup(
 pub async fn confirm_cleanup(
     state: State<'_, AppState>,
     operation_id: String,
+    selection: Option<crate::cleanup::CleanupSelection>,
     clear_memories: Option<bool>,
 ) -> Result<crate::cleanup::CleanupResult> {
-    crate::cleanup::confirm_cleanup(
-        &state.store,
-        &operation_id,
-        clear_memories.unwrap_or(false),
-        &opts(),
-    )
-    .await
+    let selection = selection.unwrap_or(crate::cleanup::CleanupSelection {
+        deployment: true,
+        memory: false,
+        memories: clear_memories.unwrap_or(false),
+        setup: false,
+        sessions: false,
+        login_and_cache: false,
+    });
+    crate::cleanup::confirm_cleanup(&state.store, &operation_id, selection, &opts()).await
 }
 
 #[tauri::command(rename_all = "camelCase")]

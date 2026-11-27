@@ -526,6 +526,24 @@ export interface MemoriesMeta {
   bytes: number;
 }
 
+/** Opt-in cleanup categories; only `deployment` is selected by default. */
+export type CleanupCategory =
+  | "deployment"
+  | "memory"
+  | "memories"
+  | "setup"
+  | "sessions"
+  | "login-and-cache";
+
+export interface CleanupSelection {
+  deployment: boolean;
+  memory: boolean;
+  memories: boolean;
+  setup: boolean;
+  sessions: boolean;
+  loginAndCache: boolean;
+}
+
 /** One leftover piece of user-level setup, such as `rules` or a wrapper, counted, never read. */
 export interface ExtraMeta {
   name: string;
@@ -534,6 +552,13 @@ export interface ExtraMeta {
   bytes: number;
   /** `saved`, `saved-without-login` (a copy with every key removed) or `erased` (not saved). */
   kind?: "saved" | "saved-without-login" | "erased";
+  /** Which opt-in category this item belongs to; legacy snapshots may omit it (treated as `setup`). */
+  category?: CleanupCategory;
+}
+
+export interface AbsentExtra {
+  name: string;
+  category?: CleanupCategory;
 }
 
 export interface SnapshotMeta {
@@ -544,8 +569,10 @@ export interface SnapshotMeta {
   deployment: DeploymentMeta;
   memory: MemoryMeta | null;
   memories?: MemoriesMeta | null;
-  /** The rest of the user-level setup (rules, custom agents, wrapper) kept in the snapshot. */
+  /** The rest of the user-level setup and sessions kept in the snapshot. */
   extras?: ExtraMeta[];
+  /** Saved paths created by a rollback so undoing it can move them aside safely. */
+  absentExtras?: AbsentExtra[];
 }
 
 export interface CleanupPlan {
@@ -555,11 +582,11 @@ export interface CleanupPlan {
   memory: MemoryMeta | null;
   /** The agent's memory folder, if it has files in it. Only cleared when asked for. */
   memories: MemoriesMeta | null;
-  /** The rest of the user-level setup a fresh install does not have. */
+  /** The rest of the user-level setup and sessions a fresh install does not have. */
   extras?: ExtraMeta[];
   /** The agent's login is in the system keychain: it is removed and never saved. */
   loginInKeychain?: boolean;
-  /** The agent is running, so its memory folder cannot be cleared or restored now. */
+  /** The agent is running, so its memories folder, sessions, and login cannot be touched now. */
   agentRunning: boolean;
   /** The deployed config was changed by hand: it is left in place, the rest is still cleaned. */
   configDrifted?: boolean;
@@ -573,6 +600,7 @@ export interface CleanupResult {
   memoryCleared: boolean;
   memoriesCleared: boolean;
   extrasCleared?: number;
+  sessionsCleared?: number;
   erased?: number;
   keychainCleared?: boolean;
   /** Input rewrite was connected for this agent and was disconnected before the snapshot. */
@@ -586,7 +614,7 @@ export interface RollbackPlan {
   replacesDeployment: boolean;
   memory: { restoreBytes: number; currentBytes: number; currentDiffers: boolean } | null;
   memories: { restoreFiles: number; restoreBytes: number; currentFiles: number; currentBytes: number } | null;
-  /** How many saved pieces of setup are put back. */
+  /** How many saved pieces of setup and sessions are put back. */
   extras?: number;
   agentRunning: boolean;
   /** What is there now is saved as a snapshot first. */
@@ -600,6 +628,7 @@ export interface RollbackResult {
   memoryRestored: boolean;
   memoriesRestored: boolean;
   extrasRestored?: number;
+  sessionsRestored?: number;
 }
 
 export type AnnouncementKind = "news" | "release" | "preview";

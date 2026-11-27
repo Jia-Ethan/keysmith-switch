@@ -409,32 +409,66 @@ async function handle(cmd: string, args: Record<string, any> = {}): Promise<unkn
       const tool = args.tool as ToolId;
       const live = store.live[tool];
       const memory = tool === "claude" && claudeMemoryBytes > 0 ? { path: "/Users/you/.claude/CLAUDE.md", bytes: claudeMemoryBytes, lines: 31, sha256: "m1", mode: 420 } : null;
-      // ?codexrunning=1 pretends Codex is open, which keeps its memories folder out of reach.
+      // ?codexrunning=1 pretends Codex is open, which keeps its memories and sessions out of reach.
       const memories = tool === "codex" && !codexMemoriesGone ? { path: "/Users/you/.codex/memories", files: 2778, bytes: 41_943_040 } : null;
       const agentRunning = tool === "codex" && new URLSearchParams(window.location.search).has("codexrunning");
       const root = tool === "zcode" ? ".zcode" : `.${tool}`;
       // pi and dsh keep their own state; nothing in this list is Switch's to clear.
       const extras = tool === "pi" || tool === "dsh" ? [] : [
-        { name: `${root}/rules`, path: `/Users/you/${root}/rules`, files: 4, bytes: 6_144, kind: "saved" },
-        { name: `${root}/${tool === "claude" ? "settings.json" : "config.toml"}`, path: `/Users/you/${root}/config`, files: 1, bytes: 1_180, kind: "saved-without-login" },
-        { name: `${root}/sessions`, path: `/Users/you/${root}/sessions`, files: 312, bytes: 12_582_912, kind: "erased" },
+        { name: `${root}/rules`, path: `/Users/you/${root}/rules`, files: 4, bytes: 6_144, kind: "saved", category: "setup" },
+        { name: `${root}/skills`, path: `/Users/you/${root}/skills`, files: 9, bytes: 24_576, kind: "saved", category: "setup" },
+        { name: `${root}/${tool === "claude" ? "projects" : "sessions"}`, path: `/Users/you/${root}/sessions`, files: 312, bytes: 12_582_912, kind: "saved", category: "sessions" },
+        { name: `${root}/${tool === "claude" ? "settings.json" : "config.toml"}`, path: `/Users/you/${root}/config`, files: 1, bytes: 1_180, kind: "saved-without-login", category: "login-and-cache" },
+        { name: `${root}/cache`, path: `/Users/you/${root}/cache`, files: 18, bytes: 420_000, kind: "erased", category: "login-and-cache" },
       ];
       const loginInKeychain = tool === "claude";
       return delay({ operationId: `cleanup-${tool}`, tool, deployment: { present: Boolean(live), title: live?.title || null, restorable: Boolean(live) }, memory, memories, extras, loginInKeychain, agentRunning, nothingToDo: false, blockers: [] }, 450);
     }
     case "confirm_cleanup": {
       const tool = String(args.operationId).replace("cleanup-", "") as ToolId;
-      const live = store.live[tool];
-      const id = `2026100${snapshots.length + 1}T120000Z-${tool}-a1b2c3`;
-      snapshots.unshift({ id, createdAt: now(), tool, kind: "cleanup", deployment: { present: Boolean(live), title: live?.title || null, restorable: Boolean(live) }, memory: tool === "claude" && claudeMemoryBytes > 0 ? { path: "/Users/you/.claude/CLAUDE.md", bytes: claudeMemoryBytes, lines: 31, sha256: "m1", mode: 420 } : null });
-      delete store.live[tool];
-      if (tool === "claude") claudeMemoryBytes = 0;
-      const memoriesCleared = tool === "codex" && args.clearMemories === true && !codexMemoriesGone;
-      if (memoriesCleared) {
-        codexMemoriesGone = true;
-        snapshots[0].memories = { path: "/Users/you/.codex/memories", files: 2778, bytes: 41_943_040 };
+      const sel = (args.selection as { deployment?: boolean; memory?: boolean; memories?: boolean; setup?: boolean; sessions?: boolean; loginAndCache?: boolean } | undefined) ?? { deployment: true };
+      const live = sel.deployment ? store.live[tool] : undefined;
+      const root = tool === "zcode" ? ".zcode" : `.${tool}`;
+      const savedExtras: Array<{ name: string; path: string; files: number; bytes: number; kind: "saved" | "saved-without-login"; category: "setup" | "sessions" | "login-and-cache" }> = [];
+      if (sel.setup && tool !== "pi" && tool !== "dsh") {
+        savedExtras.push({ name: `${root}/skills`, path: `/Users/you/${root}/skills`, files: 9, bytes: 24_576, kind: "saved", category: "setup" });
       }
-      return delay({ snapshotId: id, deactivated: Boolean(live), memoryCleared: tool === "claude", memoriesCleared }, 1100);
+      if (sel.sessions && tool !== "pi" && tool !== "dsh") {
+        savedExtras.push({ name: `${root}/${tool === "claude" ? "projects" : "sessions"}`, path: `/Users/you/${root}/sessions`, files: 312, bytes: 12_582_912, kind: "saved", category: "sessions" });
+      }
+      if (sel.loginAndCache && tool !== "pi" && tool !== "dsh") {
+        savedExtras.push({ name: `${root}/${tool === "claude" ? "settings.json" : "config.toml"}`, path: `/Users/you/${root}/config`, files: 1, bytes: 1_180, kind: "saved-without-login", category: "login-and-cache" });
+      }
+      const memoryCleared = Boolean(sel.memory && tool === "claude" && claudeMemoryBytes > 0);
+      const memoriesCleared = Boolean(sel.memories && tool === "codex" && !codexMemoriesGone);
+      const hasSnapshot = Boolean(live || memoryCleared || memoriesCleared || savedExtras.length > 0);
+      const id = hasSnapshot ? `2026100${snapshots.length + 1}T120000Z-${tool}-a1b2c3` : null;
+      if (id) {
+        snapshots.unshift({
+          id,
+          createdAt: now(),
+          tool,
+          kind: "cleanup",
+          deployment: { present: Boolean(live), title: live?.title || null, restorable: Boolean(live) },
+          memory: memoryCleared ? { path: "/Users/you/.claude/CLAUDE.md", bytes: claudeMemoryBytes, lines: 31, sha256: "m1", mode: 420 } : null,
+          memories: memoriesCleared ? { path: "/Users/you/.codex/memories", files: 2778, bytes: 41_943_040 } : null,
+          extras: savedExtras,
+        } as never);
+      }
+      if (live) delete store.live[tool];
+      if (memoryCleared) claudeMemoryBytes = 0;
+      if (memoriesCleared) codexMemoriesGone = true;
+      return delay({
+        snapshotId: id,
+        deactivated: Boolean(live),
+        memoryCleared,
+        memoriesCleared,
+        extrasCleared: savedExtras.length,
+        sessionsCleared: sel.sessions && tool !== "pi" && tool !== "dsh" ? 1 : 0,
+        erased: sel.loginAndCache && tool !== "pi" && tool !== "dsh" ? 1 : 0,
+        keychainCleared: Boolean(sel.loginAndCache && tool === "claude"),
+        rewriteDisconnected: Boolean(sel.loginAndCache && tool === "claude"),
+      }, 1100);
     }
     case "list_snapshots":
       return snapshots;

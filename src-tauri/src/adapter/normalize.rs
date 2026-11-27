@@ -960,6 +960,9 @@ fn normalize_zcode(
     envelope.preview =
         text.contains("preview") || !captured.argv.iter().any(|item| item == "--yes");
     let mut system_exists = false;
+    let mut runtime_path = None;
+    let mut runtime_exists = false;
+    let mut runtime_patched = None;
     for line in text.lines() {
         if let Some((key, value)) = line.split_once(':') {
             let key = key.trim();
@@ -978,6 +981,9 @@ fn normalize_zcode(
                     });
                 }
                 "system_file_exists" => system_exists = value == "true",
+                "zcode_runtime" if !value.is_empty() => runtime_path = Some(value),
+                "zcode_runtime_exists" => runtime_exists = value == "true",
+                "zcode_runtime_patched" => runtime_patched = value.parse::<bool>().ok(),
                 "system_file_sha256" if value != "missing" => {
                     envelope.current_fingerprint = Some(value.to_string());
                 }
@@ -989,6 +995,13 @@ fn normalize_zcode(
                 _ => {}
             }
         }
+    }
+    if let Some(path) = runtime_path {
+        envelope.target_paths.push(TargetPath {
+            path: path.to_string(),
+            role: "zcode_runtime".into(),
+            exists: runtime_exists,
+        });
     }
     envelope.status = if system_exists || text.contains("install complete") {
         ToolStatus::Active
@@ -1002,6 +1015,9 @@ fn normalize_zcode(
         AdapterCommand::Doctor | AdapterCommand::Status { .. }
     ) {
         envelope.doctor.ok = captured.exit_code == 0;
+        if let Some(patched) = runtime_patched {
+            push_zcode_runtime_check(&mut envelope, patched);
+        }
         envelope.doctor.checks.push(DoctorCheck {
             name: "system_file_exists".into(),
             ok: system_exists,
@@ -1103,6 +1119,17 @@ fn normalize_zcode_json(
     ) || operation == "doctor"
     {
         envelope.doctor.ok = envelope.ok;
+        let runtime = &json["runtime"];
+        if let Some(path) = runtime["path"].as_str().filter(|path| !path.is_empty()) {
+            envelope.target_paths.push(TargetPath {
+                path: path.to_string(),
+                role: "zcode_runtime".into(),
+                exists: runtime["exists"].as_bool().unwrap_or(false),
+            });
+        }
+        if let Some(patched) = runtime["patched"].as_bool() {
+            push_zcode_runtime_check(&mut envelope, patched);
+        }
         envelope.doctor.checks.push(DoctorCheck {
             name: "system_file_exists".into(),
             ok: system_exists,
@@ -1113,6 +1140,14 @@ fn normalize_zcode_json(
         }
     }
     envelope
+}
+
+fn push_zcode_runtime_check(envelope: &mut Envelope, patched: bool) {
+    envelope.doctor.checks.push(DoctorCheck {
+        name: "zcode_runtime_patched".into(),
+        ok: !patched,
+        detail: Some(patched.to_string()),
+    });
 }
 
 fn parse_codex_activation(text: &str) -> Option<ToolStatus> {

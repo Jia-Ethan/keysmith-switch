@@ -11,6 +11,7 @@ import type {
   BackupEntry,
   CleanupPlan,
   CleanupResult,
+  CleanupSelection,
   ClearPlan,
   DataDirs,
   Envelope,
@@ -418,9 +419,9 @@ export function planCleanup(tool: ToolId): Promise<CleanupPlan> {
   return call("plan_cleanup", { tool });
 }
 
-/** Save a snapshot, then remove the deployment (and Claude Code's user-level memory file). */
-export function confirmCleanup(operationId: string, clearMemories = false): Promise<CleanupResult> {
-  return call("confirm_cleanup", { operationId, clearMemories });
+/** Save a snapshot for recoverable items, then clean only the selected categories. */
+export function confirmCleanup(operationId: string, selection: CleanupSelection): Promise<CleanupResult> {
+  return call("confirm_cleanup", { operationId, selection });
 }
 
 export function listSnapshots(): Promise<SnapshotMeta[]> {
