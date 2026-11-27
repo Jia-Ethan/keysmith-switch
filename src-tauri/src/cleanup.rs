@@ -1374,11 +1374,15 @@ fn missing_rollback_extras(
 }
 
 fn absences_need_snapshot(snapshot: &SnapshotMeta, absent: &[AbsentExtra]) -> bool {
-    // Adapter leftovers restored along with a deployment do not on their own create an undo
-    // snapshot. Undoing a deployment would also require calling the adapter to deactivate it.
-    absent
-        .iter()
-        .any(|extra| extra.category != Deployment || !snapshot.deployment.restorable)
+    // Claude's uninstall leaves its managed instruction backups in this directory even for a
+    // memory-and-deployment cleanup. That directory alone must preserve the existing rollback
+    // behavior. If other data needs a safety snapshot, record all restored absences in it.
+    absent.iter().any(|extra| {
+        !(snapshot.tool == ToolKind::Claude
+            && snapshot.deployment.restorable
+            && extra.category == Deployment
+            && extra.name == ".claude/keysmith")
+    })
 }
 
 fn rollback_needs_idle_agent(snapshot: &SnapshotMeta) -> bool {
@@ -1880,13 +1884,18 @@ fn rewrite_meta(
 }
 
 /// Rename a batch into vacant paths, reversing completed renames if a later rename fails.
-fn rename_group(paths: &[(PathBuf, PathBuf)]) -> Result<()> {
+fn rename_group(from_root: &Path, to_root: &Path, paths: &[(PathBuf, PathBuf)]) -> Result<()> {
+    let rename = |from_root, from: &Path, to_root, to: &Path| {
+        require_contained(from_root, from)?;
+        require_contained(to_root, to)?;
+        rename_to_vacant(from, to)
+    };
     for (index, (from, to)) in paths.iter().enumerate() {
-        let result = rename_to_vacant(from, to);
+        let result = rename(from_root, from, to_root, to);
         if let Err(error) = result {
             let mut undo_error = None;
             for (from, to) in paths[..index].iter().rev() {
-                if let Err(error) = rename_to_vacant(to, from) {
+                if let Err(error) = rename(to_root, to, from_root, from) {
                     undo_error.get_or_insert(error);
                 }
             }
@@ -1942,14 +1951,15 @@ fn move_sqlite_group(
         paths.push((from, to));
         moved.push(now);
     }
-    rename_group(&paths)?;
+    let snapshot_home = &store.paths().home;
+    rename_group(root, snapshot_home, &paths)?;
     if let Err(error) = rewrite_meta(store, snapshot, |meta| meta.extras.extend(moved.clone())) {
         let reverse: Vec<_> = paths
             .into_iter()
             .rev()
             .map(|(from, to)| (to, from))
             .collect();
-        rename_group(&reverse)?;
+        rename_group(snapshot_home, root, &reverse)?;
         return Err(error);
     }
     Ok(moved)
@@ -2792,6 +2802,7 @@ async fn run_rollback(store: &Store, id: &str, opts: &AdapterOptions) -> Result<
     let saved_memory = snapshot_memory(store, &snapshot)?;
     let saved_memories = snapshot_memories(store, &snapshot)?;
     let saved_extras = snapshot_extras(store, &snapshot)?;
+    let snapshot_root = snapshot_path(store, &snapshot.id)?;
     if rollback_needs_idle_agent(&snapshot) && agent_running(tool, opts) {
         return Err(Error::command_failed(
             "close the agent first: it is using session or memories data",
@@ -2839,7 +2850,10 @@ async fn run_rollback(store: &Store, id: &str, opts: &AdapterOptions) -> Result<
         }
         for (database, group) in sqlite_groups(&saved_extras, |(extra, _)| extra) {
             require_contained(root, &root.join(database))?;
-            staged_groups.insert(database, stage_sqlite_group(root, &group)?);
+            staged_groups.insert(
+                database,
+                stage_sqlite_group(root, &store.paths().home, &group)?,
+            );
         }
     }
     let saved_snapshot = if deployment.present
@@ -2883,7 +2897,7 @@ async fn run_rollback(store: &Store, id: &str, opts: &AdapterOptions) -> Result<
         for (saved, source) in &saved_extras {
             if let Some(database) = sqlite_database(&saved.name, &saved.kind) {
                 if let Some(staged) = staged_groups.remove(database) {
-                    if let Err(error) = rename_group(&staged.paths) {
+                    if let Err(error) = rename_group(&root, &root, &staged.paths) {
                         if let Some(before) = &saved_snapshot {
                             put_back_sqlite_group(store, before, &root, database)?;
                         }
@@ -2907,7 +2921,7 @@ async fn run_rollback(store: &Store, id: &str, opts: &AdapterOptions) -> Result<
             {
                 continue;
             }
-            let restored = u64::from(restore_extra(&root, saved, source)?);
+            let restored = u64::from(restore_extra(&root, &store.paths().home, saved, source)?);
             if let Some(before) = &saved_snapshot {
                 record_restored_absences(store, before, &missing_extras, |extra| {
                     extra.name == saved.name
@@ -2988,6 +3002,13 @@ async fn run_rollback(store: &Store, id: &str, opts: &AdapterOptions) -> Result<
     let mut memories_restored = false;
     if let (Some(saved), Some(source)) = (&snapshot.memories, &saved_memories) {
         let _lock = HomeLock::acquire(store.paths())?;
+        if agent_running(tool, opts) {
+            return Err(Error::command_failed(
+                "close the agent first: it is using session or memories data",
+            ));
+        }
+        require_contained(&store.paths().home, &snapshot_root)?;
+        require_contained(&snapshot_root, source)?;
         let target = PathBuf::from(&saved.path);
         let home = home_dir(opts)?;
         let expected = home.join(".codex").join("memories");
@@ -3047,7 +3068,9 @@ async fn run_rollback(store: &Store, id: &str, opts: &AdapterOptions) -> Result<
             let _ = std::fs::remove_dir_all(&staging);
             if moved_away {
                 if let Some(snapshot) = &saved_snapshot {
-                    let _ = std::fs::rename(memories_in_snapshot(store, &snapshot.id)?, &expected);
+                    require_contained(&home, &expected)?;
+                    rename_to_vacant(&memories_in_snapshot(store, &snapshot.id)?, &expected)?;
+                    rewrite_meta(store, snapshot, |meta| meta.memories = None)?;
                 }
             }
             return Err(error.into());
@@ -3067,9 +3090,15 @@ async fn run_rollback(store: &Store, id: &str, opts: &AdapterOptions) -> Result<
 
 /// Put one saved piece of setup back: copy and check it beside its place, then rename it in. Only
 /// an empty folder may be in the way; anything else there is left alone and the piece is refused.
-fn restore_extra(root: &Path, saved: &ExtraMeta, source: &Path) -> Result<bool> {
+fn restore_extra(
+    root: &Path,
+    snapshot_home: &Path,
+    saved: &ExtraMeta,
+    source: &Path,
+) -> Result<bool> {
     let target = root.join(&saved.name);
     require_contained(root, &target)?;
+    require_contained(snapshot_home, source)?;
     if let Ok(meta) = std::fs::symlink_metadata(&target) {
         let empty_dir = meta.is_dir() && std::fs::read_dir(&target)?.next().is_none();
         if !empty_dir {
@@ -3128,7 +3157,11 @@ struct StagedSqlite {
     sessions: u64,
 }
 
-fn stage_sqlite_group(root: &Path, group: &[&(ExtraMeta, PathBuf)]) -> Result<StagedSqlite> {
+fn stage_sqlite_group(
+    root: &Path,
+    snapshot_home: &Path,
+    group: &[&(ExtraMeta, PathBuf)],
+) -> Result<StagedSqlite> {
     let target = root.join(&group[0].0.name);
     require_contained(root, &target)?;
     let parent = target
@@ -3143,6 +3176,7 @@ fn stage_sqlite_group(root: &Path, group: &[&(ExtraMeta, PathBuf)]) -> Result<St
     for (saved, source) in group {
         let target = root.join(&saved.name);
         require_contained(root, &target)?;
+        require_contained(snapshot_home, source)?;
         let staging = directory.path().join(paths.len().to_string());
         let meta = std::fs::symlink_metadata(source)?;
         if !meta.is_file()
@@ -3180,7 +3214,7 @@ fn put_back_sqlite_group(
         }
     }
     if !paths.is_empty() {
-        rename_group(&paths)?;
+        rename_group(&store.paths().home, root, &paths)?;
         rewrite_meta(store, before, |meta| {
             meta.extras
                 .retain(|extra| sqlite_database(&extra.name, &extra.kind) != Some(database));
