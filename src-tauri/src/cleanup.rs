@@ -1350,9 +1350,59 @@ fn same_volume(left: &Path, right: &Path) -> bool {
     }
 }
 
-#[cfg(not(unix))]
+#[cfg(windows)]
+fn same_volume(left: &Path, right: &Path) -> bool {
+    use std::os::windows::fs::OpenOptionsExt;
+    use std::os::windows::io::{AsRawHandle, RawHandle};
+
+    const FILE_READ_ATTRIBUTES: u32 = 0x0080;
+    const FILE_FLAG_BACKUP_SEMANTICS: u32 = 0x0200_0000;
+    const FILE_ID_INFO_CLASS: i32 = 18;
+
+    #[repr(C)]
+    struct FileIdInfo {
+        volume_serial_number: u64,
+        file_id: [u8; 16],
+    }
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetFileInformationByHandleEx(
+            file: RawHandle,
+            class: i32,
+            info: *mut FileIdInfo,
+            size: u32,
+        ) -> i32;
+    }
+
+    fn volume(path: &Path) -> Option<u64> {
+        let file = std::fs::OpenOptions::new()
+            .access_mode(FILE_READ_ATTRIBUTES)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+            .open(path)
+            .ok()?;
+        let mut info = FileIdInfo {
+            volume_serial_number: 0,
+            file_id: [0; 16],
+        };
+        // SAFETY: the open handle and the FILE_ID_INFO output buffer are valid for the call.
+        let ok = unsafe {
+            GetFileInformationByHandleEx(
+                file.as_raw_handle(),
+                FILE_ID_INFO_CLASS,
+                &mut info,
+                std::mem::size_of::<FileIdInfo>() as u32,
+            )
+        };
+        (ok != 0).then_some(info.volume_serial_number)
+    }
+
+    volume(left).is_some_and(|serial| volume(right) == Some(serial))
+}
+
+#[cfg(not(any(unix, windows)))]
 fn same_volume(_left: &Path, _right: &Path) -> bool {
-    true
+    false
 }
 
 fn memory_info(path: &Path) -> Result<(MemoryMeta, Vec<u8>)> {
