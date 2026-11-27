@@ -1,8 +1,17 @@
 # Keysmith Switch 实现状态
 
-更新日期：2026-11-02（Asia/Shanghai）
+更新日期：2026-11-27（Asia/Shanghai）
 
-阶段：公开稳定版为 [`v0.9.0`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.9.0)，含 macOS Apple Silicon 与 Windows x64 安装包。此文下方 `v0.1.3`／`v0.1.4` 的验证记录是历史记录。
+阶段：公开稳定版为 [`v0.9.0`](https://github.com/Jia-Ethan/keysmith-switch-releases/releases/tag/v0.9.0)，含 macOS Apple Silicon 与 Windows x64 安装包；下一版 `v0.9.1` 正在发布准备中。此文下方 `v0.1.3`／`v0.1.4` 的验证记录是历史记录。
+
+## v0.9.1 发布准备
+
+- [#173](https://github.com/Jia-Ethan/keysmith-switch/pull/173) 已合并为 `fd03b9d`：将清理重构为 6 分类分项勾选模式（默认仅清 Keysmith 部署与残留），Claude / Codex / Grok / ZCode 的会话历史与 SQLite 数据库按同卷原子整组移入本地版本快照可一键回滚，含密钥配置文件归入独立红色高危区并强制二次确认；加固祖先目录符号链接/Windows junction 防护、fail-closed 运行中复检、SQLite 原子预览认领、ZCode 旧补丁备份保护、回滚新增路径追踪（`absentExtras`）与前端异步竞态防护。macOS 与 Windows 全部 5 项 CI 通过。
+- [#170](https://github.com/Jia-Ethan/keysmith-switch/pull/170) 已合并为 `5d5b6ab`：随包升级 `zcode-keysmith` 0.3.5，适配 ZCode 3.17–4.0 运行时注入锚点。
+- [#171](https://github.com/Jia-Ethan/keysmith-switch/pull/171) 已合并为 `74e904e`：CI 与发布流程 macOS runner 迁移至 `macos-15` 并更新 `tauri-build` 适配 Rust 1.100。
+- [#167](https://github.com/Jia-Ethan/keysmith-switch/pull/167) 已合并为 `4486ec2`：随包升级 `dsh-keysmith` 0.4.1，优先部署到 DSH Desktop 配置档（`profiles/desktop`）并对旧 `profiles/web` 部署提示重新部署。
+- [#166](https://github.com/Jia-Ethan/keysmith-switch/pull/166) 已合并为 `88026af`：低高度窗口下自动折叠侧栏 Agent 名称、保持「设置」可见并启用窗口 `preventOverflow`。
+- 七处版本声明已提升至 `0.9.1`，同步更新 `scripts/release-notes.md`、`scripts/updater-notes.md`、`README.md` 版本表与 `docs/RELEASE_GATES.md`。
 
 ## v0.9.0 发布记录
 

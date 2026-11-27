@@ -1,1 +1,1 @@
-Keysmith Switch v0.9.0：拓展页新增组件包，把技能、斜杠命令、子 Agent 和规则文件装进 Claude Code、Codex、Grok Build 的目录。装上不运行代码，先列出每个文件再确认写入；卸载只删你没改过的文件。
+Keysmith Switch v0.9.1：Agent 清理改为默认仅清 Keysmith 部署的分项勾选模式，会话历史支持进本地版本一键回滚，高危登录/缓存独立确认；同步支持 ZCode 3.17–4.0、DSH Desktop 配置档及小窗口侧栏适配。
