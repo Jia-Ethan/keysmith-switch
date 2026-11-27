@@ -905,6 +905,79 @@ fn read_database_session(path: &Path) -> String {
 }
 
 #[tokio::test]
+#[cfg(unix)]
+async fn cleanup_refuses_grok_database_with_a_symlinked_wal() {
+    let world = world("grok/grok-keysmith.py");
+    let database = world.home.join(".grok/worktrees.db");
+    let wal = world.home.join(".grok/worktrees.db-wal");
+    let outside = world._tmp.path().join("outside-wal");
+    write(database.clone(), "database");
+    write(outside.clone(), "outside WAL");
+    std::os::unix::fs::symlink(&outside, &wal).unwrap();
+    let error = plan_cleanup(&world.store, ToolKind::Grok, &world.opts)
+        .await
+        .unwrap_err();
+    assert!(error
+        .to_string()
+        .contains("sidecar that cannot be moved safely"));
+    assert!(std::fs::symlink_metadata(wal).unwrap().is_symlink());
+    assert_eq!(std::fs::read_to_string(database).unwrap(), "database");
+    assert_eq!(std::fs::read_to_string(outside).unwrap(), "outside WAL");
+    assert!(list_snapshots(&world.store).is_empty());
+}
+
+#[tokio::test]
+async fn failed_wal_restore_leaves_the_live_database_and_sidecars_untouched() {
+    let world = world("grok/grok-keysmith.py");
+    let database = world.home.join(".grok/worktrees.db");
+    let wal = world.home.join(".grok/worktrees.db-wal");
+    let journal = world.home.join(".grok/worktrees.db-journal");
+    write(database.clone(), "original database");
+    write(wal.clone(), "original WAL");
+    write(journal.clone(), "original journal");
+    let plan = plan_cleanup(&world.store, ToolKind::Grok, &world.opts)
+        .await
+        .unwrap();
+    let done = confirm_cleanup(
+        &world.store,
+        &plan.operation_id,
+        CleanupSelection {
+            deployment: false,
+            sessions: true,
+            ..CleanupSelection::default_safe()
+        },
+        &world.opts,
+    )
+    .await
+    .unwrap();
+    assert_eq!(done.sessions_cleared, 3);
+    let id = done.snapshot_id.unwrap();
+    write(database.clone(), "current database");
+    write(wal.clone(), "current WAL");
+    write(journal.clone(), "current journal");
+    let plan = plan_rollback(&world.store, &id, &world.opts).await.unwrap();
+    let saved_wal = world
+        .store
+        .paths()
+        .home
+        .join("snapshots")
+        .join(id)
+        .join("extras/.grok/worktrees.db-wal");
+    write(saved_wal, "truncated");
+    let error = confirm_rollback(&world.store, &plan.operation_id, &world.opts)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("worktrees.db-wal"));
+    assert_eq!(
+        std::fs::read_to_string(database).unwrap(),
+        "current database"
+    );
+    assert_eq!(std::fs::read_to_string(wal).unwrap(), "current WAL");
+    assert_eq!(std::fs::read_to_string(journal).unwrap(), "current journal");
+    assert_eq!(list_snapshots(&world.store).len(), 1);
+}
+
+#[tokio::test]
 async fn session_snapshots_restore_claude_and_codex_data_and_preserve_new_sessions() {
     if !python3_available() {
         return;

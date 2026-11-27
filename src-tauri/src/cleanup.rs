@@ -290,6 +290,7 @@ const GROK: Table = Table {
     ],
     prefixes: &[
         prefix(".grok", "AGENTS.md.", "saved", Memory),
+        prefix(".grok", "worktrees.db-", "saved", Sessions),
         prefix(".grok", "auth.json", "erased", LoginAndCache),
         prefix(".grok", "config.toml.", "erased", LoginAndCache),
     ],
@@ -1119,17 +1120,123 @@ fn extra_info(
     }))
 }
 
+/// The database name shared by a saved SQLite file and all of its sidecars.
+fn sqlite_database<'a>(name: &'a str, kind: &str) -> Option<&'a str> {
+    if kind != "saved" {
+        return None;
+    }
+    let file = name.rsplit('/').next()?;
+    [".sqlite", ".db"]
+        .into_iter()
+        .filter_map(|extension| {
+            file.find(&format!("{extension}-"))
+                .map(|offset| offset + extension.len())
+                .or_else(|| file.ends_with(extension).then_some(file.len()))
+        })
+        .min()
+        .map(|end| &name[..name.len() - file.len() + end])
+}
+
+fn sqlite_sidecars(root: &Path, database: &str, strict: bool) -> Result<Vec<String>> {
+    let (folder, file) = database.rsplit_once('/').unwrap_or(("", database));
+    let directory = root.join(folder);
+    if !is_contained(root, &directory)? {
+        return Ok(Vec::new());
+    }
+    let siblings = match std::fs::read_dir(directory) {
+        Ok(siblings) => siblings,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(error.into()),
+    };
+    let prefix = format!("{file}-");
+    let mut found = Vec::new();
+    for sibling in siblings {
+        let sibling = sibling?;
+        let basename = sibling.file_name();
+        if !basename.to_string_lossy().starts_with(&prefix) {
+            continue;
+        }
+        let name = basename.to_str().map(|file| {
+            if folder.is_empty() {
+                file.to_string()
+            } else {
+                format!("{folder}/{file}")
+            }
+        });
+        let meta = std::fs::symlink_metadata(sibling.path())?;
+        match name {
+            Some(name) if valid_extra_name(&name) && meta.is_file() && !is_link(&meta) => {
+                found.push(name);
+            }
+            _ if strict => {
+                return Err(Error::command_failed(format!(
+                    "{database} has a sidecar that cannot be moved safely"
+                )));
+            }
+            _ => {}
+        }
+    }
+    found.sort();
+    Ok(found)
+}
+
+fn sqlite_entries(root: &Path, database: &str, strict: bool) -> Result<Vec<String>> {
+    let path = root.join(database);
+    if !is_contained(root, &path)? {
+        return Ok(Vec::new());
+    }
+    let present = match std::fs::symlink_metadata(&path) {
+        Ok(meta) if meta.is_file() && !is_link(&meta) => true,
+        Ok(_) => {
+            return Err(Error::command_failed(format!(
+                "{database} is not an ordinary database file"
+            )));
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(error) => return Err(error.into()),
+    };
+    let mut names = sqlite_sidecars(root, database, strict || present)?;
+    if present {
+        names.insert(0, database.to_string());
+    }
+    Ok(names)
+}
+
 fn current_extras(
     tool: ToolKind,
     entries: &[Entry],
     opts: &AdapterOptions,
 ) -> Result<Vec<ExtraMeta>> {
+    collect_extras(tool, entries, opts, false)
+}
+
+fn collect_extras(
+    tool: ToolKind,
+    entries: &[Entry],
+    opts: &AdapterOptions,
+    for_rollback: bool,
+) -> Result<Vec<ExtraMeta>> {
     let Some(home) = agent_home(tool, opts)? else {
         return Ok(Vec::new());
     };
     let mut found = Vec::new();
+    let mut databases = std::collections::HashSet::new();
     for (name, kind, category) in entries {
-        if let Some(info) = extra_info(&home, name, kind, *category)? {
+        if !valid_extra_name(name) {
+            continue;
+        }
+        if let Some(database) = sqlite_database(name, kind) {
+            if databases.insert(database) {
+                for member in sqlite_entries(&home, database, for_rollback)? {
+                    let info = extra_info(&home, &member, kind, *category)?.ok_or_else(|| {
+                        Error::command_failed(format!(
+                            "{database} changed while checking its sidecars"
+                        ))
+                    })?;
+                    found.push(info);
+                }
+            }
+        } else if let Some(info) = extra_info(&home, name, kind, *category)? {
             found.push(info);
         }
     }
@@ -1154,73 +1261,13 @@ fn current_rollback_pieces(
     snapshot: &SnapshotMeta,
     opts: &AdapterOptions,
 ) -> Result<Vec<ExtraMeta>> {
-    let mut entries: Vec<Entry> = snapshot
+    let entries: Vec<Entry> = snapshot
         .extras
         .iter()
         .filter(|extra| extra.kind == "saved")
         .map(|extra| (extra.name.clone(), extra.kind.clone(), extra.category))
         .collect();
-    if let Some(home) = agent_home(tool, opts)? {
-        let mut sidecars = Vec::new();
-        for extra in snapshot
-            .extras
-            .iter()
-            .filter(|extra| extra.kind == "saved" && extra.name.ends_with(".sqlite"))
-        {
-            let (folder, name) = extra
-                .name
-                .rsplit_once('/')
-                .unwrap_or(("", extra.name.as_str()));
-            let directory = home.join(folder);
-            if !is_contained(&home, &directory)? {
-                continue;
-            }
-            let siblings = match std::fs::read_dir(directory) {
-                Ok(siblings) => siblings,
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-                Err(error) => return Err(error.into()),
-            };
-            let prefix = format!("{name}-");
-            for sibling in siblings {
-                let sibling = sibling?;
-                let file_name = sibling.file_name();
-                if !file_name.to_string_lossy().starts_with(&prefix) {
-                    continue;
-                }
-                if !sibling.file_type()?.is_file() {
-                    return Err(Error::command_failed(format!(
-                        "{} has a sidecar that cannot be moved safely",
-                        extra.name
-                    )));
-                }
-                let file_name = file_name.to_str().ok_or_else(|| {
-                    Error::command_failed(format!(
-                        "{} has a sidecar with an invalid file name",
-                        extra.name
-                    ))
-                })?;
-                let candidate = if folder.is_empty() {
-                    file_name.to_string()
-                } else {
-                    format!("{folder}/{file_name}")
-                };
-                if !valid_extra_name(&candidate) {
-                    return Err(Error::command_failed(format!(
-                        "{} has a sidecar with an invalid file name",
-                        extra.name
-                    )));
-                }
-                sidecars.push((candidate, "saved".into(), extra.category));
-            }
-        }
-        sidecars.sort_by(|left, right| left.0.cmp(&right.0));
-        for sidecar in sidecars {
-            if !entries.iter().any(|(known, _, _)| known == &sidecar.0) {
-                entries.push(sidecar);
-            }
-        }
-    }
-    current_extras(tool, &entries, opts)
+    collect_extras(tool, &entries, opts, true)
 }
 
 fn rollback_needs_idle_agent(snapshot: &SnapshotMeta) -> bool {
@@ -1275,7 +1322,34 @@ fn snapshot_extras(store: &Store, meta: &SnapshotMeta) -> Result<Vec<(ExtraMeta,
         }
         found.push((saved.clone(), path));
     }
+    let root = snapshot_path(store, &meta.id)?.join("extras");
+    for (database, group) in sqlite_groups(&found, |(extra, _)| extra) {
+        let archived = sqlite_entries(&root, database, true)?;
+        if archived.len() != group.len()
+            || !group
+                .iter()
+                .all(|(extra, _)| archived.contains(&extra.name))
+        {
+            return Err(Error::invalid(format!(
+                "snapshot is damaged: {database} has an incomplete SQLite group"
+            )));
+        }
+    }
     Ok(found)
+}
+
+fn sqlite_groups<T>(
+    entries: &[T],
+    extra: impl Fn(&T) -> &ExtraMeta,
+) -> std::collections::BTreeMap<&str, Vec<&T>> {
+    let mut groups: std::collections::BTreeMap<_, Vec<_>> = Default::default();
+    for entry in entries {
+        let meta = extra(entry);
+        if let Some(database) = sqlite_database(&meta.name, &meta.kind) {
+            groups.entry(database).or_default().push(entry);
+        }
+    }
+    groups
 }
 
 /// The saved pieces must be on the snapshots' volume, so moving them is a rename that cannot
@@ -1623,7 +1697,16 @@ fn create_snapshot(
                 sanitized_copy(Path::new(&extra.path), &extra.name)?,
             )?;
         }
-        std::fs::write(staging.join("meta.json"), serde_json::to_vec_pretty(&meta)?)?;
+        // Only list data already present in the snapshot. Renamed data is recorded after the move.
+        let mut written_meta = meta.clone();
+        written_meta.memories = None;
+        written_meta
+            .extras
+            .retain(|extra| extra.kind == "saved-without-login");
+        std::fs::write(
+            staging.join("meta.json"),
+            serde_json::to_vec_pretty(&written_meta)?,
+        )?;
         std::fs::rename(&staging, root.join(&id))?;
         Ok(())
     })();
@@ -1648,8 +1731,7 @@ fn truncate_file(root: &Path, path: &Path) -> Result<()> {
 }
 
 /// Move the agent's memory folder into the snapshot that was made for it. Nothing is copied or
-/// deleted: the folder is renamed, so it is either where it was or all inside the snapshot. When
-/// it cannot be moved the snapshot is rewritten to say it holds no folder.
+/// deleted: the folder is renamed, so it is either where it was or all inside the snapshot.
 fn move_memories_into(
     store: &Store,
     snapshot: &SnapshotMeta,
@@ -1658,37 +1740,128 @@ fn move_memories_into(
 ) -> Result<()> {
     require_contained(root, from)?;
     let to = memories_in_snapshot(store, &snapshot.id)?;
-    if let Err(error) = std::fs::rename(from, &to) {
-        rewrite_meta(store, snapshot, |meta| meta.memories = None);
-        return Err(Error::command_failed(format!(
+    rename_to_vacant(from, &to).map_err(|error| {
+        Error::command_failed(format!(
             "the memories folder could not be moved into the snapshot: {error}"
-        )));
+        ))
+    })?;
+    if let Err(error) = rewrite_meta(store, snapshot, |meta| {
+        meta.memories = snapshot.memories.clone()
+    }) {
+        rename_to_vacant(&to, from)?;
+        return Err(error);
     }
     Ok(())
 }
 
 /// Change what a written snapshot says it holds, starting from what is on disk.
-fn rewrite_meta(store: &Store, snapshot: &SnapshotMeta, change: impl FnOnce(&mut SnapshotMeta)) {
-    let mut meta = read_snapshot(store, &snapshot.id).unwrap_or_else(|_| snapshot.clone());
+fn rewrite_meta(
+    store: &Store,
+    snapshot: &SnapshotMeta,
+    change: impl FnOnce(&mut SnapshotMeta),
+) -> Result<()> {
+    let mut meta = read_snapshot(store, &snapshot.id)?;
     change(&mut meta);
-    if let (Ok(path), Ok(bytes)) = (
-        snapshot_path(store, &snapshot.id),
-        serde_json::to_vec_pretty(&meta),
-    ) {
-        let path = path.join("meta.json");
-        if require_contained(&store.paths().home, &path).is_ok() {
-            let _ = std::fs::write(path, bytes);
+    let path = snapshot_path(store, &snapshot.id)?.join("meta.json");
+    require_contained(&store.paths().home, &path)?;
+    crate::paths::atomic_write(&path, &serde_json::to_string_pretty(&meta)?)
+}
+
+/// Rename a batch into vacant paths, reversing completed renames if a later rename fails.
+fn rename_group(paths: &[(PathBuf, PathBuf)]) -> Result<()> {
+    for (index, (from, to)) in paths.iter().enumerate() {
+        let result = rename_to_vacant(from, to);
+        if let Err(error) = result {
+            let mut undo_error = None;
+            for (from, to) in paths[..index].iter().rev() {
+                if let Err(error) = rename_to_vacant(to, from) {
+                    undo_error.get_or_insert(error);
+                }
+            }
+            if let Some(undo_error) = undo_error {
+                return Err(Error::command_failed(format!(
+                    "{error}; could not reverse a SQLite group rename: {undo_error}"
+                )));
+            }
+            return Err(error);
         }
     }
+    Ok(())
+}
+
+fn rename_to_vacant(from: &Path, to: &Path) -> Result<()> {
+    match std::fs::symlink_metadata(to) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+        Ok(_) => {
+            return Err(Error::command_failed(format!(
+                "{} is in the way",
+                to.display()
+            )))
+        }
+    }
+    std::fs::rename(from, to)?;
+    Ok(())
+}
+
+fn move_sqlite_group(
+    store: &Store,
+    snapshot: &SnapshotMeta,
+    root: &Path,
+    database: &str,
+    group: &[&ExtraMeta],
+) -> Result<Vec<ExtraMeta>> {
+    let names = sqlite_entries(root, database, true)?;
+    if names.len() != group.len() || !group.iter().all(|extra| names.contains(&extra.name)) {
+        return Err(Error::command_failed(format!(
+            "{database} changed while checking its sidecars"
+        )));
+    }
+    let mut paths = Vec::new();
+    let mut moved = Vec::new();
+    for extra in group {
+        let now = extra_info(root, &extra.name, &extra.kind, extra.category)?.ok_or_else(|| {
+            Error::command_failed(format!("{database} changed while checking its sidecars"))
+        })?;
+        let from = root.join(&extra.name);
+        require_contained(root, &from)?;
+        let to = extra_in_snapshot(store, &snapshot.id, &extra.name)?;
+        std::fs::create_dir_all(to.parent().expect("snapshot extra has a parent"))?;
+        paths.push((from, to));
+        moved.push(now);
+    }
+    rename_group(&paths)?;
+    if let Err(error) = rewrite_meta(store, snapshot, |meta| meta.extras.extend(moved.clone())) {
+        let reverse: Vec<_> = paths
+            .into_iter()
+            .rev()
+            .map(|(from, to)| (to, from))
+            .collect();
+        rename_group(&reverse)?;
+        return Err(error);
+    }
+    Ok(moved)
 }
 
 /// Move the saved pieces by rename and remove originals whose sanitized copies are in the
-/// snapshot. Drop missing pieces and pieces that could not be moved from the snapshot metadata.
+/// snapshot. Record each successful move so partial cleanup remains reversible.
 fn move_extras_into(store: &Store, snapshot: &SnapshotMeta, root: &Path) -> Result<(u64, u64)> {
     let mut moved = Vec::new();
     let mut failure = None;
-    let mut changed = false;
+    let mut groups = sqlite_groups(&snapshot.extras, |extra| extra);
     for extra in &snapshot.extras {
+        if let Some(database) = sqlite_database(&extra.name, &extra.kind) {
+            if let Some(group) = groups.remove(database) {
+                match move_sqlite_group(store, snapshot, root, database, &group) {
+                    Ok(group) => moved.extend(group),
+                    Err(error) => {
+                        failure = Some(error);
+                        break;
+                    }
+                }
+            }
+            continue;
+        }
         let from = root.join(&extra.name);
         let result = (|| -> Result<Option<ExtraMeta>> {
             // Uninstall may have changed a piece. Check its type and contents again before saving it.
@@ -1704,16 +1877,19 @@ fn move_extras_into(store: &Store, snapshot: &SnapshotMeta, root: &Path) -> Resu
                 if let Some(parent) = to.parent() {
                     std::fs::create_dir_all(parent)?;
                 }
-                std::fs::rename(&from, &to)?;
+                rename_to_vacant(&from, &to)?;
+                if let Err(error) =
+                    rewrite_meta(store, snapshot, |meta| meta.extras.push(now.clone()))
+                {
+                    rename_to_vacant(&to, &from)?;
+                    return Err(error);
+                }
             }
             Ok(Some(now))
         })();
         match result {
-            Ok(Some(now)) => {
-                changed |= now != *extra;
-                moved.push(now);
-            }
-            Ok(None) => changed = true,
+            Ok(Some(now)) => moved.push(now),
+            Ok(None) => {}
             Err(error) => {
                 failure = Some(Error::command_failed(format!(
                     "{} could not be moved into the snapshot: {error}",
@@ -1728,9 +1904,6 @@ fn move_extras_into(store: &Store, snapshot: &SnapshotMeta, root: &Path) -> Resu
         .iter()
         .filter(|extra| extra.category == CleanupCategory::Sessions)
         .count() as u64;
-    if changed || moved.len() != snapshot.extras.len() {
-        rewrite_meta(store, snapshot, |meta| meta.extras = moved);
-    }
     match failure {
         Some(error) => Err(error),
         None => Ok((count, sessions)),
@@ -2345,13 +2518,6 @@ async fn run_cleanup(
         if !deactivated {
             return Err(discard(error));
         }
-        if let Some(snapshot) = &snapshot {
-            rewrite_meta(store, snapshot, |meta| {
-                meta.memories = None;
-                meta.extras
-                    .retain(|extra| extra.kind == "saved-without-login");
-            });
-        }
         return Err(error);
     }
 
@@ -2550,6 +2716,14 @@ async fn run_rollback(store: &Store, id: &str, opts: &AdapterOptions) -> Result<
     }
     let current_pieces = current_rollback_pieces(tool, &snapshot, opts)?;
     check_extras_volume(store, &current_pieces)?;
+    let home = agent_home(tool, opts)?;
+    let mut staged_groups = std::collections::BTreeMap::new();
+    if let Some(root) = &home {
+        for (database, group) in sqlite_groups(&saved_extras, |(extra, _)| extra) {
+            require_contained(root, &root.join(database))?;
+            staged_groups.insert(database, stage_sqlite_group(root, &group)?);
+        }
+    }
     let saved_snapshot = if deployment.present
         || current_differs
         || current_folder.is_some()
@@ -2576,7 +2750,7 @@ async fn run_rollback(store: &Store, id: &str, opts: &AdapterOptions) -> Result<
     let mut extras_restored = 0;
     let mut sessions_restored = 0;
     if !saved_extras.is_empty() {
-        let root = agent_home(tool, opts)?
+        let root = home
             .ok_or_else(|| Error::invalid("this agent has no setup folder; nothing was changed"))?;
         // Whatever is there now goes into the snapshot made above first.
         if let Some(snapshot) = &saved_snapshot {
@@ -2588,6 +2762,19 @@ async fn run_rollback(store: &Store, id: &str, opts: &AdapterOptions) -> Result<
             }
         }
         for (saved, source) in &saved_extras {
+            if let Some(database) = sqlite_database(&saved.name, &saved.kind) {
+                if let Some(staged) = staged_groups.remove(database) {
+                    if let Err(error) = rename_group(&staged.paths) {
+                        if let Some(before) = &saved_snapshot {
+                            put_back_sqlite_group(store, before, &root, database)?;
+                        }
+                        return Err(error);
+                    }
+                    extras_restored += staged.paths.len() as u64;
+                    sessions_restored += staged.sessions;
+                }
+                continue;
+            }
             require_contained(&root, &root.join(&saved.name))?;
             // A config file saved without its login is put back only where there is none now:
             // one the agent wrote since (a new login) is never replaced by the stripped copy.
@@ -2806,6 +2993,73 @@ fn restore_extra(root: &Path, saved: &ExtraMeta, source: &Path) -> Result<bool> 
     Ok(true)
 }
 
+struct StagedSqlite {
+    _directory: tempfile::TempDir,
+    paths: Vec<(PathBuf, PathBuf)>,
+    sessions: u64,
+}
+
+fn stage_sqlite_group(root: &Path, group: &[&(ExtraMeta, PathBuf)]) -> Result<StagedSqlite> {
+    let target = root.join(&group[0].0.name);
+    require_contained(root, &target)?;
+    let parent = target
+        .parent()
+        .ok_or_else(|| Error::invalid("a saved database has no parent folder"))?;
+    std::fs::create_dir_all(parent)?;
+    let directory = tempfile::Builder::new()
+        .prefix(".keysmith-sqlite-")
+        .tempdir_in(parent)?;
+    let mut paths = Vec::new();
+    let mut sessions = 0;
+    for (saved, source) in group {
+        let target = root.join(&saved.name);
+        require_contained(root, &target)?;
+        let staging = directory.path().join(paths.len().to_string());
+        let meta = std::fs::symlink_metadata(source)?;
+        if !meta.is_file()
+            || is_link(&meta)
+            || std::fs::copy(source, &staging)? != saved.bytes
+            || path_stats(&staging)? != (saved.files, saved.bytes)
+        {
+            return Err(Error::command_failed(format!(
+                "the copy of {} could not be verified",
+                saved.name
+            )));
+        }
+        paths.push((staging, target));
+        sessions += u64::from(saved.category == Sessions);
+    }
+    Ok(StagedSqlite {
+        _directory: directory,
+        paths,
+        sessions,
+    })
+}
+
+fn put_back_sqlite_group(
+    store: &Store,
+    before: &SnapshotMeta,
+    root: &Path,
+    database: &str,
+) -> Result<()> {
+    let mut paths = Vec::new();
+    for extra in &before.extras {
+        if sqlite_database(&extra.name, &extra.kind) == Some(database) {
+            let target = root.join(&extra.name);
+            require_contained(root, &target)?;
+            paths.push((extra_in_snapshot(store, &before.id, &extra.name)?, target));
+        }
+    }
+    if !paths.is_empty() {
+        rename_group(&paths)?;
+        rewrite_meta(store, before, |meta| {
+            meta.extras
+                .retain(|extra| sqlite_database(&extra.name, &extra.kind) != Some(database));
+        })?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2836,6 +3090,50 @@ mod tests {
         assert!(!serde_json::from_value::<CleanupSelection>(json!({}))
             .unwrap()
             .any_selected());
+    }
+
+    #[test]
+    fn sqlite_group_renames_revert_if_the_wal_destination_is_blocked() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let home = root.join("home");
+        let store = Store::open(&crate::paths::AppPaths::from_home(root.join("switch"))).unwrap();
+        std::fs::create_dir_all(home.join(".grok")).unwrap();
+        let entries = [".grok/worktrees.db", ".grok/worktrees.db-wal"];
+        let extras = entries
+            .iter()
+            .map(|name| {
+                std::fs::write(home.join(name), name).unwrap();
+                extra_info(&home, name, "saved", Sessions).unwrap().unwrap()
+            })
+            .collect();
+        let snapshot = create_snapshot(
+            &store,
+            ToolKind::Grok,
+            "cleanup",
+            DeploymentMeta {
+                present: false,
+                title: None,
+                restorable: false,
+            },
+            None,
+            None,
+            None,
+            extras,
+        )
+        .unwrap();
+        let [db, wal] = entries.map(|name| extra_in_snapshot(&store, &snapshot.id, name).unwrap());
+        std::fs::create_dir_all(&wal).unwrap();
+
+        assert!(move_extras_into(&store, &snapshot, &home).is_err());
+        assert!(!db.exists());
+        assert!(read_snapshot(&store, &snapshot.id)
+            .unwrap()
+            .extras
+            .is_empty());
+        for name in entries {
+            assert_eq!(std::fs::read_to_string(home.join(name)).unwrap(), name);
+        }
     }
 
     #[test]
