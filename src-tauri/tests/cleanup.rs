@@ -1,7 +1,7 @@
 //! Cleanup and rollback against the real vendored adapters, in a temporary home.
 //! Nothing here touches the machine the tests run on.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use keysmith_switch_lib::adapter::AdapterOptions;
 use keysmith_switch_lib::cleanup::{
@@ -761,6 +761,27 @@ async fn default_safe_claude_cleanup_leaves_memory_setup_sessions_login_and_rewr
     assert!(keysmith_switch_lib::rewrite::read_claude_record(world.store.paths()).is_some());
 }
 
+fn create_wal_database(path: &Path, session: &str) {
+    let conn = rusqlite::Connection::open(path).unwrap();
+    conn.set_db_config(
+        rusqlite::config::DbConfig::SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE,
+        true,
+    )
+    .unwrap();
+    conn.pragma_update(None, "journal_mode", "WAL").unwrap();
+    conn.execute("CREATE TABLE sessions (body TEXT NOT NULL)", [])
+        .unwrap();
+    conn.execute("INSERT INTO sessions VALUES (?1)", [session])
+        .unwrap();
+    conn.close().unwrap();
+}
+
+fn read_database_session(path: &Path) -> String {
+    let conn = rusqlite::Connection::open(path).unwrap();
+    conn.query_row("SELECT body FROM sessions", [], |row| row.get(0))
+        .unwrap()
+}
+
 #[tokio::test]
 async fn session_snapshots_restore_claude_and_codex_data_and_preserve_new_sessions() {
     if !python3_available() {
@@ -825,11 +846,13 @@ async fn session_snapshots_restore_claude_and_codex_data_and_preserve_new_sessio
     let sessions = codex_root.join("sessions/2026/01.jsonl");
     let database = codex_root.join("state_5.sqlite");
     let original_wal = codex_root.join("state_5.sqlite-wal");
+    let shm = codex_root.join("state_5.sqlite-shm");
     let database_without_wal = codex_root.join("goals_1.sqlite");
     let orphan_wal = codex_root.join("goals_1.sqlite-wal");
     write(sessions.clone(), "codex original\n");
-    write(database.clone(), "sqlite bytes\0\x01");
-    write(original_wal.clone(), "original wal\0");
+    create_wal_database(&database, "original database session");
+    // SQLite can recreate the shared memory index from the WAL.
+    std::fs::remove_file(&shm).unwrap();
     write(database_without_wal.clone(), "original goals\0");
     let session_bytes = std::fs::read(&sessions).unwrap();
     let db_bytes = std::fs::read(&database).unwrap();
@@ -867,10 +890,11 @@ async fn session_snapshots_restore_claude_and_codex_data_and_preserve_new_sessio
     assert_eq!(database_meta.files, 1);
     assert_eq!(database_meta.bytes, db_bytes.len() as u64);
     write(sessions.clone(), "new session\n");
-    write(database.clone(), "new database\0");
-    write(original_wal.clone(), "new wal\n");
-    write(codex_root.join("state_5.sqlite-shm"), "new shm\n");
-    write(orphan_wal.clone(), "orphan wal\n");
+    create_wal_database(&database, "new database session");
+    let new_db_bytes = std::fs::read(&database).unwrap();
+    let new_wal_bytes = std::fs::read(&original_wal).unwrap();
+    let new_shm_bytes = std::fs::read(&shm).unwrap();
+    std::fs::write(&orphan_wal, &new_wal_bytes).unwrap();
     let rollback = plan_rollback(
         &codex.store,
         done.snapshot_id.as_deref().unwrap(),
@@ -889,7 +913,7 @@ async fn session_snapshots_restore_claude_and_codex_data_and_preserve_new_sessio
         std::fs::read(database_without_wal).unwrap(),
         b"original goals\0"
     );
-    assert!(!codex_root.join("state_5.sqlite-shm").exists());
+    assert!(!shm.exists());
     assert!(!orphan_wal.exists());
     let before = list_snapshots(&codex.store)
         .into_iter()
@@ -902,23 +926,27 @@ async fn session_snapshots_restore_claude_and_codex_data_and_preserve_new_sessio
     );
     assert_eq!(
         std::fs::read(before_root.join("extras/.codex/state_5.sqlite-wal")).unwrap(),
-        b"new wal\n"
+        new_wal_bytes
     );
     assert_eq!(
         std::fs::read(before_root.join("extras/.codex/state_5.sqlite-shm")).unwrap(),
-        b"new shm\n"
+        new_shm_bytes
     );
     assert_eq!(
         std::fs::read(before_root.join("extras/.codex/goals_1.sqlite-wal")).unwrap(),
-        b"orphan wal\n"
+        new_wal_bytes
     );
     assert_eq!(
         std::fs::read(before_root.join("extras/.codex/state_5.sqlite")).unwrap(),
-        b"new database\0"
+        new_db_bytes
     );
     assert_eq!(
-        std::fs::metadata(&database).unwrap().len(),
-        db_bytes.len() as u64
+        read_database_session(&database),
+        "original database session"
+    );
+    assert_eq!(
+        read_database_session(&before_root.join("extras/.codex/state_5.sqlite")),
+        "new database session"
     );
 }
 
